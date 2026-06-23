@@ -197,7 +197,7 @@ canvas { display: block; }
     <button onclick="savePNG()">Save PNG</button>
   </div>
   <div style="font-size:13px; line-height:1.4; opacity:0.7; margin-top:4px;">
-    <p>This map shows the sky from any date and time from 1900 to 2100 and any location on Earth, with <a href="http://tdc-www.harvard.edu/catalogs/bsc5.html" target="_blank" style="color:inherit;">bright stars</a> to magnitude ~6.5 on mobile, <a href="https://cdsarc.unistra.fr/viz-bin/cat/V/145" target="_blank" style="color:inherit;">more stars</a> to magnitude 9 on desktop, and <a href="https://stjarnhimlen.se/comp/ppcomp.html" target="_blank" style="color:inherit;">planet positions</a> to arcminute accuracy.</p>
+    <p>This map shows the sky from any date and time from 1500 to 2500 AD and any location on Earth, with <a href="http://tdc-www.harvard.edu/catalogs/bsc5.html" target="_blank" style="color:inherit;">bright stars</a> to magnitude ~6.5 on mobile, <a href="https://cdsarc.unistra.fr/viz-bin/cat/V/145" target="_blank" style="color:inherit;">more stars</a> to magnitude 9 on desktop, the <a href='https://en.wikipedia.org/wiki/Messier_object'>Messier</a> and <a href='https://en.wikipedia.org/wiki/Caldwell_catalogue'>Caldwell</a> deep sky objects, and <a href="https://stjarnhimlen.se/comp/ppcomp.html" target="_blank" style="color:inherit;">planet positions</a> to arcminute accuracy.</p>
     <p><br>For a solar system map that shows how the planets' orbital motion relates to their paths across the constellations, click <a href="ssmap.html">here</a>.</p>
   </div>
 </div>
@@ -209,9 +209,9 @@ canvas { display: block; }
 <script src="milkyway.js?v=4"></script>
 <script src="deepsky.js?v=4"></script>
 <script src="cities.js?v=4"></script>
-<script src="astromath.js?v=5"></script>
-<script src="planets.js?v=5"></script>
-<script src="skymap.js?v=1"></script>
+<script src="astromath.js?v=6"></script>
+<script src="planets.js?v=6"></script>
+<script src="skymap.js?v=2"></script>
 <script>
 
 // ---- Time zone helpers ----
@@ -262,7 +262,7 @@ const ANIM_STEPS = {
 };
 
 function getDateTimeFromFields() {
-  const y = max(1900, min(2100, parseInt(document.getElementById('dpYear').value) || 2026));
+  const y = max(1500, min(2500, parseInt(document.getElementById('dpYear').value) || 2026));
   const m = max(1, min(12, parseInt(document.getElementById('dpMonth').value) || 1));
   const d = max(1, min(31, parseInt(document.getElementById('dpDay').value) || 1));
   const h = max(0, min(23, parseInt(document.getElementById('tpHour').value) || 0));
@@ -292,28 +292,39 @@ function setDateTimeFields(y, m, d, h, mi, s) {
   document.getElementById('tpSec').value = p2(s);
 }
 
+function clampGregorianGap(y, m, d, dir) {
+  if (y === 1582 && m === 10 && d >= 5 && d <= 14)
+    d = dir >= 0 ? 15 : 4;
+  return { y, m, d };
+}
+
 function stepPart(part, dir) {
   const dt = getDateTimeFromFields();
   if (part === 'y') {
-    setDateTimeFields(max(1900, min(2100, dt.localY + dir)), dt.localM, dt.localD, dt.localH, dt.localMi, dt.localS);
+    const g = clampGregorianGap(max(1500, min(2500, dt.localY + dir)), dt.localM, dt.localD, dir);
+    setDateTimeFields(g.y, g.m, g.d, dt.localH, dt.localMi, dt.localS);
   } else if (part === 'm') {
-    const tmp = new Date(Date.UTC(dt.localY, dt.localM - 1 + dir, dt.localD, dt.localH, dt.localMi, dt.localS));
-    setDateTimeFields(tmp.getUTCFullYear(), tmp.getUTCMonth()+1, tmp.getUTCDate(),
-                      tmp.getUTCHours(), tmp.getUTCMinutes(), tmp.getUTCSeconds());
+    let newY = dt.localY, newM = dt.localM + dir;
+    if (newM > 12) { newM = 1; newY++; } else if (newM < 1) { newM = 12; newY--; }
+    const g = clampGregorianGap(max(1500, min(2500, newY)), newM, dt.localD, dir);
+    setDateTimeFields(g.y, g.m, g.d, dt.localH, dt.localMi, dt.localS);
   } else {
-    const utcMs = Date.UTC(dt.y, dt.m - 1, dt.d, dt.h, dt.mi, dt.s) + dir * 86400000;
-    const p = utcToLocal(utcMs);
-    setDateTimeFields(p.year, p.month, p.day, p.hour, p.minute, p.second);
+    const utH = dt.localH + dt.localMi / 60 + dt.localS / 3600;
+    const jd = julianDate(dt.localY, dt.localM, dt.localD, utH) + dir;
+    const cal = calendarDate(jd);
+    setDateTimeFields(max(1500, min(2500, cal.y)), cal.m, cal.d, dt.localH, dt.localMi, dt.localS);
   }
   draw();
 }
 
 function stepTimePart(part, dir) {
   const dt = getDateTimeFromFields();
-  const delta = part === 'h' ? 3600000 : part === 'mi' ? 60000 : 1000;
-  const utcMs = Date.UTC(dt.y, dt.m - 1, dt.d, dt.h, dt.mi, dt.s) + dir * delta;
-  const p = utcToLocal(utcMs);
-  setDateTimeFields(p.year, p.month, p.day, p.hour, p.minute, p.second);
+  const deltaDays = (part === 'h' ? 3600 : part === 'mi' ? 60 : 1) * dir / 86400;
+  const utH = dt.localH + dt.localMi / 60 + dt.localS / 3600;
+  const jd = julianDate(dt.localY, dt.localM, dt.localD, utH) + deltaDays;
+  const cal = calendarDate(jd);
+  const h = floor(cal.ut), mFrac = (cal.ut - h) * 60, mi = floor(mFrac), s = round((mFrac - mi) * 60);
+  setDateTimeFields(max(1500, min(2500, cal.y)), cal.m, cal.d, h, mi, min(59, s));
   draw();
 }
 
@@ -483,13 +494,17 @@ function draw() {
   document.body.className = darkMode ? 'dark' : 'light';
 
   const offHrs = -dt.tzOffMin / 60;
-  const offSign = offHrs >= 0 ? '+' : '';
+  const offSign = offHrs >= 0 ? '+' : '-';
+  const absMin = abs(dt.tzOffMin);
+  const offH = floor(absMin / 60), offM = absMin % 60;
+  const offStr = offM === 0 ? `${offSign}${offH}` : `${offSign}${offH}:${p2(offM)}`;
   const janOff = round((localToUTC(dt.localY, 1, 1, 12, 0, 0) - Date.UTC(dt.localY, 0, 1, 12, 0, 0)) / 60000);
   const julOff = round((localToUTC(dt.localY, 7, 1, 12, 0, 0) - Date.UTC(dt.localY, 6, 1, 12, 0, 0)) / 60000);
   const stdOff = max(janOff, julOff);
   const isDST = dt.tzOffMin < stdOff;
-  document.getElementById('utcOffsetText').textContent =
-    `UTC ${offSign}${offHrs} hrs (${isDST ? 'Daylight' : 'Standard'} Time)`;
+  const isLMT = dt.tzAbbr === 'LMT' || (janOff === julOff && offM !== 0);
+  const tzLabel = isLMT ? 'Local Mean Time' : isDST ? 'Daylight Time' : 'Standard Time';
+  document.getElementById('utcOffsetText').textContent = `UTC ${offStr} (${tzLabel})`;
 
   const vLonDisp = azToDisp(viewLonPrecise);
   if (viewFrame === 'equatorial') {

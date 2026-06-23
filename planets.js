@@ -217,3 +217,15 @@ function moonPosition(d, sunM, sunW) {
 
   return { lon, lat, dist };
 }
+
+// Geocentric → topocentric equatorial coordinates.
+// ra/dec in radians, distER in Earth radii. lstR = apparent LST (radians), latRad = observer latitude.
+// Returns [topoRA, topoDec] in radians.
+function topocentricCorrection(ra, dec, distER, lstR, latRad) {
+  const R_EARTH_AU = 6378.0 / 149597870.7;
+  const distAU = distER * R_EARTH_AU;
+  const [geoX, geoY, geoZ] = sph2xyz(ra, dec, distAU);
+  const [obsX, obsY, obsZ] = sph2xyz(lstR, latRad, R_EARTH_AU);
+  const tx = geoX - obsX, ty = geoY - obsY, tz = geoZ - obsZ;
+  return [atan2(ty, tx), atan2(tz, sqrt(tx * tx + ty * ty))];
+}

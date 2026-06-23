@@ -26,11 +26,30 @@ const mGalactic = (function() {
 // ---- Time and date ----
 
 // Calendar date → Julian Date. y/m/d are integers, ut is decimal hours UTC.
+// Applies Gregorian correction for dates on or after 15 Oct 1582; Julian calendar before.
 function julianDate(y, m, d, ut) {
   if (m <= 2) { y--; m += 12; }
   const A = floor(y / 100);
-  const B = 2 - A + floor(A / 4);
+  const gregorian = (y > 1582) || (y === 1582 && (m > 10 || (m === 10 && d >= 15)));
+  const B = gregorian ? 2 - A + floor(A / 4) : 0;
   return floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + d + ut / 24.0 + B - 1524.5;
+}
+
+// Julian Date → calendar date. Returns {y, m, d, ut} where y/m/d are integers
+// and ut is decimal hours UTC. Handles both Julian and Gregorian calendars.
+function calendarDate(jd) {
+  const z = floor(jd + 0.5);
+  const f = jd + 0.5 - z;
+  const a = z >= 2299161 ? z + 1 + floor((z - 1867216.25) / 36524.25) - floor((z - 1867216.25) / 36524.25 / 4) : z;
+  const b = a + 1524;
+  const c = floor((b - 122.1) / 365.25);
+  const d = floor(365.25 * c);
+  const e = floor((b - d) / 30.6001);
+  const day = b - d - floor(30.6001 * e);
+  const m = e < 14 ? e - 1 : e - 13;
+  const y = m > 2 ? c - 4716 : c - 4715;
+  const ut = f * 24;
+  return {y, m, d: day, ut};
 }
 
 // Greenwich Mean Sidereal Time from Julian Date. Returns degrees [0, 360).
@@ -68,12 +87,35 @@ function precessStar(ra0, dec0, pp) {
   return [atan2(A, B) + pp.zA, asin(max(-1, min(1, C)))];
 }
 
-// ---- Coordinate transforms ----
-
 // Mean obliquity of the ecliptic for century T. Returns radians.
 function obliquity(T) {
   return (23.439291 - 0.013004 * T) * DEG;
 }
+
+// IAU 1980 nutation, 3 dominant terms (~arcsecond accuracy).
+// T = Julian centuries from J2000. Returns {dPsi, dEps} in radians.
+function nutation(T) {
+  const Om    = (125.04452 - 1934.136261 * T) * DEG;
+  const Lsun  = (280.46646 + 36000.76983 * T) * DEG;
+  const Lmoon = (218.31654 + 481267.88134 * T) * DEG;
+  const dPsi = (-17.1996 * sin(Om) - 1.3187 * sin(2*Lsun) - 0.2274 * sin(2*Lmoon)) / 3600 * DEG;
+  const dEps = ( 9.2025 * cos(Om) + 0.5736 * cos(2*Lsun) + 0.0977 * cos(2*Lmoon)) / 3600 * DEG;
+  return { dPsi, dEps };
+}
+
+// Bennett's formula: true geometric alt → apparent alt (degrees).
+function refractionTrue2App(altDeg) {
+  if (altDeg < -0.5) return altDeg;
+  return altDeg + 1 / tan((altDeg + 7.31 / (altDeg + 4.4)) * DEG) / 60;
+}
+
+// Saemundsson's formula: apparent alt → true geometric alt (degrees).
+function refractionApp2True(altDeg) {
+  if (altDeg < -0.5) return altDeg;
+  return altDeg - 1.02 / tan((altDeg + 10.3 / (altDeg + 5.11)) * DEG) / 60;
+}
+
+// ---- Coordinate transforms ----
 
 // Ecliptic → equatorial. lam/beta/eps all in radians (of date).
 // Returns [ra, dec] in radians.
@@ -141,6 +183,8 @@ function uxyz2sph(x, y, z) {
   return [atan2(y, x), atan2(z, sqrt(x * x + y * y))];
 }
 
+// ---- Matrix helpers ----
+
 // Transpose a 3×3 matrix (row-major). For rotation matrices, transpose = inverse.
 function mtranspose(m) {
   return [m[0],m[3],m[6], m[1],m[4],m[7], m[2],m[5],m[8]];
@@ -157,3 +201,38 @@ function mmul(a, b) {
     a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8],
   ];
 }
+
+// ---- Frame rotation matrices ----
+
+// Build the J2000 equatorial → target frame rotation matrix.
+// frame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
+// jd: Julian Date. latRad: observer latitude (radians). lonDeg: observer longitude (degrees east).
+// Returns {mPrecess, mFrame, epsTrue, lstR}: mPrecess = J2000 → true equatorial of date,
+// mFrame = J2000 → target frame, epsTrue = true obliquity (radians),
+// lstR = apparent local sidereal time (radians).
+function frameMatrix(frame, jd, latRad, lonDeg) {
+  const T = (jd - 2451545.0) / 36525.0;
+  const pp = precessParams(T);
+  const nut = nutation(T);
+  const epsMean = obliquity(T);
+  const epsTrue = epsMean + nut.dEps;
+  const eqEq = nut.dPsi * cos(epsTrue);
+  const lstR = (localSiderealTime(jd, lonDeg) + eqEq * RAD) * DEG;
+  const mPrecY = [pp.cosT,0,-pp.sinT, 0,1,0, pp.sinT,0,pp.cosT];
+  const mPrecOnly = mmul(rz(pp.zA), mmul(mPrecY, rz(pp.zetaA)));
+  const mNut = mmul(rx(-epsTrue), mmul(rz(-nut.dPsi), rx(epsMean)));
+  const mPrecess = mmul(mNut, mPrecOnly);
+  let mFrame;
+  if (frame === 'horizon') {
+    const mEqAz = mmul(rx(latRad - PI/2), rz(-PI/2 - lstR));
+    mFrame = mmul(mEqAz, mPrecess);
+  } else if (frame === 'equatorial') {
+    mFrame = mPrecess;
+  } else if (frame === 'ecliptic') {
+    mFrame = mmul(rx(-epsTrue), mPrecess);
+  } else {
+    mFrame = mGalactic;
+  }
+  return { mPrecess, mFrame, epsTrue, lstR };
+}
+

@@ -216,10 +216,9 @@ function skymapDraw(canvas, params) {
   const jd = julianDate(dt.y, dt.m, dt.d, utHours);
   const T = (jd - 2451545.0) / 36525.0;           // Julian centuries from J2000
   const daysSinceJ2000 = jd - 2451545.0;
-  const lstDeg = localSiderealTime(jd, loc.lonDeg); // local sidereal time (degrees)
-  const lstR = lstDeg * DEG;                         // local sidereal time (radians)
-  const pp = precessParams(T);                       // IAU 1976 precession for this date
-  const epsNow = obliquity(T);                       // mean obliquity of ecliptic (radians)
+  const fm = frameMatrix(viewFrame, jd, loc.latRad, loc.lonDeg);
+  const epsTrue = fm.epsTrue;
+  const lstR = fm.lstR;
 
   // ---- View projection parameters ----
   const cx = W / 2, cy = H / 2;                     // canvas center (pixels)
@@ -243,16 +242,9 @@ function skymapDraw(canvas, params) {
   // M = mView · mFrame maps J2000 equatorial unit vectors to view coordinates.
   // mFrame: J2000 equatorial → current coordinate frame.
   // mView: current frame → stereographic projection (view center at +Z).
-  const mPrecY = [pp.cosT,0,-pp.sinT, 0,1,0, pp.sinT,0,pp.cosT];
-  const mPrecess = mmul(rz(pp.zA), mmul(mPrecY, rz(pp.zetaA)));  // J2000 → of-date equatorial
-  const mEqAz = mmul(rx(loc.latRad - PI/2), rz(-PI/2 - lstR));   // of-date equatorial → horizon
-  const mView = mmul(rx(vTheta), rz(vLon));                       // frame coords → view coords
-  let mFrame;
-  if (viewFrame === 'horizon') mFrame = mmul(mEqAz, mPrecess);
-  else if (viewFrame === 'equatorial') mFrame = mPrecess;
-  else if (viewFrame === 'ecliptic') mFrame = mmul(rx(-epsNow), mPrecess);
-  else mFrame = mGalactic;
+  const { mPrecess, mFrame } = fm;
   curMFrame = mFrame;
+  const mView = mmul(rx(vTheta), rz(vLon));                             // frame coords → view coords
   const M = mmul(mView, mFrame);       // combined: J2000 equatorial → view
   const mPT = mtranspose(mPrecess);    // inverse precession: of-date → J2000
 
@@ -608,7 +600,7 @@ function skymapDraw(canvas, params) {
       ctx.strokeStyle = frameColor('ecliptic', 0.9);
       ctx.lineWidth = 2;
       // Ecliptic pole in J2000: rotate equatorial pole (0,0,1) by obliquity around X
-      const se = sin(epsNow), ce = cos(epsNow);
+      const se = sin(epsTrue), ce = cos(epsTrue);
       const ejx = mPrecess[3]*(-se) + mPrecess[6]*ce;
       const ejy = mPrecess[4]*(-se) + mPrecess[7]*ce;
       const ejz = mPrecess[5]*(-se) + mPrecess[8]*ce;
@@ -830,7 +822,7 @@ function skymapDraw(canvas, params) {
 
     // Ecliptic of date → equatorial of date
     function bodyRaDec(lon, lat) {
-      return eclToEq(lon, lat, epsNow);
+      return eclToEq(lon, lat, epsTrue);
     }
 
     const [sunRA, sunDec] = bodyRaDec(sunEclLon, sunEclLat);
@@ -893,17 +885,9 @@ function skymapDraw(canvas, params) {
     const moonPos = moonPosition(d, sunM, sunW);
     const moonLon = moonPos.lon, moonLat = moonPos.lat, moonDistER = moonPos.dist;
 
-    const R_EARTH_KM = 6378.0;
-    const R_EARTH_AU = R_EARTH_KM / 149597870.7;
-    const moonDist = moonDistER * R_EARTH_AU;           // Moon distance in AU
     const moonAngArcmin = (MOON_DIAM_FACTOR / moonDistER) / 60;
-    const [moonRA, moonDec] = eclToEq(moonLon, moonLat, epsNow);
-    // Topocentric parallax: subtract observer's position from Moon's geocentric position
-    const [geoX, geoY, geoZ] = sph2xyz(moonRA, moonDec, moonDist);
-    const [obsX, obsY, obsZ] = sph2xyz(lstR, loc.latRad, R_EARTH_AU);
-    const topoX = geoX - obsX, topoY = geoY - obsY, topoZ = geoZ - obsZ;
-    const topoRA = atan2(topoY, topoX);
-    const topoDec = atan2(topoZ, sqrt(topoX*topoX + topoY*topoY));
+    const [moonRA, moonDec] = eclToEq(moonLon, moonLat, epsTrue);
+    const [topoRA, topoDec] = topocentricCorrection(moonRA, moonDec, moonDistER, lstR, loc.latRad);
     {
       const moonPt = projectEpochRaDec(topoRA, topoDec);
       if (moonPt) {
@@ -1170,18 +1154,7 @@ function changeFrame(newFrame, dt, loc) {
     // Build new frame's rotation matrix
     const utH = dt.h + dt.mi / 60 + dt.s / 3600;
     const jd = julianDate(dt.y, dt.m, dt.d, utH);
-    const T = (jd - 2451545.0) / 36525.0;
-    const pp = precessParams(T);
-    const epsNow = obliquity(T);
-    const lstR = localSiderealTime(jd, loc.lonDeg) * DEG;
-    const mPrecY = [pp.cosT,0,-pp.sinT, 0,1,0, pp.sinT,0,pp.cosT];
-    const mP = mmul(rz(pp.zA), mmul(mPrecY, rz(pp.zetaA)));
-    const mEA = mmul(rx(loc.latRad - PI/2), rz(-PI/2 - lstR));
-    let mNew;
-    if (newFrame === 'horizon') mNew = mmul(mEA, mP);
-    else if (newFrame === 'equatorial') mNew = mP;
-    else if (newFrame === 'ecliptic') mNew = mmul(rx(-epsNow), mP);
-    else mNew = mGalactic;
+    const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonDeg).mFrame;
     // J2000 equatorial → new frame → internal lon/lat
     const [nx, ny, nz] = mvmul(mNew, jx, jy, jz);
     viewLonPrecise = ((atan2(nx, ny) * RAD) % 360 + 360) % 360;
