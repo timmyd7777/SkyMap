@@ -23,6 +23,7 @@ let viewLonPrecise = 180, viewLatPrecise = 90, viewFovPrecise = 180;
 
 // Current coordinate frame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
 let viewFrame = 'horizon';
+let viewJ2000 = false;
 
 // Inverse projection function, set by skymapDraw() each frame.
 // (sx, sy) in canvas pixels → [lat, lon] in current frame (radians), or null.
@@ -45,6 +46,10 @@ let curMFrame = null;
 const PLANET_COLORS = {
   Mercury:'#b0b0b0', Venus:'#e8d060', Mars:'#e04020', Jupiter:'#d89040',
   Saturn:'#c8a830', Uranus:'#40b8c0', Neptune:'#3040d0', Pluto:'#a07050'
+};
+const PLANET_SYMBOLS = {
+  Sun:'☉', Moon:'☽', Mercury:'☿', Venus:'♀', Mars:'♂',
+  Jupiter:'♃', Saturn:'♄', Uranus:'♅', Neptune:'♆', Pluto:'♇'
 };
 
 // UI labels for the two coordinate axes in each frame.
@@ -167,8 +172,9 @@ function skymapInit() {
   }
   // Precess constellation boundary vertices from B1875 to J2000
   const T1875 = (2405889.25 - 2451545.0) / 36525.0;
-  const pp1875 = precessParams(T1875);
-  const mPrecY1875 = [pp1875.cosT,0,-pp1875.sinT, 0,1,0, pp1875.sinT,0,pp1875.cosT];
+  const pp1875 = precessAngles(T1875);
+  const cosT1875 = cos(pp1875.thetaA), sinT1875 = sin(pp1875.thetaA);
+  const mPrecY1875 = [cosT1875,0,-sinT1875, 0,1,0, sinT1875,0,cosT1875];
   const mJ2000toB1875 = mmul(rz(pp1875.zA), mmul(mPrecY1875, rz(pp1875.zetaA)));
   const mB1875toJ2000 = mtranspose(mJ2000toB1875);
   for (const con of Object.keys(BOUNDARIES)) {
@@ -202,7 +208,7 @@ function skymapDraw(canvas, params) {
     dt, loc, darkMode,
     showStars, showNames, showStarIds,
     showConst, showConstNames, showBounds,
-    showPlanets, showPlanetNames,
+    showPlanets, showPlanetSymbols, showPlanetNames, j2000,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
     showMilkyWay, showEcliptic, showCelEq, showGalEq,
     showGrid, showHeader,
@@ -216,9 +222,9 @@ function skymapDraw(canvas, params) {
   const jd = julianDate(dt.y, dt.m, dt.d, utHours);
   const T = (jd - 2451545.0) / 36525.0;           // Julian centuries from J2000
   const daysSinceJ2000 = jd - 2451545.0;
-  const fm = frameMatrix(viewFrame, jd, loc.latRad, loc.lonDeg);
-  const epsTrue = fm.epsTrue;
-  const lstR = fm.lstR;
+  const nut = nutation(T);
+  const epsTrue = obliquity(T) + nut.dEps;
+  const lstR = (localSiderealTime(jd, loc.lonDeg) + nut.dPsi * cos(epsTrue) * RAD) * DEG;
 
   // ---- View projection parameters ----
   const cx = W / 2, cy = H / 2;                     // canvas center (pixels)
@@ -242,7 +248,8 @@ function skymapDraw(canvas, params) {
   // M = mView · mFrame maps J2000 equatorial unit vectors to view coordinates.
   // mFrame: J2000 equatorial → current coordinate frame.
   // mView: current frame → stereographic projection (view center at +Z).
-  const { mPrecess, mFrame } = fm;
+  const mFrame = frameMatrix(viewFrame, jd, loc.latRad, loc.lonDeg, j2000);
+  const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonDeg, j2000);
   curMFrame = mFrame;
   const mView = mmul(rx(vTheta), rz(vLon));                             // frame coords → view coords
   const M = mmul(mView, mFrame);       // combined: J2000 equatorial → view
@@ -599,8 +606,9 @@ function skymapDraw(canvas, params) {
     if (showEcliptic) {
       ctx.strokeStyle = frameColor('ecliptic', 0.9);
       ctx.lineWidth = 2;
-      // Ecliptic pole in J2000: rotate equatorial pole (0,0,1) by obliquity around X
-      const se = sin(epsTrue), ce = cos(epsTrue);
+      // Ecliptic pole: rotate equatorial pole (0,0,1) by obliquity around X
+      const epsRef = j2000 ? obliquity(0) : epsTrue;
+      const se = sin(epsRef), ce = cos(epsRef);
       const ejx = mPrecess[3]*(-se) + mPrecess[6]*ce;
       const ejy = mPrecess[4]*(-se) + mPrecess[7]*ce;
       const ejz = mPrecess[5]*(-se) + mPrecess[8]*ce;
@@ -820,13 +828,18 @@ function skymapDraw(canvas, params) {
     const sunW = sun.w, sunM = sun.M, sunR = sun.r;
     const sunEclLon = sun.lon, sunEclLat = sun.lat;
 
-    // Ecliptic of date → equatorial of date
+    // Ecliptic → equatorial. When j2000, apply Schlyter precession correction
+    // to shift ecliptic longitude from of-date to J2000.
+    const lonCorr = j2000 ? eclLonJ2000Corr(d) : 0;
+    const bodyEps = j2000 ? obliquity(0) : epsTrue;
     function bodyRaDec(lon, lat) {
-      return eclToEq(lon, lat, epsTrue);
+      return eclToEq(lon + lonCorr, lat, bodyEps);
     }
 
     const [sunRA, sunDec] = bodyRaDec(sunEclLon, sunEclLat);
     const sunAngArcmin = (SUN_DIAM1AU / sunR) / 60;
+
+    const symFontSize = `${max(minFontSize,round(min(W,H)/42))}px sans-serif`;
 
     // Sun
     {
@@ -834,13 +847,20 @@ function skymapDraw(canvas, params) {
       if (sunPt) {
         const [sx, sy] = sunPt;
         const sunRad = max(4, min(W, H) / 100, arcminToPx(sx, sy, sunAngArcmin) / 2);
-        ctx.fillStyle = '#fd0';
-        ctx.beginPath(); ctx.arc(sx, sy, sunRad, 0, TAU); ctx.fill();
+        if (showPlanetSymbols) {
+          ctx.fillStyle = '#fd0';
+          ctx.font = symFontSize;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(PLANET_SYMBOLS.Sun, sx, sy);
+        } else {
+          ctx.fillStyle = '#fd0';
+          ctx.beginPath(); ctx.arc(sx, sy, sunRad, 0, TAU); ctx.fill();
+        }
         drawnObjects.push({x: sx, y: sy, r: sunRad, type: 'sun', data: {name: 'Sun', mag: -26.74, dist: sunR}});
         if (showPlanetNames) {
           ctx.fillStyle = darkMode ? '#fff' : '#000';
           ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
-          ctx.textAlign = 'center';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, sunRad + 4, 'Sun');
         }
       }
@@ -869,14 +889,21 @@ function skymapDraw(canvas, params) {
       const ppt = projectEpochRaDec(pRA, pDec);
       if (!ppt) continue;
       const [sx, sy] = ppt;
-      ctx.fillStyle = PLANET_COLORS[p.name];
       const pr = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-      ctx.beginPath(); ctx.arc(sx, sy, pr, 0, TAU); ctx.fill();
+      if (showPlanetSymbols) {
+        ctx.fillStyle = PLANET_COLORS[p.name];
+        ctx.font = symFontSize;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(PLANET_SYMBOLS[p.name], sx, sy);
+      } else {
+        ctx.fillStyle = PLANET_COLORS[p.name];
+        ctx.beginPath(); ctx.arc(sx, sy, pr, 0, TAU); ctx.fill();
+      }
       drawnObjects.push({x: sx, y: sy, r: pr, type: 'planet', data: {name: p.name, mag: rawMag, helioDist: h.r, geoDist, phaseAngle: FVdeg}});
       if (showPlanetNames) {
         ctx.fillStyle = darkMode ? '#ccc' : '#222';
         ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
-        ctx.textAlign = 'left';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         placeLabel(sx, sy, pr + 3, p.name);
       }
     }
@@ -899,46 +926,53 @@ function skymapDraw(canvas, params) {
         const moonVmag = moonMag(sunR, moonDistER, abs(moonFVdeg));
         drawnObjects.push({x: msx, y: msy, r: phaseR, type: 'moon', data: {name: 'Moon', mag: moonVmag, dist: moonDistER, phase: moonPhase}});
 
-        // Dark disk
-        ctx.fillStyle = darkMode ? '#333' : '#555';
-        ctx.beginPath(); ctx.arc(msx, msy, phaseR, 0, TAU); ctx.fill();
+        if (showPlanetSymbols) {
+          ctx.fillStyle = darkMode ? '#ddd' : '#444';
+          ctx.font = symFontSize;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(PLANET_SYMBOLS.Moon, msx, msy);
+        } else {
+          // Dark disk
+          ctx.fillStyle = darkMode ? '#333' : '#555';
+          ctx.beginPath(); ctx.arc(msx, msy, phaseR, 0, TAU); ctx.fill();
 
-        // Lit crescent/gibbous — orientation from offset-projection toward Sun
-        if (moonPhase > 0.05 && moonPhase < TAU - 0.05) {
-          const [mx3, my3, mz3] = sph2uxyz(topoRA, topoDec);
-          const [sx3, sy3, sz3] = sph2uxyz(sunRA, sunDec);
-          const ox = mx3 + 0.01*(sx3 - mx3), oy = my3 + 0.01*(sy3 - my3), oz = mz3 + 0.01*(sz3 - mz3);
-          const ol = sqrt(ox*ox + oy*oy + oz*oz);
-          const offPt = projectEpochRaDec(atan2(oy/ol, ox/ol), asin(oz/ol));
-          const toSunAngle = offPt ? atan2(msy - offPt[1], offPt[0] - msx) : 0;
-          const k = cos(moonPhase);
-          ctx.fillStyle = 'rgba(240,240,220,0.95)';
-          ctx.beginPath();
-          // Lit semicircle edge (toward Sun)
-          for (let i = 0; i <= 24; i++) {
-            const t = PI/2 - i*PI/24;
-            const bx = phaseR*cos(t), by = phaseR*sin(t);
-            const rx = msx + bx*cos(toSunAngle) - by*sin(toSunAngle);
-            const ry = msy - bx*sin(toSunAngle) - by*cos(toSunAngle);
-            if (i===0) ctx.moveTo(rx,ry); else ctx.lineTo(rx,ry);
+          // Lit crescent/gibbous — orientation from offset-projection toward Sun
+          if (moonPhase > 0.05 && moonPhase < TAU - 0.05) {
+            const [mx3, my3, mz3] = sph2uxyz(topoRA, topoDec);
+            const [sx3, sy3, sz3] = sph2uxyz(sunRA, sunDec);
+            const ox = mx3 + 0.01*(sx3 - mx3), oy = my3 + 0.01*(sy3 - my3), oz = mz3 + 0.01*(sz3 - mz3);
+            const ol = sqrt(ox*ox + oy*oy + oz*oz);
+            const offPt = projectEpochRaDec(atan2(oy/ol, ox/ol), asin(oz/ol));
+            const toSunAngle = offPt ? atan2(msy - offPt[1], offPt[0] - msx) : 0;
+            const k = cos(moonPhase);
+            ctx.fillStyle = 'rgba(240,240,220,0.95)';
+            ctx.beginPath();
+            // Lit semicircle edge (toward Sun)
+            for (let i = 0; i <= 24; i++) {
+              const t = PI/2 - i*PI/24;
+              const bx = phaseR*cos(t), by = phaseR*sin(t);
+              const rx = msx + bx*cos(toSunAngle) - by*sin(toSunAngle);
+              const ry = msy - bx*sin(toSunAngle) - by*cos(toSunAngle);
+              if (i===0) ctx.moveTo(rx,ry); else ctx.lineTo(rx,ry);
+            }
+            // Terminator edge (cosine-scaled for phase)
+            for (let i = 0; i <= 24; i++) {
+              const t = -PI/2 + i*PI/24;
+              const bx = phaseR*k*cos(t), by = phaseR*sin(t);
+              const rx = msx + bx*cos(toSunAngle) - by*sin(toSunAngle);
+              const ry = msy - bx*sin(toSunAngle) - by*cos(toSunAngle);
+              ctx.lineTo(rx,ry);
+            }
+            ctx.closePath(); ctx.fill();
           }
-          // Terminator edge (cosine-scaled for phase)
-          for (let i = 0; i <= 24; i++) {
-            const t = -PI/2 + i*PI/24;
-            const bx = phaseR*k*cos(t), by = phaseR*sin(t);
-            const rx = msx + bx*cos(toSunAngle) - by*sin(toSunAngle);
-            const ry = msy - bx*sin(toSunAngle) - by*cos(toSunAngle);
-            ctx.lineTo(rx,ry);
-          }
-          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = 0.5;
+          ctx.beginPath(); ctx.arc(msx, msy, phaseR, 0, TAU); ctx.stroke();
         }
-        ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = 0.5;
-        ctx.beginPath(); ctx.arc(msx, msy, phaseR, 0, TAU); ctx.stroke();
 
         if (showPlanetNames) {
           ctx.fillStyle = darkMode ? '#fff' : '#000';
           ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
-          ctx.textAlign = 'center';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(msx, msy, phaseR + 4, 'Moon');
         }
       }
@@ -1144,8 +1178,8 @@ function pickObject(canvasX, canvasY) {
 // newFrame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
 // dt: {y,m,d,h,mi,s} in UTC. loc: {latRad, lonRad, latDeg, lonDeg}.
 // Updates viewLonPrecise, viewLatPrecise, viewFrame globals. Does NOT redraw.
-function changeFrame(newFrame, dt, loc) {
-  if (newFrame === viewFrame) return;
+function changeFrame(newFrame, j2000, dt, loc) {
+  if (newFrame === viewFrame && j2000 === viewJ2000) return;
   if (curMFrame) {
     // Current view center → J2000 equatorial unit vector
     const lon = viewLonPrecise * DEG, lat = viewLatPrecise * DEG;
@@ -1154,11 +1188,12 @@ function changeFrame(newFrame, dt, loc) {
     // Build new frame's rotation matrix
     const utH = dt.h + dt.mi / 60 + dt.s / 3600;
     const jd = julianDate(dt.y, dt.m, dt.d, utH);
-    const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonDeg).mFrame;
+    const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonDeg, j2000);
     // J2000 equatorial → new frame → internal lon/lat
     const [nx, ny, nz] = mvmul(mNew, jx, jy, jz);
     viewLonPrecise = ((atan2(nx, ny) * RAD) % 360 + 360) % 360;
     viewLatPrecise = max(-90, min(90, asin(max(-1, min(1, nz))) * RAD));
   }
   viewFrame = newFrame;
+  viewJ2000 = j2000;
 }

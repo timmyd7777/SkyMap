@@ -160,7 +160,9 @@ canvas { display: block; }
     <select id="viewFrame" style="font-size:12px; width:100%; margin-bottom:4px;" autocomplete="off">
       <option value="horizon" selected>Horizon</option>
       <option value="equatorial">Equatorial</option>
+      <option value="equatorial_j2000">Equatorial (J2000)</option>
       <option value="ecliptic">Ecliptic</option>
+      <option value="ecliptic_j2000">Ecliptic (J2000)</option>
       <option value="galactic">Galactic</option>
     </select>
     <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
@@ -179,9 +181,11 @@ canvas { display: block; }
   <div>
     <label style="text-align:center; display:block;">Other Options</label>
     <div style="line-height:1.8;">
-      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showStars" checked autocomplete="off"> Stars</label><span style="display:flex;gap:6px"><label style="margin:0"><input type="checkbox" id="showStarIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showNames" checked autocomplete="off"> Names</label></span></div>
-      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showDeepSky" autocomplete="off"> Deep Sky</label><span style="display:flex;gap:6px"><label style="margin:0"><input type="checkbox" id="showDeepSkyIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showDeepSkyNames" autocomplete="off"> Names</label></span></div>
-      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showPlanets" checked autocomplete="off"> Sun, Moon, Planets</label><label><input type="checkbox" id="showPlanetNames" checked autocomplete="off"> Names</label></div>
+      <div style="display:grid; grid-template-columns:1fr auto auto; gap:0 6px; align-items:center;">
+        <label><input type="checkbox" id="showStars" checked autocomplete="off"> Stars</label><label style="margin:0"><input type="checkbox" id="showStarIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showNames" checked autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showDeepSky" autocomplete="off"> Deep Sky</label><label style="margin:0"><input type="checkbox" id="showDeepSkyIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showDeepSkyNames" autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showPlanets" checked autocomplete="off"> Planets</label><label style="margin:0"><input type="checkbox" id="showPlanetSymbols" autocomplete="off"> Sym</label><label style="margin:0"><input type="checkbox" id="showPlanetNames" checked autocomplete="off"> Names</label>
+      </div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showConst" checked autocomplete="off"> Constellations</label><label><input type="checkbox" id="showConstNames" checked autocomplete="off"> Names</label></div>
       <label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label>
       <label><input type="checkbox" id="showMilkyWay" checked autocomplete="off"> Milky Way</label>
@@ -209,9 +213,9 @@ canvas { display: block; }
 <script src="milkyway.js?v=4"></script>
 <script src="deepsky.js?v=4"></script>
 <script src="cities.js?v=4"></script>
-<script src="astromath.js?v=6"></script>
-<script src="planets.js?v=6"></script>
-<script src="skymap.js?v=2"></script>
+<script src="astromath.js?v=7"></script>
+<script src="planets.js?v=7"></script>
+<script src="skymap.js?v=3"></script>
 <script>
 
 // ---- Time zone helpers ----
@@ -526,7 +530,9 @@ function draw() {
     showConstNames: document.getElementById('showConstNames').checked,
     showBounds: document.getElementById('showBounds').checked,
     showPlanets: document.getElementById('showPlanets').checked,
+    showPlanetSymbols: document.getElementById('showPlanetSymbols').checked,
     showPlanetNames: document.getElementById('showPlanetNames').checked,
+    j2000: viewJ2000,
     showDeepSky: document.getElementById('showDeepSky').checked,
     showDeepSkyNames: document.getElementById('showDeepSkyNames').checked,
     showDeepSkyIds: document.getElementById('showDeepSkyIds').checked,
@@ -610,15 +616,17 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {
     r.addEventListener('change', () => draw());
   }
   document.getElementById('viewFrame').addEventListener('change', () => {
-    const newFrame = document.getElementById('viewFrame').value;
-    changeFrame(newFrame, getDateTimeFromFields(), getLocation());
+    const val = document.getElementById('viewFrame').value;
+    const j2000 = val.endsWith('_j2000');
+    const newFrame = j2000 ? val.replace('_j2000', '') : val;
+    changeFrame(newFrame, j2000, getDateTimeFromFields(), getLocation());
     updateFrameLabels();
     syncSlidersFromPrecise();
     draw();

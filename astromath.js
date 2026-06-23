@@ -67,23 +67,27 @@ function localSiderealTime(jd, lonDeg) {
 
 // ---- IAU 1976 Precession ----
 
-// Precession parameters for century T = (JD - J2000) / 36525.
-// Returns {zetaA, zA, cosT, sinT} — angles in radians, trig of thetaA precomputed.
-function precessParams(T) {
-  const zetaA = (0.6406161 * T + 0.0000839 * T*T + 0.0000050 * T*T*T) * DEG;
-  const zA    = (0.6406161 * T + 0.0003041 * T*T + 0.0000051 * T*T*T) * DEG;
-  const thetaA= (0.5567530 * T - 0.0001185 * T*T - 0.0000116 * T*T*T) * DEG;
-  return { zetaA, zA, cosT: cos(thetaA), sinT: sin(thetaA) };
+// IAU 1976 precession angles (Lieske 1979) for century T = (JD - J2000) / 36525.
+// Returns {zetaA, zA, thetaA} in radians.
+function precessAngles(T) {
+  const a = DEG / 3600;
+  const T2 = T * T, T3 = T2 * T;
+  return {
+    zetaA:  (2306.2181 * T + 0.30188 * T2 + 0.017998 * T3) * a,
+    zA:     (2306.2181 * T + 1.09468 * T2 + 0.018203 * T3) * a,
+    thetaA: (2004.3109 * T - 0.42665 * T2 - 0.041775 * T3) * a
+  };
 }
 
 // Precess a single star from J2000 to date. ra0/dec0 in radians (J2000),
-// pp from precessParams(). Returns [ra, dec] in radians (of date).
+// pp from precessAngles(). Returns [ra, dec] in radians (of date).
 function precessStar(ra0, dec0, pp) {
   const cosD = cos(dec0), sinD = sin(dec0);
+  const cosT = cos(pp.thetaA), sinT = sin(pp.thetaA);
   const raZ = ra0 + pp.zetaA;
   const A = cosD * sin(raZ);
-  const B = pp.cosT * cosD * cos(raZ) - pp.sinT * sinD;
-  const C = pp.sinT * cosD * cos(raZ) + pp.cosT * sinD;
+  const B = cosT * cosD * cos(raZ) - sinT * sinD;
+  const C = sinT * cosD * cos(raZ) + cosT * sinD;
   return [atan2(A, B) + pp.zA, asin(max(-1, min(1, C)))];
 }
 
@@ -207,32 +211,32 @@ function mmul(a, b) {
 // Build the J2000 equatorial → target frame rotation matrix.
 // frame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
 // jd: Julian Date. latRad: observer latitude (radians). lonDeg: observer longitude (degrees east).
-// Returns {mPrecess, mFrame, epsTrue, lstR}: mPrecess = J2000 → true equatorial of date,
-// mFrame = J2000 → target frame, epsTrue = true obliquity (radians),
-// lstR = apparent local sidereal time (radians).
-function frameMatrix(frame, jd, latRad, lonDeg) {
+// j2000: if true, return J2000 mean frame (no precession/nutation) for equatorial/ecliptic.
+// Returns a 3×3 rotation matrix (9-element row-major array).
+function frameMatrix(frame, jd, latRad, lonDeg, j2000) {
+  if (j2000 && frame === 'equatorial') return [1,0,0, 0,1,0, 0,0,1];
+  if (j2000 && frame === 'ecliptic')   return rx(-obliquity(0));
   const T = (jd - 2451545.0) / 36525.0;
-  const pp = precessParams(T);
+  const pp = precessAngles(T);
   const nut = nutation(T);
   const epsMean = obliquity(T);
   const epsTrue = epsMean + nut.dEps;
   const eqEq = nut.dPsi * cos(epsTrue);
   const lstR = (localSiderealTime(jd, lonDeg) + eqEq * RAD) * DEG;
-  const mPrecY = [pp.cosT,0,-pp.sinT, 0,1,0, pp.sinT,0,pp.cosT];
+  const cosT = cos(pp.thetaA), sinT = sin(pp.thetaA);
+  const mPrecY = [cosT,0,-sinT, 0,1,0, sinT,0,cosT];
   const mPrecOnly = mmul(rz(pp.zA), mmul(mPrecY, rz(pp.zetaA)));
   const mNut = mmul(rx(-epsTrue), mmul(rz(-nut.dPsi), rx(epsMean)));
   const mPrecess = mmul(mNut, mPrecOnly);
-  let mFrame;
   if (frame === 'horizon') {
     const mEqAz = mmul(rx(latRad - PI/2), rz(-PI/2 - lstR));
-    mFrame = mmul(mEqAz, mPrecess);
+    return mmul(mEqAz, mPrecess);
   } else if (frame === 'equatorial') {
-    mFrame = mPrecess;
+    return mPrecess;
   } else if (frame === 'ecliptic') {
-    mFrame = mmul(rx(-epsTrue), mPrecess);
+    return mmul(rx(-epsTrue), mPrecess);
   } else {
-    mFrame = mGalactic;
+    return mGalactic;
   }
-  return { mPrecess, mFrame, epsTrue, lstR };
 }
 

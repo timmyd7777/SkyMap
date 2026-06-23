@@ -229,3 +229,9 @@ function topocentricCorrection(ra, dec, distER, lstR, latRad) {
   const tx = geoX - obsX, ty = geoY - obsY, tz = geoZ - obsZ;
   return [atan2(ty, tx), atan2(tz, sqrt(tx * tx + ty * ty))];
 }
+
+// Ecliptic longitude precession correction from of-date to J2000 (Schlyter, ppcomp section 8).
+// d = Schlyter day number (JD - 2451543.5). Returns correction in radians.
+function eclLonJ2000Corr(d) {
+  return -3.82394e-5 * d * DEG;
+}
