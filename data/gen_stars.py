@@ -8,6 +8,7 @@ import math, os, sys, re, urllib.request
 
 DOWNLOAD_FILES = {
     'brightest.csv': 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/Stars/Brightest.csv',
+    'sky2000.csv': 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/Stars/SKY2000.csv',
 }
 
 if len(sys.argv) != 3:
@@ -120,31 +121,6 @@ def parse_star_line(line):
 
     return results
 
-# Read constellation shapes (uses HR numbers)
-constellations = {}
-with open('shapes.csv') as f:
-    for line in f:
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        parts = line.split(',')
-        if len(parts) != 3:
-            continue
-        con = parts[0].strip()
-        try:
-            hr1, hr2 = int(parts[1].strip()), int(parts[2].strip())
-        except ValueError:
-            continue
-        if con not in constellations:
-            constellations[con] = []
-        constellations[con].append((hr1, hr2))
-
-used_hrs = set()
-for lines in constellations.values():
-    for h1, h2 in lines:
-        used_hrs.add(h1)
-        used_hrs.add(h2)
-
 # Parse all stars
 all_stars = {}
 with open(INPUT_FILE) as f:
@@ -156,19 +132,8 @@ with open(INPUT_FILE) as f:
                 if k not in all_stars or result['mag'] < all_stars[k]['mag']:
                     all_stars[k] = result
 
-# Filter by magnitude, but always include constellation endpoint stars
-stars = []
-hr_included = set()
-for s in all_stars.values():
-    needed = s['hr'] in used_hrs
-    if s['mag'] <= MAG_LIMIT or needed:
-        stars.append(s)
-        if s['hr']:
-            hr_included.add(s['hr'])
-
-missing_hrs = used_hrs - hr_included
-if missing_hrs:
-    print(f"Warning: {len(missing_hrs)} constellation HR stars not found: {sorted(missing_hrs)[:20]}", file=sys.stderr)
+# Filter by magnitude
+stars = [s for s in all_stars.values() if s['mag'] <= MAG_LIMIT]
 
 stars.sort(key=lambda s: (s['hr'] == 0, s['hr'], s['ra']))
 
