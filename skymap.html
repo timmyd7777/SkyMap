@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sky Map</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: sans-serif; display: flex; flex-direction: row; transition: background 0.2s, color 0.2s; }
+body.dark { background: #000; color: #ccc; }
+body.light { background: #fff; color: #222; }
+#sidebar { width: 240px; min-width: 240px; padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+body.dark #sidebar { border-right: 1px solid #333; }
+body.light #sidebar { border-right: 1px solid #ccc; }
+#sidebar label { font-size: 13px; display: block; margin-bottom: 2px; }
+#sidebar input[type="text"] { font-size: 13px; padding: 4px 6px; }
+body.dark #sidebar input[type="text"] { background: #222; color: #ccc; border: 1px solid #555; }
+body.light #sidebar input[type="text"] { background: #fff; color: #222; border: 1px solid #aaa; }
+#sidebar select { font-size: 12px; padding: 3px 4px; width: 100%; }
+body.dark #sidebar select { background: #222; color: #ccc; border: 1px solid #555; }
+body.light #sidebar select { background: #fff; color: #222; border: 1px solid #aaa; }
+#sidebar .row { display: flex; gap: 6px; align-items: center; }
+#sidebar .row button { flex: 1; }
+button { cursor: pointer; border-radius: 3px; font-size: 13px; padding: 4px 8px; }
+body.dark button { background: #333; color: #ccc; border: 1px solid #555; }
+body.dark button:hover { background: #444; }
+body.light button { background: #ddd; color: #222; border: 1px solid #aaa; }
+body.light button:hover { background: #ccc; }
+button.active { background: #68a !important; color: #fff !important; border-color: #8bc !important; }
+#stepMenu { border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+body.dark #stepMenu { background: #333; border: 1px solid #555; }
+body.light #stepMenu { background: #fff; border: 1px solid #888; }
+.step-opt { padding: 4px 12px; cursor: pointer; font-size: 13px; }
+body.dark .step-opt { color: #ccc; }
+body.light .step-opt { color: #222; }
+body.dark .step-opt:hover { background: #444; }
+body.light .step-opt:hover { background: #dde8f0; }
+.date-picker { display: flex; align-items: center; gap: 2px; }
+.date-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.date-col label { font-size: 11px; margin-bottom: 0; }
+.date-col input { text-align: center; font-size: 14px; font-family: monospace; padding: 3px 2px; width: 100%; }
+button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
+#display { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+canvas { display: block; }
+#panelToggle { position: absolute; top: 8px; left: 8px; z-index: 1; font-size: 18px; width: 32px; height: 32px; padding: 0; line-height: 32px; text-align: center; opacity: 0.6; }
+#panelToggle:hover { opacity: 1; }
+.loc-row { display: flex; align-items: center; gap: 3px; margin: 3px 0; }
+.loc-row input[type="text"] { text-align: center; font-size: 13px; font-family: monospace; padding: 3px 2px; width: 36px; }
+.loc-row .deg-input { width: 42px; }
+.loc-row .unit { font-size: 12px; margin: 0 1px; }
+.loc-row .radio-group { display: flex; gap: 2px; margin-left: 4px; }
+.loc-row .radio-group label { font-size: 12px; margin-bottom: 0; display: inline-flex; align-items: center; gap: 1px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div>
+    <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
+      <label style="text-align:center; width:120px;">Date</label>
+      <label style="text-align:center; width:105px;">Time</label>
+    </div>
+    <div class="date-picker" style="justify-content:space-between;">
+      <div style="display:flex; gap:2px;">
+        <div class="date-col">
+          <label>Year</label>
+          <button class="arr" tabindex="-1" onclick="stepPart('y',1)">&#x25B2;</button>
+          <input type="text" id="dpYear" size="4" maxlength="5" style="width:48px" tabindex="1">
+          <button class="arr" tabindex="-1" onclick="stepPart('y',-1)">&#x25BC;</button>
+        </div>
+        <div class="date-col">
+          <label>Mo</label>
+          <button class="arr" tabindex="-1" onclick="stepPart('m',1)">&#x25B2;</button>
+          <input type="text" id="dpMonth" size="2" maxlength="2" style="width:32px" tabindex="2">
+          <button class="arr" tabindex="-1" onclick="stepPart('m',-1)">&#x25BC;</button>
+        </div>
+        <div class="date-col">
+          <label>Day</label>
+          <button class="arr" tabindex="-1" onclick="stepPart('d',1)">&#x25B2;</button>
+          <input type="text" id="dpDay" size="2" maxlength="2" style="width:32px" tabindex="3">
+          <button class="arr" tabindex="-1" onclick="stepPart('d',-1)">&#x25BC;</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:2px;">
+        <div class="date-col">
+          <label>Hr</label>
+          <button class="arr" tabindex="-1" onclick="stepTimePart('h',1)">&#x25B2;</button>
+          <input type="text" id="tpHour" size="2" maxlength="2" style="width:32px" tabindex="4">
+          <button class="arr" tabindex="-1" onclick="stepTimePart('h',-1)">&#x25BC;</button>
+        </div>
+        <div class="date-col">
+          <label>Min</label>
+          <button class="arr" tabindex="-1" onclick="stepTimePart('mi',1)">&#x25B2;</button>
+          <input type="text" id="tpMin" size="2" maxlength="2" style="width:32px" tabindex="5">
+          <button class="arr" tabindex="-1" onclick="stepTimePart('mi',-1)">&#x25BC;</button>
+        </div>
+        <div class="date-col">
+          <label>Sec</label>
+          <button class="arr" tabindex="-1" onclick="stepTimePart('s',1)">&#x25B2;</button>
+          <input type="text" id="tpSec" size="2" maxlength="2" style="width:32px" tabindex="6">
+          <button class="arr" tabindex="-1" onclick="stepTimePart('s',-1)">&#x25BC;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <button onclick="setNow()">Now</button>
+    <button id="btnBack" onclick="toggleAnim(-1)">&#x25C0;</button>
+    <span style="position:relative;display:inline-block">
+      <button id="btnStep" onclick="toggleStepMenu()" style="box-sizing:border-box;height:100%">Day</button>
+      <div id="stepMenu" style="display:none;position:absolute;left:0;z-index:10;white-space:nowrap">
+        <div class="step-opt" data-key="1y" onclick="setAnimStep('1y')">Year</div>
+        <div class="step-opt" data-key="1m" onclick="setAnimStep('1m')">Month</div>
+        <div class="step-opt" data-key="1d" onclick="setAnimStep('1d')">Day</div>
+        <div class="step-opt" data-key="1h" onclick="setAnimStep('1h')">Hour</div>
+        <div class="step-opt" data-key="1mi" onclick="setAnimStep('1mi')">Min</div>
+        <div class="step-opt" data-key="1s" onclick="setAnimStep('1s')">Sec</div>
+      </div>
+    </span>
+    <button id="btnFwd" onclick="toggleAnim(1)">&#x25B6;</button>
+  </div>
+  <div>
+    <label style="margin-bottom:2px; text-align:center; display:block;">Time Zone</label>
+    <select id="tzSelect"></select>
+  </div>
+  <div id="utcOffsetText" style="font-size:12px;"></div>
+  <div>
+	<label style="margin-bottom:4px; margin-top:4px; text-align:center;">Longitude &amp; Latitude</label>
+    <div class="loc-row">
+      <input type="text" id="lonDeg" class="deg-input" maxlength="3" tabindex="10">
+      <span class="unit">&deg;</span>
+      <input type="text" id="lonMin" maxlength="2" tabindex="11">
+      <span class="unit">&prime;</span>
+      <input type="text" id="lonSec" maxlength="2" tabindex="12">
+      <span class="unit">&Prime;</span>
+      <span class="radio-group">
+        <label><input type="radio" name="lonEW" value="E" checked> E</label>
+        <label><input type="radio" name="lonEW" value="W"> W</label>
+      </span>
+    </div>
+    <div class="loc-row">
+      <input type="text" id="latDeg" class="deg-input" maxlength="2" tabindex="7">
+      <span class="unit">&deg;</span>
+      <input type="text" id="latMin" maxlength="2" tabindex="8">
+      <span class="unit">&prime;</span>
+      <input type="text" id="latSec" maxlength="2" tabindex="9">
+      <span class="unit">&Prime;</span>
+      <span class="radio-group">
+        <label><input type="radio" name="latNS" value="N" checked> N</label>
+        <label><input type="radio" name="latNS" value="S"> S</label>
+      </span>
+    </div>
+    <button onclick="geolocate()" style="margin-top:4px;width:100%">Get Location from Wi-Fi</button>
+    <div style="font-size:12px; margin-top:6px; text-align:center;">or choose country and city:</div>
+    <select id="countrySelect" style="margin-top:3px;"></select>
+    <select id="citySelect" style="margin-top:3px;"></select>
+  </div>
+  <div>
+    <label style="text-align:center; display:block;">Field of View</label>
+    <select id="viewFrame" style="font-size:12px; width:100%; margin-bottom:4px;" autocomplete="off">
+      <option value="horizon" selected>Horizon</option>
+      <option value="equatorial">Equatorial</option>
+      <option value="ecliptic">Ecliptic</option>
+      <option value="galactic">Galactic</option>
+    </select>
+    <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
+      <span id="viewAzLabel">Azimuth</span><span id="viewAzVal">180°</span>
+    </div>
+    <input type="range" id="viewAz" min="0" max="360" value="180" autocomplete="off" style="width:100%">
+    <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
+      <span id="viewAltLabel">Altitude</span><span id="viewAltVal">90°</span>
+    </div>
+    <input type="range" id="viewAlt" min="-90" max="90" value="90" autocomplete="off" style="width:100%">
+    <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
+      <span>Size</span><span id="viewWidthVal">180°</span>
+    </div>
+    <input type="range" id="viewWidth" min="10" max="180" value="180" autocomplete="off" style="width:100%">
+  </div>
+  <div>
+    <label style="text-align:center; display:block;">Other Options</label>
+    <div style="line-height:1.8;">
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showStars" checked autocomplete="off"> Stars</label><span style="display:flex;gap:6px"><label style="margin:0"><input type="checkbox" id="showStarIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showNames" checked autocomplete="off"> Names</label></span></div>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showDeepSky" autocomplete="off"> Deep Sky</label><span style="display:flex;gap:6px"><label style="margin:0"><input type="checkbox" id="showDeepSkyIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showDeepSkyNames" autocomplete="off"> Names</label></span></div>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showPlanets" checked autocomplete="off"> Sun, Moon, Planets</label><label><input type="checkbox" id="showPlanetNames" checked autocomplete="off"> Names</label></div>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showConst" checked autocomplete="off"> Constellations</label><label><input type="checkbox" id="showConstNames" checked autocomplete="off"> Names</label></div>
+      <label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label>
+      <label><input type="checkbox" id="showMilkyWay" checked autocomplete="off"> Milky Way</label>
+      <label><input type="checkbox" id="showEcliptic" checked autocomplete="off"> Ecliptic</label>
+      <label><input type="checkbox" id="showCelEq" autocomplete="off"> Celestial Equator</label>
+      <label><input type="checkbox" id="showGalEq" autocomplete="off"> Galactic Equator</label>
+      <label><input type="checkbox" id="showGrid" autocomplete="off"> Coordinate Grid</label>
+      <label><input type="checkbox" id="showHeader" checked autocomplete="off"> Header</label>
+      <label><input type="checkbox" id="darkToggle" checked autocomplete="off"> Dark Mode</label>
+    </div>
+  </div>
+  <div>
+    <button onclick="savePNG()">Save PNG</button>
+  </div>
+  <div style="font-size:13px; line-height:1.4; opacity:0.7; margin-top:4px;">
+    <p>This map shows the sky from any date and time from 1900 to 2100 and any location on Earth, with <a href="http://tdc-www.harvard.edu/catalogs/bsc5.html" target="_blank" style="color:inherit;">bright stars</a> to magnitude ~6.5 on mobile, <a href="https://cdsarc.unistra.fr/viz-bin/cat/V/145" target="_blank" style="color:inherit;">more stars</a> to magnitude 9 on desktop, and <a href="https://stjarnhimlen.se/comp/ppcomp.html" target="_blank" style="color:inherit;">planet positions</a> to arcminute accuracy.</p>
+    <p><br>For a solar system map that shows how the planets' orbital motion relates to their paths across the constellations, click <a href="ssmap.html">here</a>.</p>
+  </div>
+</div>
+<div id="display">
+  <button id="panelToggle" onclick="togglePanel()" title="Toggle control panel">&#9776;</button>
+  <canvas id="cv"></canvas>
+</div>
+<script src="constellations.js?v=6"></script>
+<script src="milkyway.js?v=4"></script>
+<script src="deepsky.js?v=4"></script>
+<script src="cities.js?v=4"></script>
+<script src="astromath.js?v=5"></script>
+<script src="planets.js?v=5"></script>
+<script src="skymap.js?v=1"></script>
+<script>
+
+// ---- Time zone helpers ----
+const systemTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let selectedTZ = systemTZ;
+
+function utcToLocal(utcMs) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: selectedTZ, year:'numeric', month:'numeric', day:'numeric',
+    hour:'numeric', minute:'numeric', second:'numeric', hour12: false
+  });
+  const p = {};
+  for (const {type, value} of fmt.formatToParts(new Date(utcMs))) p[type] = parseInt(value) || 0;
+  if (p.hour === 24) p.hour = 0;
+  return p;
+}
+
+function localToUTC(y, m, d, h, mi, s) {
+  const guessMs = Date.UTC(y, m - 1, d, h, mi, s);
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: selectedTZ, year:'numeric', month:'numeric', day:'numeric',
+    hour:'numeric', minute:'numeric', second:'numeric', hour12: false
+  });
+  function toMs(ms) {
+    const p = {};
+    for (const {type, value} of fmt.formatToParts(new Date(ms))) p[type] = parseInt(value) || 0;
+    if (p.hour === 24) p.hour = 0;
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  }
+  const off1 = toMs(guessMs) - guessMs;
+  const utc1 = guessMs - off1;
+  const off2 = toMs(utc1) - utc1;
+  return guessMs - off2;
+}
+
+// ---- UI: Date/Time ----
+let canvas;
+let animTimer = null;
+let animDir = 0;
+let animStepKey = '1d';
+const ANIM_STEPS = {
+  '1s':  {label:'Sec',    part:'s'},
+  '1mi': {label:'Min',    part:'mi'},
+  '1h':  {label:'Hour',   part:'h'},
+  '1d':  {label:'Day',    part:'d'},
+  '1m':  {label:'Month',  part:'m'},
+  '1y':  {label:'Year',   part:'y'},
+};
+
+function getDateTimeFromFields() {
+  const y = max(1900, min(2100, parseInt(document.getElementById('dpYear').value) || 2026));
+  const m = max(1, min(12, parseInt(document.getElementById('dpMonth').value) || 1));
+  const d = max(1, min(31, parseInt(document.getElementById('dpDay').value) || 1));
+  const h = max(0, min(23, parseInt(document.getElementById('tpHour').value) || 0));
+  const mi = max(0, min(59, parseInt(document.getElementById('tpMin').value) || 0));
+  const s = max(0, min(59, parseInt(document.getElementById('tpSec').value) || 0));
+  setDateTimeFields(y, m, d, h, mi, s);
+  const utcMs = localToUTC(y, m, d, h, mi, s);
+  const utc = new Date(utcMs);
+  const tzOffMin = round((utcMs - Date.UTC(y, m - 1, d, h, mi, s)) / 60000);
+  const tzAbbr = new Intl.DateTimeFormat('en-US', {
+    timeZone: selectedTZ, timeZoneName:'short'
+  }).formatToParts(utc).find(p => p.type === 'timeZoneName')?.value || '';
+  return {
+    y: utc.getUTCFullYear(), m: utc.getUTCMonth() + 1, d: utc.getUTCDate(),
+    h: utc.getUTCHours(), mi: utc.getUTCMinutes(), s: utc.getUTCSeconds(),
+    localY: y, localM: m, localD: d, localH: h, localMi: mi, localS: s,
+    tzAbbr, tzOffMin
+  };
+}
+
+function setDateTimeFields(y, m, d, h, mi, s) {
+  document.getElementById('dpYear').value = y;
+  document.getElementById('dpMonth').value = p2(m);
+  document.getElementById('dpDay').value = p2(d);
+  document.getElementById('tpHour').value = p2(h);
+  document.getElementById('tpMin').value = p2(mi);
+  document.getElementById('tpSec').value = p2(s);
+}
+
+function stepPart(part, dir) {
+  const dt = getDateTimeFromFields();
+  if (part === 'y') {
+    setDateTimeFields(max(1900, min(2100, dt.localY + dir)), dt.localM, dt.localD, dt.localH, dt.localMi, dt.localS);
+  } else if (part === 'm') {
+    const tmp = new Date(Date.UTC(dt.localY, dt.localM - 1 + dir, dt.localD, dt.localH, dt.localMi, dt.localS));
+    setDateTimeFields(tmp.getUTCFullYear(), tmp.getUTCMonth()+1, tmp.getUTCDate(),
+                      tmp.getUTCHours(), tmp.getUTCMinutes(), tmp.getUTCSeconds());
+  } else {
+    const utcMs = Date.UTC(dt.y, dt.m - 1, dt.d, dt.h, dt.mi, dt.s) + dir * 86400000;
+    const p = utcToLocal(utcMs);
+    setDateTimeFields(p.year, p.month, p.day, p.hour, p.minute, p.second);
+  }
+  draw();
+}
+
+function stepTimePart(part, dir) {
+  const dt = getDateTimeFromFields();
+  const delta = part === 'h' ? 3600000 : part === 'mi' ? 60000 : 1000;
+  const utcMs = Date.UTC(dt.y, dt.m - 1, dt.d, dt.h, dt.mi, dt.s) + dir * delta;
+  const p = utcToLocal(utcMs);
+  setDateTimeFields(p.year, p.month, p.day, p.hour, p.minute, p.second);
+  draw();
+}
+
+function setNow() {
+  animStop();
+  const p = utcToLocal(Date.now());
+  setDateTimeFields(p.year, p.month, p.day, p.hour, p.minute, p.second);
+  draw();
+}
+
+function updateAnimButtons() {
+  document.getElementById('btnBack').classList.toggle('active', animDir === -1);
+  document.getElementById('btnFwd').classList.toggle('active', animDir === 1);
+}
+
+function animStep(dir) {
+  const step = ANIM_STEPS[animStepKey];
+  if (step.part === 's' || step.part === 'mi' || step.part === 'h') {
+    stepTimePart(step.part, dir);
+  } else {
+    stepPart(step.part, dir);
+  }
+}
+
+function toggleAnim(dir) {
+  if (animDir === dir) {
+    if (animTimer) { clearInterval(animTimer); animTimer = null; }
+    animDir = 0;
+  } else {
+    if (animTimer) clearInterval(animTimer);
+    animDir = dir;
+    animTimer = setInterval(() => animStep(dir), 50);
+  }
+  updateAnimButtons();
+}
+
+function animStop() {
+  if (animTimer) { clearInterval(animTimer); animTimer = null; }
+  animDir = 0;
+  updateAnimButtons();
+}
+
+function setAnimStep(key) {
+  animStepKey = key;
+  document.getElementById('btnStep').textContent = ANIM_STEPS[key].label;
+  document.getElementById('stepMenu').style.display = 'none';
+  if (animDir) {
+    clearInterval(animTimer);
+    animTimer = setInterval(() => animStep(animDir), 50);
+  }
+}
+
+function toggleStepMenu() {
+  const menu = document.getElementById('stepMenu');
+  if (menu.style.display === 'none') {
+    menu.style.display = 'block';
+    const btn = document.getElementById('btnStep');
+    const active = menu.querySelector(`[data-key="${animStepKey}"]`);
+    if (active) {
+      menu.style.top = (-active.offsetTop + (btn.offsetHeight - active.offsetHeight) / 2) + 'px';
+    }
+    setTimeout(() => document.addEventListener('click', closeStepMenu, {once: true}), 0);
+  } else {
+    menu.style.display = 'none';
+  }
+}
+function closeStepMenu() {
+  document.getElementById('stepMenu').style.display = 'none';
+}
+
+// ---- UI: Location ----
+function getLocation() {
+  const latD = parseInt(document.getElementById('latDeg').value) || 0;
+  const latM = parseInt(document.getElementById('latMin').value) || 0;
+  const latS = parseInt(document.getElementById('latSec').value) || 0;
+  const latSign = document.querySelector('input[name="latNS"]:checked').value === 'S' ? -1 : 1;
+  const lonD = parseInt(document.getElementById('lonDeg').value) || 0;
+  const lonM = parseInt(document.getElementById('lonMin').value) || 0;
+  const lonS = parseInt(document.getElementById('lonSec').value) || 0;
+  const lonSign = document.querySelector('input[name="lonEW"]:checked').value === 'W' ? -1 : 1;
+  const latRad = latSign * (latD + latM / 60 + latS / 3600) * DEG;
+  const lonRad = lonSign * (lonD + lonM / 60 + lonS / 3600) * DEG;
+  return {latRad, lonRad, latDeg: latRad * RAD, lonDeg: lonRad * RAD};
+}
+
+function setLocation(latDeg, lonDeg) {
+  const latAbs = abs(latDeg);
+  const lonAbs = abs(lonDeg);
+  document.getElementById('latDeg').value = p2(floor(latAbs));
+  document.getElementById('latMin').value = p2(floor((latAbs % 1) * 60));
+  document.getElementById('latSec').value = p2(round(((latAbs * 60) % 1) * 60));
+  document.querySelector(`input[name="latNS"][value="${latDeg >= 0 ? 'N' : 'S'}"]`).checked = true;
+  document.getElementById('lonDeg').value = floor(lonAbs);
+  document.getElementById('lonMin').value = p2(floor((lonAbs % 1) * 60));
+  document.getElementById('lonSec').value = p2(round(((lonAbs * 60) % 1) * 60));
+  document.querySelector(`input[name="lonEW"][value="${lonDeg >= 0 ? 'E' : 'W'}"]`).checked = true;
+}
+
+function geolocate() {
+  selectedTZ = systemTZ;
+  document.getElementById('tzSelect').value = systemTZ;
+  document.getElementById('citySelect').value = '';
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => { setLocation(pos.coords.latitude, pos.coords.longitude); draw(); },
+      () => geolocateIP(),
+      {timeout: 5000}
+    );
+  } else {
+    geolocateIP();
+  }
+}
+function geolocateIP() {
+  fetch('https://ipapi.co/json/')
+    .then(r => r.json())
+    .then(data => {
+      if (data.latitude != null && data.longitude != null) {
+        setLocation(data.latitude, data.longitude);
+        draw();
+      } else {
+        alert("Can't get your location from Wi-Fi. Please enter it manually or choose from a list of cities.");
+      }
+    })
+    .catch(() => alert("Can't get your location from Wi-Fi. Please enter it manually or choose from a list of cities."));
+}
+
+// ---- UI: Misc ----
+function togglePanel() {
+  const sb = document.getElementById('sidebar');
+  const visible = sb.style.display !== 'none';
+  sb.style.display = visible ? 'none' : '';
+  sizeCanvas(); draw();
+}
+
+function savePNG() {
+  const dt = getDateTimeFromFields();
+  const fname = `skymap-${dt.localY}-${p2(dt.localM)}-${p2(dt.localD)}-${p2(dt.localH)}${p2(dt.localMi)}${p2(dt.localS)}.png`;
+  const link = document.createElement('a');
+  link.download = fname;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function sizeCanvas() {
+  const disp = document.getElementById('display');
+  canvas.width = max(100, disp.clientWidth);
+  canvas.height = max(100, disp.clientHeight);
+}
+
+function updateFrameLabels() {
+  const labels = FRAME_LABELS[viewFrame];
+  document.getElementById('viewAzLabel').textContent = labels[0];
+  document.getElementById('viewAltLabel').textContent = labels[1];
+}
+
+function syncSlidersFromPrecise() {
+  document.getElementById('viewAz').value = round(azToDisp(viewLonPrecise));
+  document.getElementById('viewAlt').value = round(viewLatPrecise);
+  document.getElementById('viewWidth').value = round(viewFovPrecise);
+}
+
+// ---- Main draw (UI wrapper around skymapDraw) ----
+function draw() {
+  const dt = getDateTimeFromFields();
+  const loc = getLocation();
+  const darkMode = document.getElementById('darkToggle').checked;
+  document.body.className = darkMode ? 'dark' : 'light';
+
+  const offHrs = -dt.tzOffMin / 60;
+  const offSign = offHrs >= 0 ? '+' : '';
+  const janOff = round((localToUTC(dt.localY, 1, 1, 12, 0, 0) - Date.UTC(dt.localY, 0, 1, 12, 0, 0)) / 60000);
+  const julOff = round((localToUTC(dt.localY, 7, 1, 12, 0, 0) - Date.UTC(dt.localY, 6, 1, 12, 0, 0)) / 60000);
+  const stdOff = max(janOff, julOff);
+  const isDST = dt.tzOffMin < stdOff;
+  document.getElementById('utcOffsetText').textContent =
+    `UTC ${offSign}${offHrs} hrs (${isDST ? 'Daylight' : 'Standard'} Time)`;
+
+  const vLonDisp = azToDisp(viewLonPrecise);
+  if (viewFrame === 'equatorial') {
+    const raH = ((vLonDisp / 15) % 24 + 24) % 24;
+    const raHi = floor(raH), raMin = round((raH - raHi) * 60);
+    document.getElementById('viewAzVal').textContent = `${raHi}h ${p2(raMin)}m`;
+  } else {
+    document.getElementById('viewAzVal').textContent = round(vLonDisp) + '°';
+  }
+  document.getElementById('viewAltVal').textContent = (viewLatPrecise >= 0 ? '+' : '') + round(viewLatPrecise) + '°';
+  document.getElementById('viewWidthVal').textContent = round(viewFovPrecise) + '°';
+
+  skymapDraw(canvas, {
+    dt, loc, darkMode,
+    showStars: document.getElementById('showStars').checked,
+    showNames: document.getElementById('showNames').checked,
+    showStarIds: document.getElementById('showStarIds').checked,
+    showConst: document.getElementById('showConst').checked,
+    showConstNames: document.getElementById('showConstNames').checked,
+    showBounds: document.getElementById('showBounds').checked,
+    showPlanets: document.getElementById('showPlanets').checked,
+    showPlanetNames: document.getElementById('showPlanetNames').checked,
+    showDeepSky: document.getElementById('showDeepSky').checked,
+    showDeepSkyNames: document.getElementById('showDeepSkyNames').checked,
+    showDeepSkyIds: document.getElementById('showDeepSkyIds').checked,
+    showMilkyWay: document.getElementById('showMilkyWay').checked,
+    showEcliptic: document.getElementById('showEcliptic').checked,
+    showCelEq: document.getElementById('showCelEq').checked,
+    showGalEq: document.getElementById('showGalEq').checked,
+    showGrid: document.getElementById('showGrid').checked,
+    showHeader: document.getElementById('showHeader').checked,
+  });
+}
+
+// ---- Init ----
+function init() {
+  canvas = document.getElementById('cv');
+  sizeCanvas();
+  skymapInit();
+
+  // Populate timezone dropdown
+  const tzSelect = document.getElementById('tzSelect');
+  let tzList;
+  try { tzList = Intl.supportedValuesOf('timeZone'); } catch(e) { tzList = [systemTZ]; }
+  if (!tzList.includes('UTC')) tzList.unshift('UTC');
+  else { tzList = tzList.filter(z => z !== 'UTC'); tzList.unshift('UTC'); }
+  for (const tz of tzList) {
+    const opt = document.createElement('option');
+    opt.value = tz;
+    opt.textContent = tz.replace(/_/g, ' ');
+    tzSelect.appendChild(opt);
+  }
+  tzSelect.value = systemTZ;
+  tzSelect.addEventListener('change', () => { selectedTZ = tzSelect.value; draw(); });
+
+  const now = utcToLocal(Date.now());
+  setDateTimeFields(now.year, now.month, now.day, now.hour, now.minute, now.second);
+
+  // Populate country/city dropdowns
+  const countryNames = new Intl.DisplayNames(['en'], {type: 'region'});
+  const countrySel = document.getElementById('countrySelect');
+  const citySel = document.getElementById('citySelect');
+  const countries = [...new Set(CITIES.map(c => c[2]))].map(cc => ({
+    code: cc, name: countryNames.of(cc) || cc
+  })).sort((a, b) => a.name.localeCompare(b.name));
+  for (const c of countries) {
+    const opt = document.createElement('option');
+    opt.value = c.code;
+    opt.textContent = c.name;
+    countrySel.appendChild(opt);
+  }
+  function populateCities() {
+    citySel.innerHTML = '<option value="">--</option>';
+    const cc = countrySel.value;
+    if (!cc) return;
+    const filtered = CITIES.filter(c => c[2] === cc);
+    for (const c of filtered) {
+      const opt = document.createElement('option');
+      opt.value = JSON.stringify(c);
+      opt.textContent = c[1] ? `${c[0]}, ${c[1]}` : c[0];
+      citySel.appendChild(opt);
+    }
+  }
+  countrySel.value = 'US';
+  countrySel.addEventListener('change', populateCities);
+  populateCities();
+  citySel.addEventListener('change', () => {
+    if (!citySel.value) return;
+    const c = JSON.parse(citySel.value);
+    setLocation(c[3], c[4]);
+    selectedTZ = c[5];
+    document.getElementById('tzSelect').value = c[5];
+    draw();
+  });
+
+  setLocation(0.0, 0.0);
+
+  // Event listeners
+  const redrawIds = ['dpYear','dpMonth','dpDay','tpHour','tpMin','tpSec',
+                     'latDeg','latMin','latSec','lonDeg','lonMin','lonSec'];
+  for (const id of redrawIds) {
+    const el = document.getElementById(id);
+    el.addEventListener('change', () => draw());
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
+  }
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
+    document.getElementById(id).addEventListener('change', () => draw());
+  }
+  for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {
+    r.addEventListener('change', () => draw());
+  }
+  document.getElementById('viewFrame').addEventListener('change', () => {
+    const newFrame = document.getElementById('viewFrame').value;
+    changeFrame(newFrame, getDateTimeFromFields(), getLocation());
+    updateFrameLabels();
+    syncSlidersFromPrecise();
+    draw();
+  });
+  document.getElementById('viewAz').addEventListener('input', () => {
+    viewLonPrecise = azToDisp(parseFloat(document.getElementById('viewAz').value));
+    draw();
+  });
+  document.getElementById('viewAlt').addEventListener('input', () => {
+    viewLatPrecise = parseFloat(document.getElementById('viewAlt').value);
+    draw();
+  });
+  document.getElementById('viewWidth').addEventListener('input', () => {
+    viewFovPrecise = parseFloat(document.getElementById('viewWidth').value);
+    draw();
+  });
+
+  // Drag to pan
+  let dragging = false, dragX = 0, dragY = 0;
+  let clickStartX = 0, clickStartY = 0;
+  function dragStart(x, y) {
+    dragging = true;
+    dragX = x; dragY = y;
+    clickStartX = x; clickStartY = y;
+    canvas.style.cursor = 'default';
+  }
+  function dragMove(x, y) {
+    if (!dragging || !viewUnproject) return;
+    const dx = x - dragX, dy = y - dragY;
+    dragX = x; dragY = y;
+    const rect = canvas.getBoundingClientRect();
+    const canvasX = x - rect.left, canvasY = y - rect.top;
+    const mouseAltAz = viewUnproject(canvasX, canvasY);
+    const mouseAltDeg = mouseAltAz ? mouseAltAz[0] * RAD : viewLatPrecise;
+    const cosAlt = cos(min(85, abs(mouseAltDeg)) * DEG);
+    const degPerPx = viewFovPrecise / min(canvas.width, canvas.height);
+    viewLonPrecise = ((viewLonPrecise - dx * degPerPx / cosAlt) % 360 + 360) % 360;
+    viewLatPrecise = max(-90, min(90, viewLatPrecise + dy * degPerPx));
+    syncSlidersFromPrecise();
+    draw();
+  }
+  function dragEnd(x, y) {
+    dragging = false;
+    canvas.style.cursor = 'default';
+    if (x !== undefined) {
+      const dx = x - clickStartX, dy = y - clickStartY;
+      if (dx*dx + dy*dy <= 1) {
+        const rect = canvas.getBoundingClientRect();
+        pickObject(rect ? x - rect.left : x, rect ? y - rect.top : y);
+        draw();
+      }
+    }
+  }
+  canvas.style.cursor = 'default';
+  canvas.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); dragStart(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', e => { if (dragging) { e.preventDefault(); e.stopPropagation(); } dragMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', e => { if (dragging) { e.preventDefault(); e.stopPropagation(); } dragEnd(e.clientX, e.clientY); });
+  let pinchDist = 0;
+  function touchDist(e) {
+    const a = e.touches[0], b = e.touches[1];
+    const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+    return sqrt(dx*dx + dy*dy);
+  }
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (e.touches.length === 2) { pinchDist = touchDist(e); dragging = false; }
+    else if (e.touches.length === 1) { const t = e.touches[0]; dragStart(t.clientX, t.clientY); }
+  }, {passive: false});
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      const d = touchDist(e);
+      if (pinchDist > 0) {
+        viewFovPrecise = max(10, min(180, viewFovPrecise * pinchDist / d));
+        syncSlidersFromPrecise();
+        draw();
+      }
+      pinchDist = d;
+    } else if (e.touches.length === 1) { const t = e.touches[0]; dragMove(t.clientX, t.clientY); }
+  }, {passive: false});
+  canvas.addEventListener('touchend', e => {
+    if (e.touches.length === 0) {
+      pinchDist = 0;
+      const t = e.changedTouches[0]; dragEnd(t.clientX, t.clientY);
+    } else if (e.touches.length === 1) {
+      pinchDist = 0;
+      const t = e.touches[0]; dragStart(t.clientX, t.clientY);
+    }
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const sensitivity = e.ctrlKey ? 0.005 : 0.00025;
+    const zoomFactor = 1 + sensitivity * abs(e.deltaY);
+    viewFovPrecise = e.deltaY > 0 ? viewFovPrecise * zoomFactor : viewFovPrecise / zoomFactor;
+    viewFovPrecise = max(10, min(180, viewFovPrecise));
+    syncSlidersFromPrecise();
+    draw();
+  }, {passive: false});
+
+  window.addEventListener('resize', () => { sizeCanvas(); draw(); });
+  geolocate();
+  draw();
+}
+
+window.onload = function() {
+  const s = document.createElement('script');
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+  s.src = (isMobile ? 'stars_hr.js' : 'stars.js') + '?v=4';
+  s.onload = init;
+  document.head.appendChild(s);
+};
+</script>
+</body>
+</html>
