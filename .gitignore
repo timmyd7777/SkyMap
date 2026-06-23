@@ -6,6 +6,3 @@ data/Cities.csv
 data/Messier.csv
 data/Caldwell.csv
 data/brightest.csv
-
-# SKY2000 catalog (too large for GitHub; see README)
-data/SKY2000.csv

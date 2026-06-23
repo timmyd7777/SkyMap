@@ -20,7 +20,7 @@ python3 gen_cities.py                     # -> cities.js
 python3 gen_milkyway.py                   # -> milkyway.js
 ```
 
-Most scripts auto-download their source CSV files from [SSCore](https://github.com/timmyd7777/SSCore) if not already present. The exception is `SKY2000.csv` (44 MB), which must be obtained separately.
+Most scripts auto-download their source CSV files from [SSCore](https://github.com/timmyd7777/SSCore) if not already present. `SKY2000.csv` is included in the repo.
 
 Move the generated `.js` files into the project root to update the app.
 
