@@ -1,0 +1,109 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=ISO-8859-1">
+<title>Export Format for Comet Orbits</title>
+</head>
+<body>
+<h2>Export Format for Comet Orbits</h2>
+This document describes the format used for comet orbits in the
+<a href="/iau/services/ECS.html">Extended Computer Service</a>.  It also
+describes the format used for orbits in <a href="/iau/Ephemerides/EphemOrbEls.html">
+Ephemerides and Orbital Elements</a>.
+<p>
+Orbital elements for comets are heliocentric.
+<p><hr><p>
+<h2>ECS Format</h2>
+The column headed `F77' indicates the Fortran 77 format specifier that
+should be used to read the specified value.
+<pre>
+<b>   Columns   F77    Use</b>
+
+    1 -   4  i4     Periodic comet number
+    5        a1     Orbit type (generally `C', `P' or `D')
+    6 -  12  a7     Provisional designation (in <a href="/iau/info/PackedDes.html">packed form</a>)
+
+   21 -  24  i4     Year of perihelion passage
+   26 -  29  a5     Month of perihelion passage
+   30 -  37  f7.4   Day of perihelion passage (TT)
+
+   39 -  47  f9.6   Perihelion distance (AU)
+   50 -  57  f8.6   Orbital eccentricity
+   59 -  63  f5.2   Orbital period (years), if &#60; 100
+   60 -  62  i3     Orbital period (years), if &#62;= 100
+
+   66 -  73  f8.4   Argument of perihelion, J2000.0 (degrees)
+   76 -  83  f8.4   Longitude of the ascending node, J2000.0
+                      (degrees)
+   86 -  93  f8.4   Inclination to ecliptic, J2000.0 (degrees)
+
+   96 -  97  i2     Last two digits of the epoch year
+   99 - 103  a5     Month of epoch
+  104 - 105  i2     Day of epoch (assumed to be .0 TT)
+OR
+   96 - 105         Blank if no epoch
+
+There is no ambiguity in the century part of the epoch, as the
+epoch will be within +/- 20 days of the time of perihelion
+passage.
+
+  107 - 111  i5     Number of observations used in solution
+  112        a1     '*' indicates non-gravitational parameters
+                       considered
+
+  114 - 118  a5     Date of first observation <a href="/iau/info/PackedDates.html">(Packed
+                       format)</a>
+  120 - 124  a5     Date of last observation <a href="/iau/info/PackedDates.html">(Packed
+                       format)</a>
+
+  126        a1     <a href="/iau/info/Perturbers.html">Source of perturbing coordinates.</a>
+                       On the grounds of consistency, standard
+                       masses for the perturbing bodies must be used.
+  128 - 130  a3     <a href="/iau/info/Perturbers.html">Brief descriptor of perturbers used</a>
+                       (blank if unperturbed)
+  132 - 135  h4     <a href="/iau/info/Perturbers.html">Fuller description of perturbers used</a>
+                       (= `0000' if unperturbed)
+  137        i1     Number of perturbing planets (generally `0' for
+                       unperturbed solutions or `9' for perturbed
+                       solutions)
+
+  143 - 172  a30    Name of comet
+
+  173 - 181  a9     Reference
+</pre>
+<p><hr><p>
+<h2>Ephemerides and Orbital Elements Format</h2>
+The column headed `F77' indicates the Fortran 77 format specifier that
+should be used to read the specified value.
+<pre>
+<b>   Columns   F77    Use</b>
+
+    1 -   4  i4     Periodic comet number
+    5        a1     Orbit type (generally `C', `P' or `D')
+    6 -  12  a7     Provisional designation (in <a href="/iau/info/PackedDes.html">packed form</a>)
+
+   15 -  18  i4     Year of perihelion passage
+   20 -  21  i2     Month of perihelion passage
+   23 -  29  f7.4   Day of perihelion passage (TT)
+
+   31 -  39  f9.6   Perihelion distance (AU)
+   42 -  49  f8.6   Orbital eccentricity
+
+   52 -  59  f8.4   Argument of perihelion, J2000.0 (degrees)
+   62 -  69  f8.4   Longitude of the ascending node, J2000.0
+                      (degrees)
+   72 -  79  f8.4   Inclination in degrees, J2000.0 (degrees)
+
+   82 -  85  i4     Year of epoch for perturbed solutions
+   86 -  87  i2     Month of epoch for perturbed solutions
+   88 -  89  i2     Day of epoch for perturbed solutions
+
+   92 -  95  f4.1   Absolute magnitude
+   97 - 100  f4.0   Slope parameter
+
+  103 - 158  a56    Designation and Name
+
+  160 - 168  a9     Reference
+</pre>
+</body>
+</html>

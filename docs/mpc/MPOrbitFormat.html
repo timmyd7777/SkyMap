@@ -1,0 +1,122 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=ISO-8859-1">
+<title>Export Format for Minor-Planet Orbits</title>
+<body>
+<h2>Export Format for Minor-Planet Orbits</h2>
+This document describes the format used for both unperturbed and
+perturbed orbits of minor planets, as used in the
+<a href="/iau/services/ECS.html">Extended Computer Service</a> and in the
+<a href="/iau/MPEph/MPEph.html">Minor Planet Ephemeris Service</a>.
+<p>
+Orbital elements for minor planets are heliocentric.
+<p><hr><p>
+The column headed `F77' indicates the Fortran 77/90/95/2003/2008 format specifier that
+should be used to read the specified value.
+<pre>
+<b>   Columns   F77    Use</b>
+
+    1 -   7  a7     Number or provisional designation
+                      (in <a href="/iau/info/PackedDes.html">packed form</a>)
+    9 -  13  f5.2   Absolute magnitude, H
+   15 -  19  f5.2   Slope parameter, G
+
+   21 -  25  a5     Epoch (in <a href="/iau/info/PackedDates.html">packed form</a>, .0 TT)
+   27 -  35  f9.5   Mean anomaly at the epoch, in degrees
+
+   38 -  46  f9.5   Argument of perihelion, J2000.0 (degrees)
+   49 -  57  f9.5   Longitude of the ascending node, J2000.0
+                      (degrees)
+   60 -  68  f9.5   Inclination to the ecliptic, J2000.0 (degrees)
+
+   71 -  79  f9.7   Orbital eccentricity
+   81 -  91  f11.8  Mean daily motion (degrees per day)
+   93 - 103  f11.7  Semimajor axis (AU)
+
+  106        i1     Uncertainty parameter, U
+          or a1     If this column contains `E' it indicates
+                    that the orbital eccentricity was assumed.
+                    For one-opposition orbits this column can
+                    also contain `D' if a double (or multiple)
+                    designation is involved or `F' if an e-assumed
+                    double (or multiple) designation is involved.
+
+  108 - 116  a9     Reference
+  118 - 122  i5     Number of observations
+  124 - 126  i3     Number of oppositions
+
+     For multiple-opposition orbits:
+     128 - 131  i4     Year of first observation
+     132        a1     '-'
+     133 - 136  i4     Year of last observation
+
+     For single-opposition orbits:
+     128 - 131  i4     Arc length (days)
+     133 - 136  a4     'days'
+
+  138 - 141  f4.2   r.m.s residual (")
+  143 - 145  a3     <a href="/iau/info/Perturbers.html">Coarse indicator of perturbers</a>
+                    (blank if unperturbed one-opposition object)
+  147 - 149  a3     <a href="/iau/info/Perturbers.html">Precise indicator of perturbers</a>
+                    (blank if unperturbed one-opposition object)
+  151 - 160  a10    Computer name
+
+There may sometimes be additional information beyond column 160
+as follows:
+
+  162 - 165  z4.4   4-hexdigit flags
+<!--                    This information has been updated 2014 July 16, for files
+                    created after 18:40 UTC on that day.  Classification of
+                    distant-orbit types will resume after we ingest data from
+                    an outside collaborator.  -->
+                    The bottom 6 bits (bits 0 to 5) are used to encode
+                    a value representing the orbit type (other
+                    values are undefined):
+
+                     Value
+                        1  Atira
+                        2  Aten
+                        3  Apollo
+                        4  Amor
+                        5  Object with q < 1.665 AU
+                        6  Hungaria
+                        7  Unused or internal MPC use only
+                        8  Hilda
+                        9  Jupiter Trojan
+                       10  Distant object
+
+                    Additional information is conveyed by
+                    adding in the following bit values:
+
+               Bit  Value
+                 6     64  Unused or internal MPC use only
+                 7    128  Unused or internal MPC use only
+                 8    256  Unused or internal MPC use only
+                 9    512  Unused or internal MPC use only
+                10   1024  Unused or internal MPC use only
+                11   2048  Object is NEO
+                12   4096  Object is 1-km (or larger) NEO
+                13   8192  1-opposition object seen at
+                           earlier opposition
+                14  16384  Critical list numbered object
+                15  32768  Object is PHA
+
+                    Note that the orbit classification is
+                      based on cuts in osculating element
+                      space and is not 100% reliable.
+
+                    Note also that certain of the flags
+                      are for internal MPC use and are
+                      not documented.
+
+  167 - 194  a      Readable designation
+
+  195 - 202  i8     Date of last observation included in
+                      orbit solution (YYYYMMDD format)
+
+</pre>
+</body>
+
+
+</html>
