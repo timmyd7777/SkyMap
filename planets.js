@@ -235,3 +235,143 @@ function topocentricCorrection(ra, dec, distER, lstR, latRad) {
 function eclLonJ2000Corr(d) {
   return -3.82394e-5 * d * DEG;
 }
+
+// ---- Asteroid & Comet orbit computation ----
+// Reference: Schlyter, ppcomp.html sections 6, 7, 16-20
+
+const GAUSS_K = 0.01720209895;
+
+// Parabolic orbit solver (e = 1). ppcomp section 18.
+// dT = days since perihelion, q = perihelion distance (AU).
+// Returns {v, r}: true anomaly (radians), heliocentric distance (AU).
+function solveParabolic(dT, q) {
+  const H = dT * (GAUSS_K / sqrt(2)) / (q * sqrt(q));
+  const h = 1.5 * H;
+  const g = sqrt(1 + h * h);
+  const s = Math.cbrt(g + h) - Math.cbrt(g - h);
+  return { v: 2 * Math.atan(s), r: q * (1 + s * s) };
+}
+
+// Near-parabolic orbit solver (0.98 <= e <= 1.02). ppcomp section 19.
+// dT = days since perihelion, q = perihelion distance (AU), e = eccentricity.
+// Returns {v, r}: true anomaly (radians), heliocentric distance (AU).
+function solveNearParabolic(dT, q, e) {
+  const a0 = 0.75 * dT * GAUSS_K * sqrt((1 + e) / (q * q * q));
+  const b = sqrt(1 + a0 * a0);
+  const W = Math.cbrt(b + a0) - Math.cbrt(b - a0);
+  const f = (1 - e) / (1 + e);
+  const a1 = 2/3 + 2/5 * W * W;
+  const a2 = 7/5 + 33/35 * W * W + 37/175 * W**4;
+  const a3 = W * W * (432/175 + 956/1125 * W * W + 84/1575 * W**4);
+  const C = W * W / (1 + W * W);
+  const g = f * C * C;
+  const w = W * (1 + f * C * (a1 + a2 * g + a3 * g * g));
+  return { v: 2 * Math.atan(w), r: q * (1 + w * w) / (1 + w * w * f) };
+}
+
+// Hyperbolic orbit solver (e > 1.02). ppcomp section 20.
+// dT = days since perihelion, q = perihelion distance (AU), e = eccentricity.
+// Returns {v, r}: true anomaly (radians), heliocentric distance (AU).
+function solveHyperbolic(dT, q, e) {
+  const a = q / (1 - e);
+  const M = dT / ((-a) * sqrt(-a));
+  let F = M;
+  for (let i = 0; i < 50; i++) {
+    const dF = (M + F - e * Math.sinh(F)) / (e * Math.cosh(F) - 1);
+    F += dF;
+    if (abs(dF) < 1e-10) break;
+  }
+  const v = 2 * Math.atan(sqrt((e + 1) / (e - 1)) * Math.tanh(F / 2));
+  const r = a * (1 - e * e) / (1 + e * cos(v));
+  return { v, r };
+}
+
+// Heliocentric ecliptic position from orbital elements and true anomaly/distance.
+// node, inc, w in radians; v = true anomaly (radians), r = helio distance (AU).
+// Returns {lon, lat, r}: ecliptic lon/lat in radians, r in AU.
+function orbitToEcliptic(node, inc, w, v, r) {
+  const xh = r * (cos(node) * cos(v + w) - sin(node) * sin(v + w) * cos(inc));
+  const yh = r * (sin(node) * cos(v + w) + cos(node) * sin(v + w) * cos(inc));
+  const zh = r * sin(v + w) * sin(inc);
+  const [lon, lat] = uxyz2sph(xh, yh, zh);
+  return { lon, lat, r };
+}
+
+// Asteroid heliocentric ecliptic position.
+// ast = parsed MPC asteroid: {epoch, M, w, node, inc, e, n, a, H, G} (angles in degrees).
+// d = Schlyter day number, j2000 = true to stay in J2000 ecliptic.
+// Returns {lon, lat, r} in radians.
+function asteroidPosition(ast, d, j2000) {
+  const dEpoch = julianDate(ast.epoch.y, ast.epoch.m, ast.epoch.d, 0) - 2451543.5;
+  const M = ((ast.M + ast.n * (d - dEpoch)) % 360 + 360) % 360 * DEG;
+  const node = (ast.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG;
+  const inc = ast.inc * DEG;
+  const w = ast.w * DEG;
+  const E = solveKepler(M, ast.e);
+  const xv = ast.a * (cos(E) - ast.e);
+  const yv = ast.a * sqrt(1 - ast.e * ast.e) * sin(E);
+  const v = atan2(yv, xv);
+  const r = sqrt(xv * xv + yv * yv);
+  return orbitToEcliptic(node, inc, w, v, r);
+}
+
+// Comet heliocentric ecliptic position.
+// comet = parsed MPC comet: {Ty, Tm, Td, q, e, w, node, inc, H, k} (angles in degrees).
+// d = Schlyter day number, j2000 = true to stay in J2000 ecliptic.
+// Returns {lon, lat, r} in radians.
+function cometPosition(comet, d, j2000) {
+  const dT = julianDate(comet.Ty, comet.Tm, comet.Td, 0) - 2451543.5;
+  const dt = d - dT;
+  const node = (comet.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG;
+  const inc = comet.inc * DEG;
+  const w = comet.w * DEG;
+  let v, r;
+  if (comet.e < 0.98) {
+    const a = comet.q / (1 - comet.e);
+    const P = 365.2568984 * a * sqrt(a);
+    const M = ((360 * dt / P) % 360 + 360) % 360 * DEG;
+    const E = solveKepler(M, comet.e);
+    const xv = a * (cos(E) - comet.e);
+    const yv = a * sqrt(1 - comet.e * comet.e) * sin(E);
+    v = atan2(yv, xv);
+    r = sqrt(xv * xv + yv * yv);
+  } else if (comet.e > 1.02) {
+    ({ v, r } = solveHyperbolic(dt, comet.q, comet.e));
+  } else if (comet.e === 1.0) {
+    ({ v, r } = solveParabolic(dt, comet.q));
+  } else {
+    ({ v, r } = solveNearParabolic(dt, comet.q, comet.e));
+  }
+  return orbitToEcliptic(node, inc, w, v, r);
+}
+
+// Heliocentric ecliptic → geocentric ecliptic.
+// body = {lon, lat, r} of the body, sun = {lon, r} of the Sun.
+// Returns {lon, lat, r}: geocentric ecliptic lon/lat (radians), distance (AU).
+function helioToGeo(body, sun) {
+  const xh = body.r * cos(body.lon) * cos(body.lat);
+  const yh = body.r * sin(body.lon) * cos(body.lat);
+  const zh = body.r * sin(body.lat);
+  const xs = sun.r * cos(sun.lon);
+  const ys = sun.r * sin(sun.lon);
+  const xg = xh + xs, yg = yh + ys, zg = zh;
+  const R = sqrt(xg * xg + yg * yg + zg * zg);
+  return { lon: atan2(yg, xg), lat: atan2(zg, sqrt(xg * xg + yg * yg)), r: R };
+}
+
+// Asteroid apparent magnitude (H,G system, Bowell et al. 1989).
+// H = absolute magnitude, G = slope parameter, r = helio dist (AU),
+// R = geocentric dist (AU), phaseAngle = Sun-body-Earth angle (radians).
+function asteroidMagnitude(H, G, r, R, phaseAngle) {
+  const tanHalf = tan(phaseAngle / 2);
+  if (!isFinite(tanHalf) || tanHalf < 0) return H + 5 * Math.log10(r * R);
+  const phi1 = Math.exp(-3.33 * tanHalf ** 0.63);
+  const phi2 = Math.exp(-1.87 * tanHalf ** 1.22);
+  return H + 5 * Math.log10(r * R) - 2.5 * Math.log10((1 - G) * phi1 + G * phi2);
+}
+
+// Comet apparent magnitude.
+// H = absolute magnitude, k = activity slope, r = helio dist (AU), R = geocentric dist (AU).
+function cometMagnitude(H, k, r, R) {
+  return H + 5 * Math.log10(R) + 2.5 * k * Math.log10(r);
+}

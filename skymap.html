@@ -214,8 +214,9 @@ canvas { display: block; }
 <script src="deepsky.js?v=4"></script>
 <script src="cities.js?v=5"></script>
 <script src="astromath.js?v=7"></script>
-<script src="planets.js?v=7"></script>
-<script src="skymap.js?v=3"></script>
+<script src="planets.js?v=8"></script>
+<script src="mpc.js?v=1"></script>
+<script src="skymap.js?v=4"></script>
 <script>
 
 // ---- Time zone helpers ----
@@ -253,6 +254,8 @@ function localToUTC(y, m, d, h, mi, s) {
 
 // ---- UI: Date/Time ----
 let canvas;
+let loadedComets = null;
+let loadedAsteroids = null;
 let animTimer = null;
 let animDir = 0;
 let animStepKey = '1d';
@@ -542,6 +545,8 @@ function draw() {
     showGalEq: document.getElementById('showGalEq').checked,
     showGrid: document.getElementById('showGrid').checked,
     showHeader: document.getElementById('showHeader').checked,
+    comets: loadedComets,
+    asteroids: loadedAsteroids,
   });
 }
 
@@ -550,6 +555,44 @@ function init() {
   canvas = document.getElementById('cv');
   sizeCanvas();
   skymapInit();
+
+  // Fetch orbital elements with localStorage caching (24-hour TTL).
+  // Falls back to stale cache if fetch fails; logs results to console.
+  function fetchCached(url, key, onSuccess) {
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const { time, data } = JSON.parse(cached);
+      if (Date.now() - time < 86400000) {
+        onSuccess(data, true);
+        return;
+      }
+    }
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(data => {
+        try { localStorage.setItem(key, JSON.stringify({ time: Date.now(), data })); } catch(e) {}
+        onSuccess(data, false);
+      })
+      .catch(e => {
+        if (cached) onSuccess(JSON.parse(cached).data, true);
+        else console.warn(`${key} fetch failed:`, e.message);
+      });
+  }
+  const BASE = 'https://www.southernstars.com/updates';
+  fetchCached(`${BASE}/comets/Soft00Cmt.txt`, 'comets', (data, fromCache) => {
+    loadedComets = parseMPCComets(data);
+    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${loadedComets.length} comets`);
+    ssCacheJD = -1; draw();
+  });
+  fetchCached(`${BASE}/asteroids/Soft00Bright.txt`, 'asteroids', (data, fromCache) => {
+    loadedAsteroids = parseMPCAsteroids(data);
+    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${loadedAsteroids.length} asteroids`);
+    ssCacheJD = -1; draw();
+  });
+  fetchCached(`${BASE}/satellites/celestrak/visual.txt`, 'satellites', (data, fromCache) => {
+    const lines = data.split('\n').filter(l => l.trim().length > 0);
+    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${lines.length / 3 | 0} satellites`);
+  });
 
   // Populate timezone dropdown
   const tzSelect = document.getElementById('tzSelect');

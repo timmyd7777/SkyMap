@@ -40,6 +40,11 @@ let selectedObject = null;
 // Used by changeFrame() to convert the view center between frames.
 let curMFrame = null;
 
+// Solar system position cache. Recomputed only when JD or j2000 changes.
+// Each entry: {type, name, x, y, z, mag, color, ...} with J2000 equatorial unit vector.
+let ssCache = [];
+let ssCacheJD = -1;
+
 // ---- Constants ----
 
 // Drawing colors for solar system bodies (not from orbital element data).
@@ -99,6 +104,26 @@ function formatDesignation(bayer, flamsteed) {
 
 // Format a picked object into a one-line description string for display.
 // obj: an entry from drawnObjects (has .type, .data, optionally .hr).
+// Format (lonDeg, latDeg) in the current frame's display convention.
+// lonDeg is already display-converted (via azToDisp). Returns a string.
+function formatCoords(lonDeg, latDeg) {
+  if (viewFrame === 'equatorial') {
+    const raH = ((lonDeg / 15) % 24 + 24) % 24;
+    const raHi = floor(raH), raMin = (raH - raHi) * 60;
+    const decAbs = abs(latDeg), decD = floor(decAbs), decM = round((decAbs - decD) * 60);
+    return `RA ${p2(raHi)}h ${raMin < 10 ? '0' : ''}${raMin.toFixed(1)}m  Dec ${latDeg >= 0 ? '+' : '-'}${p2(decD)}° ${p2(decM)}'`;
+  } else if (viewFrame === 'ecliptic') {
+    const latSign = latDeg >= 0 ? '+' : '';
+    return `Ecl Lon ${lonDeg.toFixed(1)}° Lat ${latSign}${latDeg.toFixed(1)}°`;
+  } else if (viewFrame === 'galactic') {
+    const latSign = latDeg >= 0 ? '+' : '';
+    return `Gal Lon ${lonDeg.toFixed(1)}° Lat ${latSign}${latDeg.toFixed(1)}°`;
+  } else {
+    const altSign = latDeg >= 0 ? '+' : '';
+    return `Azm ${lonDeg.toFixed(1)}° Alt ${altSign}${latDeg.toFixed(1)}°`;
+  }
+}
+
 function formatSelection(obj) {
   const d = obj.data;
   const ids = [];
@@ -132,6 +157,14 @@ function formatSelection(obj) {
     type = 'Moon';
     name = 'Moon';
     mag = d.mag;
+  } else if (obj.type === 'asteroid') {
+    type = 'Asteroid';
+    name = d.name;
+    mag = d.mag;
+  } else if (obj.type === 'comet') {
+    type = 'Comet';
+    name = d.name;
+    mag = d.mag;
   }
   let s = type + ': ';
   const parts = [];
@@ -139,6 +172,7 @@ function formatSelection(obj) {
   parts.push(...ids);
   s += parts.join(', ');
   if (mag != null) s += `, Mag ${mag >= 0 ? '+' : ''}${mag.toFixed(2)}`;
+  if (obj.coords) s += `  ${obj.coords}`;
   return s;
 }
 
@@ -816,62 +850,30 @@ function skymapDraw(canvas, params) {
     }
   }
 
-  // Draw Sun, planets, and Moon. Positions computed from Schlyter orbital elements
-  // (ecliptic of date), converted to current-epoch RA/Dec, then projected.
-  // Moon position includes topocentric parallax correction for the observer's location.
-  // Moon phase rendering uses an offset-projection method to determine the
-  // orientation of the terminator on screen.
-  function drawSolarSystem() {
-    const d = daysSinceJ2000 + 1.5;  // Schlyter day number (d=0 at 1999 Dec 31 0h UT)
+  // Update the solar system position cache. Called only when JD changes.
+  // Computes J2000 equatorial unit vectors for all solar system bodies.
+  function updateSSCache() {
+    if (jd === ssCacheJD) return;
+    ssCacheJD = jd;
+    ssCache = [];
 
-    const sun = sunPosition(d);
-    const sunW = sun.w, sunM = sun.M, sunR = sun.r;
-    const sunEclLon = sun.lon, sunEclLat = sun.lat;
-
-    // Ecliptic → equatorial. When j2000, apply Schlyter precession correction
-    // to shift ecliptic longitude from of-date to J2000.
+    const d = daysSinceJ2000 + 1.5;
     const lonCorr = j2000 ? eclLonJ2000Corr(d) : 0;
     const bodyEps = j2000 ? obliquity(0) : epsTrue;
-    function bodyRaDec(lon, lat) {
-      return eclToEq(lon + lonCorr, lat, bodyEps);
+    function toJ2000(ra, dec) { return mvmul(mPT, ...sph2uxyz(ra, dec)); }
+    function bodyJ2000(lon, lat) {
+      const [ra, dec] = eclToEq(lon + lonCorr, lat, bodyEps);
+      return toJ2000(ra, dec);
     }
 
-    const [sunRA, sunDec] = bodyRaDec(sunEclLon, sunEclLat);
-    const sunAngArcmin = (SUN_DIAM1AU / sunR) / 60;
+    const sun = sunPosition(d);
+    const [sx, sy, sz] = bodyJ2000(sun.lon, sun.lat);
+    ssCache.push({ type:'sun', name:'Sun', x:sx, y:sy, z:sz,
+      mag:-26.74, color:'#fd0', angSize:(SUN_DIAM1AU / sun.r) / 60, dist:sun.r });
 
-    const symFontSize = `${max(minFontSize,round(min(W,H)/42))}px sans-serif`;
+    const earthLon = sun.lon + PI;
+    const earthX = sun.r * cos(earthLon), earthY = sun.r * sin(earthLon), earthZ = 0;
 
-    // Sun
-    {
-      const sunPt = projectEpochRaDec(sunRA, sunDec);
-      if (sunPt) {
-        const [sx, sy] = sunPt;
-        const sunRad = max(4, min(W, H) / 100, arcminToPx(sx, sy, sunAngArcmin) / 2);
-        if (showPlanetSymbols) {
-          ctx.fillStyle = '#fd0';
-          ctx.font = symFontSize;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(PLANET_SYMBOLS.Sun, sx, sy);
-        } else {
-          ctx.fillStyle = '#fd0';
-          ctx.beginPath(); ctx.arc(sx, sy, sunRad, 0, TAU); ctx.fill();
-        }
-        drawnObjects.push({x: sx, y: sy, r: sunRad, type: 'sun', data: {name: 'Sun', mag: -26.74, dist: sunR}});
-        if (showPlanetNames) {
-          ctx.fillStyle = darkMode ? '#fff' : '#000';
-          ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-          placeLabel(sx, sy, sunRad + 4, 'Sun');
-        }
-      }
-    }
-
-    // Earth heliocentric position (for geocentric planet positions)
-    const earthLon = sunEclLon + PI;
-    const earthX = sunR * cos(earthLon), earthY = sunR * sin(earthLon), earthZ = 0;
-
-    // Planets
-    const magLimit = 5.05 + magBoost;
     for (const p of PLANETS) {
       const el = p.elems(d);
       let h = planetHelioEcl(el);
@@ -880,100 +882,152 @@ function skymapDraw(canvas, params) {
       const px = hx - earthX, py = hy - earthY, pz = hz - earthZ;
       const [geoLon, geoLat] = uxyz2sph(px, py, pz);
       const geoDist = sqrt(px*px + py*py + pz*pz);
-      const { FV } = phaseElongation(sunR, geoDist, h.r);
+      const { FV } = phaseElongation(sun.r, geoDist, h.r);
       const FVdeg = FV * RAD;
       const ringMagn = p.name === 'Saturn' ? saturnRingMagn(geoLon, geoLat, d) : 0;
-      const rawMag = planetMag(p.name, h.r, geoDist, FVdeg, ringMagn);
-      const drawMag = max(-1.46, min(magLimit, rawMag));
-      const [pRA, pDec] = bodyRaDec(geoLon, geoLat);
-      const ppt = projectEpochRaDec(pRA, pDec);
-      if (!ppt) continue;
-      const [sx, sy] = ppt;
-      const pr = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-      if (showPlanetSymbols) {
-        ctx.fillStyle = PLANET_COLORS[p.name];
-        ctx.font = symFontSize;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(PLANET_SYMBOLS[p.name], sx, sy);
-      } else {
-        ctx.fillStyle = PLANET_COLORS[p.name];
-        ctx.beginPath(); ctx.arc(sx, sy, pr, 0, TAU); ctx.fill();
-      }
-      drawnObjects.push({x: sx, y: sy, r: pr, type: 'planet', data: {name: p.name, mag: rawMag, helioDist: h.r, geoDist, phaseAngle: FVdeg}});
-      if (showPlanetNames) {
-        ctx.fillStyle = darkMode ? '#ccc' : '#222';
-        ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        placeLabel(sx, sy, pr + 3, p.name);
+      const [jx, jy, jz] = bodyJ2000(geoLon, geoLat);
+      ssCache.push({ type:'planet', name:p.name, x:jx, y:jy, z:jz,
+        mag: planetMag(p.name, h.r, geoDist, FVdeg, ringMagn),
+        color: PLANET_COLORS[p.name], symbol: PLANET_SYMBOLS[p.name],
+        helioDist:h.r, geoDist, phaseAngle:FVdeg });
+    }
+
+    const moonPos = moonPosition(d, sun.M, sun.w);
+    const moonAngArcmin = (MOON_DIAM_FACTOR / moonPos.dist) / 60;
+    const [moonRA, moonDec] = eclToEq(moonPos.lon, moonPos.lat, epsTrue);
+    const [topoRA, topoDec] = topocentricCorrection(moonRA, moonDec, moonPos.dist, lstR, loc.latRad);
+    const [mx, my, mz] = toJ2000(topoRA, topoDec);
+    const moonPhase = ((moonPos.lon - sun.lon) % TAU + TAU) % TAU;
+    const moonFVdeg = abs((PI - moonPhase) * RAD);
+    ssCache.push({ type:'moon', name:'Moon', x:mx, y:my, z:mz,
+      mag: moonMag(sun.r, moonPos.dist, moonFVdeg),
+      color: '#ddd', angSize: moonAngArcmin, dist: moonPos.dist, phase: moonPhase });
+
+    // Comets
+    if (params.comets) {
+      for (const c of params.comets) {
+        const h = cometPosition(c, d);
+        const geo = helioToGeo(h, sun);
+        const cmag = cometMagnitude(c.H, c.k, h.r, geo.r);
+        const [cx, cy, cz] = bodyJ2000(geo.lon, geo.lat);
+        ssCache.push({ type:'comet', name:c.name, x:cx, y:cy, z:cz,
+          mag:cmag, color:'#4de', helioDist:h.r, geoDist:geo.r });
       }
     }
 
-    // Moon — geocentric ecliptic of date, then topocentric correction
-    const moonPos = moonPosition(d, sunM, sunW);
-    const moonLon = moonPos.lon, moonLat = moonPos.lat, moonDistER = moonPos.dist;
+    // Asteroids
+    if (params.asteroids) {
+      for (const a of params.asteroids) {
+        const h = asteroidPosition(a, d);
+        const geo = helioToGeo(h, sun);
+        const { FV } = phaseElongation(sun.r, geo.r, h.r);
+        const amag = asteroidMagnitude(a.H, a.G, h.r, geo.r, FV);
+        const [ax, ay, az] = bodyJ2000(geo.lon, geo.lat);
+        ssCache.push({ type:'asteroid', name:a.name, x:ax, y:ay, z:az,
+          mag:amag, color:'#a96', helioDist:h.r, geoDist:geo.r, phaseAngle:FV*RAD });
+      }
+    }
+  }
 
-    const moonAngArcmin = (MOON_DIAM_FACTOR / moonDistER) / 60;
-    const [moonRA, moonDec] = eclToEq(moonLon, moonLat, epsTrue);
-    const [topoRA, topoDec] = topocentricCorrection(moonRA, moonDec, moonDistER, lstR, loc.latRad);
-    {
-      const moonPt = projectEpochRaDec(topoRA, topoDec);
-      if (moonPt) {
-        const [msx, msy] = moonPt;
-        const moonPhase = ((moonLon - sunEclLon) % TAU + TAU) % TAU;  // 0=new, PI=full
-        const phaseR = max(4, min(W, H) / 100, arcminToPx(msx, msy, moonAngArcmin) / 2);
+  // Render solar system from cached positions.
+  function drawSolarSystem() {
+    updateSSCache();
+    const symFontSize = `${max(minFontSize,round(min(W,H)/42))}px sans-serif`;
+    const labelFont = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
+    const magLimit = 5.05 + magBoost;
 
-        const moonFVdeg = (PI - moonPhase) * RAD;
-        const moonVmag = moonMag(sunR, moonDistER, abs(moonFVdeg));
-        drawnObjects.push({x: msx, y: msy, r: phaseR, type: 'moon', data: {name: 'Moon', mag: moonVmag, dist: moonDistER, phase: moonPhase}});
+    let sunSx, sunSy;
+    for (const obj of ssCache) {
+      const [vx, vy, vz] = mvmul(M, obj.x, obj.y, obj.z);
+      if (vz < -1e-10) continue;
+      const d = 1 + vz;
+      const [sx, sy] = toScreen(2 * vx / d, -2 * vy / d);
+      if (sx < -50 || sx > W + 50 || sy < -50 || sy > H + 50) continue;
 
+      if (obj.type === 'sun') {
+        sunSx = sx; sunSy = sy;
+        const r = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
         if (showPlanetSymbols) {
-          ctx.fillStyle = darkMode ? '#ddd' : '#444';
-          ctx.font = symFontSize;
+          ctx.fillStyle = obj.color; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(PLANET_SYMBOLS.Moon, msx, msy);
+          ctx.fillText(PLANET_SYMBOLS.Sun, sx, sy);
         } else {
-          // Dark disk
+          ctx.fillStyle = obj.color;
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        }
+        drawnObjects.push({x:sx, y:sy, r, type:'sun', data:{name:'Sun', mag:obj.mag, dist:obj.dist}});
+        if (showPlanetNames) {
+          ctx.fillStyle = darkMode ? '#fff' : '#000'; ctx.font = labelFont;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+          placeLabel(sx, sy, r + 4, 'Sun');
+        }
+      } else if (obj.type === 'planet') {
+        const drawMag = max(-1.46, min(magLimit, obj.mag));
+        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        if (showPlanetSymbols) {
+          ctx.fillStyle = obj.color; ctx.font = symFontSize;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(obj.symbol, sx, sy);
+        } else {
+          ctx.fillStyle = obj.color;
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        }
+        drawnObjects.push({x:sx, y:sy, r, type:'planet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, phaseAngle:obj.phaseAngle}});
+        if (showPlanetNames) {
+          ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          placeLabel(sx, sy, r + 3, obj.name);
+        }
+      } else if (obj.type === 'moon') {
+        const phaseR = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
+        drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phase:obj.phase}});
+        if (showPlanetSymbols) {
+          ctx.fillStyle = darkMode ? '#ddd' : '#444'; ctx.font = symFontSize;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(PLANET_SYMBOLS.Moon, sx, sy);
+        } else {
           ctx.fillStyle = darkMode ? '#333' : '#555';
-          ctx.beginPath(); ctx.arc(msx, msy, phaseR, 0, TAU); ctx.fill();
-
-          // Lit crescent/gibbous — orientation from offset-projection toward Sun
-          if (moonPhase > 0.05 && moonPhase < TAU - 0.05) {
-            const [mx3, my3, mz3] = sph2uxyz(topoRA, topoDec);
-            const [sx3, sy3, sz3] = sph2uxyz(sunRA, sunDec);
-            const ox = mx3 + 0.01*(sx3 - mx3), oy = my3 + 0.01*(sy3 - my3), oz = mz3 + 0.01*(sz3 - mz3);
-            const ol = sqrt(ox*ox + oy*oy + oz*oz);
-            const offPt = projectEpochRaDec(atan2(oy/ol, ox/ol), asin(oz/ol));
-            const toSunAngle = offPt ? atan2(msy - offPt[1], offPt[0] - msx) : 0;
-            const k = cos(moonPhase);
+          ctx.beginPath(); ctx.arc(sx, sy, phaseR, 0, TAU); ctx.fill();
+          if (obj.phase > 0.05 && obj.phase < TAU - 0.05 && sunSx != null) {
+            const toSunAngle = atan2(sy - sunSy, sunSx - sx);
+            const k = cos(obj.phase);
             ctx.fillStyle = 'rgba(240,240,220,0.95)';
             ctx.beginPath();
-            // Lit semicircle edge (toward Sun)
             for (let i = 0; i <= 24; i++) {
               const t = PI/2 - i*PI/24;
               const bx = phaseR*cos(t), by = phaseR*sin(t);
-              const rx = msx + bx*cos(toSunAngle) - by*sin(toSunAngle);
-              const ry = msy - bx*sin(toSunAngle) - by*cos(toSunAngle);
+              const rx = sx + bx*cos(toSunAngle) - by*sin(toSunAngle);
+              const ry = sy - bx*sin(toSunAngle) - by*cos(toSunAngle);
               if (i===0) ctx.moveTo(rx,ry); else ctx.lineTo(rx,ry);
             }
-            // Terminator edge (cosine-scaled for phase)
             for (let i = 0; i <= 24; i++) {
               const t = -PI/2 + i*PI/24;
               const bx = phaseR*k*cos(t), by = phaseR*sin(t);
-              const rx = msx + bx*cos(toSunAngle) - by*sin(toSunAngle);
-              const ry = msy - bx*sin(toSunAngle) - by*cos(toSunAngle);
+              const rx = sx + bx*cos(toSunAngle) - by*sin(toSunAngle);
+              const ry = sy - bx*sin(toSunAngle) - by*cos(toSunAngle);
               ctx.lineTo(rx,ry);
             }
             ctx.closePath(); ctx.fill();
           }
           ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = 0.5;
-          ctx.beginPath(); ctx.arc(msx, msy, phaseR, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.arc(sx, sy, phaseR, 0, TAU); ctx.stroke();
         }
-
         if (showPlanetNames) {
-          ctx.fillStyle = darkMode ? '#fff' : '#000';
-          ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
+          ctx.fillStyle = darkMode ? '#fff' : '#000'; ctx.font = labelFont;
           ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-          placeLabel(msx, msy, phaseR + 4, 'Moon');
+          placeLabel(sx, sy, phaseR + 4, 'Moon');
+        }
+      } else if (obj.type === 'asteroid' || obj.type === 'comet') {
+        if (obj.mag > magLimit) continue;
+        const drawMag = min(magLimit, obj.mag);
+        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        ctx.fillStyle = obj.color;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        drawnObjects.push({x:sx, y:sy, r, type:obj.type, data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}});
+        if (showPlanetNames) {
+          ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          placeLabel(sx, sy, r + 3, obj.name);
         }
       }
     }
@@ -1078,27 +1132,17 @@ function skymapDraw(canvas, params) {
       const fmtFov = v => v >= 100 ? round(v) + '°' : v.toFixed(1) + '°';
       ctx.textAlign = 'right';
       const hdrR = W - 16;
-      let coordStr;
-      if (viewFrame === 'equatorial') {
-        const raH = ((vLonDisp / 15) % 24 + 24) % 24;
-        const raHi = floor(raH), raMin = (raH - raHi) * 60;
-        const decAbs = abs(vLatDeg), decD = floor(decAbs), decM = round((decAbs - decD) * 60);
-        coordStr = `RA ${p2(raHi)}h ${raMin < 10 ? '0' : ''}${raMin.toFixed(1)}m  Dec ${vLatDeg >= 0 ? '+' : '-'}${p2(decD)}° ${p2(decM)}'`;
-      } else if (viewFrame === 'ecliptic') {
-        const latSign = vLatDeg >= 0 ? '+' : '';
-        coordStr = `Ecl Lon ${vLonDisp.toFixed(1)}° Lat ${latSign}${vLatDeg.toFixed(1)}°`;
-      } else if (viewFrame === 'galactic') {
-        const latSign = vLatDeg >= 0 ? '+' : '';
-        coordStr = `Gal Lon ${vLonDisp.toFixed(1)}° Lat ${latSign}${vLatDeg.toFixed(1)}°`;
-      } else {
-        const altSign = vLatDeg >= 0 ? '+' : '';
-        coordStr = `Azm ${vLonDisp.toFixed(1)}° Alt ${altSign}${vLatDeg.toFixed(1)}°`;
-      }
-      ctx.fillText(coordStr, hdrR, sfs * 1.4);
+      ctx.fillText(formatCoords(vLonDisp, vLatDeg), hdrR, sfs * 1.4);
       ctx.fillText(`Size ${fmtFov(fovW)} × ${fmtFov(fovH)}`, hdrR, sfs * 2.8);
       ctx.textAlign = 'left';
     }
     if (selectedObject) {
+      const up = viewUnproject(selectedObject.x, selectedObject.y);
+      if (up) {
+        const latDeg = up[0] * RAD;
+        const lonDeg = azToDisp(up[1] * RAD);
+        selectedObject.coords = formatCoords(lonDeg, latDeg);
+      }
       ctx.font = `${sfs}px sans-serif`;
       ctx.fillStyle = darkMode ? '#fff' : '#000';
       ctx.textAlign = 'center';
