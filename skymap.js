@@ -171,8 +171,8 @@ function formatSelection(obj) {
   if (name) parts.push(name);
   parts.push(...ids);
   s += parts.join(', ');
-  if (mag != null) s += `, Mag ${mag >= 0 ? '+' : ''}${mag.toFixed(2)}`;
-  if (obj.coords) s += `  ${obj.coords}`;
+  if (obj.coords) s += ` - ${obj.coords}`;
+  if (mag != null) s += `  Mag ${mag >= 0 ? '+' : ''}${mag.toFixed(2)}`;
   return s;
 }
 
@@ -243,6 +243,7 @@ function skymapDraw(canvas, params) {
     showStars, showNames, showStarIds,
     showConst, showConstNames, showBounds,
     showPlanets, showPlanetSymbols, showPlanetNames, j2000,
+    showComets, showCometNames, showAsteroids, showAsteroidNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
     showMilkyWay, showEcliptic, showCelEq, showGalEq,
     showGrid, showHeader,
@@ -903,26 +904,30 @@ function skymapDraw(canvas, params) {
       mag: moonMag(sun.r, moonPos.dist, moonFVdeg),
       color: '#ddd', angSize: moonAngArcmin, dist: moonPos.dist, phase: moonPhase });
 
-    // Comets
+    // Comets and asteroids: when j2000, compute in J2000 ecliptic (no node
+    // precession, Sun longitude corrected to J2000). Otherwise ecliptic of-date.
+    const bodySun = j2000 ? { lon: sun.lon + lonCorr, r: sun.r } : sun;
+
     if (params.comets) {
       for (const c of params.comets) {
-        const h = cometPosition(c, d);
-        const geo = helioToGeo(h, sun);
+        const h = cometPosition(c, d, j2000);
+        const geo = helioToGeo(h, bodySun);
         const cmag = cometMagnitude(c.H, c.k, h.r, geo.r);
-        const [cx, cy, cz] = bodyJ2000(geo.lon, geo.lat);
+        const [ra, dec] = eclToEq(geo.lon, geo.lat, bodyEps);
+        const [cx, cy, cz] = j2000 ? sph2uxyz(ra, dec) : toJ2000(ra, dec);
         ssCache.push({ type:'comet', name:c.name, x:cx, y:cy, z:cz,
           mag:cmag, color:'#4de', helioDist:h.r, geoDist:geo.r });
       }
     }
 
-    // Asteroids
     if (params.asteroids) {
       for (const a of params.asteroids) {
-        const h = asteroidPosition(a, d);
-        const geo = helioToGeo(h, sun);
+        const h = asteroidPosition(a, d, j2000);
+        const geo = helioToGeo(h, bodySun);
         const { FV } = phaseElongation(sun.r, geo.r, h.r);
         const amag = asteroidMagnitude(a.H, a.G, h.r, geo.r, FV);
-        const [ax, ay, az] = bodyJ2000(geo.lon, geo.lat);
+        const [ra, dec] = eclToEq(geo.lon, geo.lat, bodyEps);
+        const [ax, ay, az] = j2000 ? sph2uxyz(ra, dec) : toJ2000(ra, dec);
         ssCache.push({ type:'asteroid', name:a.name, x:ax, y:ay, z:az,
           mag:amag, color:'#a96', helioDist:h.r, geoDist:geo.r, phaseAngle:FV*RAD });
       }
@@ -944,7 +949,7 @@ function skymapDraw(canvas, params) {
       const [sx, sy] = toScreen(2 * vx / d, -2 * vy / d);
       if (sx < -50 || sx > W + 50 || sy < -50 || sy > H + 50) continue;
 
-      if (obj.type === 'sun') {
+      if (obj.type === 'sun' && showPlanets) {
         sunSx = sx; sunSy = sy;
         const r = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
         if (showPlanetSymbols) {
@@ -961,7 +966,7 @@ function skymapDraw(canvas, params) {
           ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 4, 'Sun');
         }
-      } else if (obj.type === 'planet') {
+      } else if (obj.type === 'planet' && showPlanets) {
         const drawMag = max(-1.46, min(magLimit, obj.mag));
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         if (showPlanetSymbols) {
@@ -978,7 +983,7 @@ function skymapDraw(canvas, params) {
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 3, obj.name);
         }
-      } else if (obj.type === 'moon') {
+      } else if (obj.type === 'moon' && showPlanets) {
         const phaseR = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
         drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phase:obj.phase}});
         if (showPlanetSymbols) {
@@ -1017,14 +1022,26 @@ function skymapDraw(canvas, params) {
           ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, phaseR + 4, 'Moon');
         }
-      } else if (obj.type === 'asteroid' || obj.type === 'comet') {
-        if (obj.mag > magLimit) continue;
+      } else if (obj.type === 'comet') {
+        if (!showComets || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         ctx.fillStyle = obj.color;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
-        drawnObjects.push({x:sx, y:sy, r, type:obj.type, data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}});
-        if (showPlanetNames) {
+        drawnObjects.push({x:sx, y:sy, r, type:'comet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}});
+        if (showCometNames) {
+          ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          placeLabel(sx, sy, r + 3, obj.name);
+        }
+      } else if (obj.type === 'asteroid') {
+        if (!showAsteroids || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
+        const drawMag = min(magLimit, obj.mag);
+        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        ctx.fillStyle = obj.color;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        drawnObjects.push({x:sx, y:sy, r, type:'asteroid', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}});
+        if (showAsteroidNames) {
           ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 3, obj.name);
@@ -1172,7 +1189,7 @@ function skymapDraw(canvas, params) {
   drawConstellations(starPositions, spos);
   if (showDeepSky) drawDeepSky();
   if (showStars) drawStars(starPositions);
-  if (showPlanets) drawSolarSystem();
+  if (showPlanets || showComets || showAsteroids) drawSolarSystem();
   if (viewFrame === 'horizon') drawHorizon();
 
   ctx.restore();

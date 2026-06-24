@@ -185,6 +185,8 @@ canvas { display: block; }
         <label><input type="checkbox" id="showStars" checked autocomplete="off"> Stars</label><label style="margin:0"><input type="checkbox" id="showStarIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showNames" checked autocomplete="off"> Names</label>
         <label><input type="checkbox" id="showDeepSky" autocomplete="off"> Deep Sky</label><label style="margin:0"><input type="checkbox" id="showDeepSkyIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showDeepSkyNames" autocomplete="off"> Names</label>
         <label><input type="checkbox" id="showPlanets" checked autocomplete="off"> Planets</label><label style="margin:0"><input type="checkbox" id="showPlanetSymbols" autocomplete="off"> Sym</label><label style="margin:0"><input type="checkbox" id="showPlanetNames" checked autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showComets" autocomplete="off"> Comets</label><span></span><label style="margin:0"><input type="checkbox" id="showCometNames" autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showAsteroids" autocomplete="off"> Asteroids</label><span></span><label style="margin:0"><input type="checkbox" id="showAsteroidNames" autocomplete="off"> Names</label>
       </div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showConst" checked autocomplete="off"> Constellations</label><label><input type="checkbox" id="showConstNames" checked autocomplete="off"> Names</label></div>
       <label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label>
@@ -201,7 +203,7 @@ canvas { display: block; }
     <button onclick="savePNG()">Save PNG</button>
   </div>
   <div style="font-size:13px; line-height:1.4; opacity:0.7; margin-top:4px;">
-    <p>This map shows the sky from any date and time from 1500 to 2500 AD and any location on Earth, with <a href="http://tdc-www.harvard.edu/catalogs/bsc5.html" target="_blank" style="color:inherit;">bright stars</a> to magnitude ~6.5 on mobile, <a href="https://cdsarc.unistra.fr/viz-bin/cat/V/145" target="_blank" style="color:inherit;">more stars</a> to magnitude 9 on desktop, the <a href='https://en.wikipedia.org/wiki/Messier_object'>Messier</a> and <a href='https://en.wikipedia.org/wiki/Caldwell_catalogue'>Caldwell</a> deep sky objects, and <a href="https://stjarnhimlen.se/comp/ppcomp.html" target="_blank" style="color:inherit;">planet positions</a> to arcminute accuracy.</p>
+    <p>This map shows the sky from any date and time from 1500 to 2500 AD and any location on Earth, with <a href="http://tdc-www.harvard.edu/catalogs/bsc5.html" target="_blank" style="color:inherit;">bright stars</a> to magnitude ~6.5 on mobile, <a href="https://cdsarc.unistra.fr/viz-bin/cat/V/145" target="_blank" style="color:inherit;">more stars</a> to magnitude 9 on desktop, the <a href='https://en.wikipedia.org/wiki/Messier_object'>Messier</a> and <a href='https://en.wikipedia.org/wiki/Caldwell_catalogue'>Caldwell</a> deep sky objects, and <a href="https://stjarnhimlen.se/comp/ppcomp.html" target="_blank" style="color:inherit;">planet positions</a> to arcminute accuracy. Asteroids and comet data are from the <a href="https://minorplanetcenter.net/">Minor Planet Center</a>.</p>
     <p><br>For a solar system map that shows how the planets' orbital motion relates to their paths across the constellations, click <a href="ssmap.html">here</a>.</p>
   </div>
 </div>
@@ -543,6 +545,10 @@ function draw() {
     showEcliptic: document.getElementById('showEcliptic').checked,
     showCelEq: document.getElementById('showCelEq').checked,
     showGalEq: document.getElementById('showGalEq').checked,
+    showComets: document.getElementById('showComets').checked,
+    showCometNames: document.getElementById('showCometNames').checked,
+    showAsteroids: document.getElementById('showAsteroids').checked,
+    showAsteroidNames: document.getElementById('showAsteroidNames').checked,
     showGrid: document.getElementById('showGrid').checked,
     showHeader: document.getElementById('showHeader').checked,
     comets: loadedComets,
@@ -659,7 +665,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {

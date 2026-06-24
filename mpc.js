@@ -1,6 +1,6 @@
 // Parse MPC comet and asteroid orbital element files.
 // Comet format: Soft00Cmt (Ephemerides and Orbital Elements export)
-// Asteroid format: MPCORB (Soft00Ast / Soft00Bright)
+// Asteroid format: MPCORB (Soft00Bright)
 
 // Decode MPC packed epoch (e.g. "K2669") to {y, m, d}.
 // Century: I=1800, J=1900, K=2000. Month: 1-9,A=10,B=11,C=12.
