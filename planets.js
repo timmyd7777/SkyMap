@@ -389,10 +389,10 @@ function cometMagnitude(H, k, r, R) {
 }
 
 // Meeus "Astronomical Algorithms" ch.47 — truncated ELP2000 lunar theory (~10" accuracy).
-// d = Schlyter day number (JD - 2451543.5).
+// d = days since J2000.0 (JDE - 2451545.0) in dynamical time.
 // Returns {lon, lat, dist}: ecliptic of date in radians, distance in Earth radii.
 function moonPositionMeeus(d) {
-  const T = (d - 1.5) / 36525;
+  const T = d / 36525;
   const T2 = T * T, T3 = T2 * T, T4 = T3 * T;
 
   // Fundamental arguments (degrees)
