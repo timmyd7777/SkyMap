@@ -20,7 +20,7 @@ python3 -m http.server 8080
 
 Then browse to http://localhost:8080/skymap.html
 
-## Data generation
+## Data Generation
 
 The JavaScript data files (`stars.js`, `constellations.js`, `deepsky.js`, `cities.js`, `milkyway.js`) are pre-generated and checked in. The Python scripts in `data/` regenerate them from source catalogs:
 
