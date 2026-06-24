@@ -32,6 +32,7 @@ python3 gen_constellations.py             # -> constellations.js
 python3 gen_deepsky.py                    # -> deepsky.js
 python3 gen_cities.py                     # -> cities.js
 python3 gen_milkyway.py                   # -> milkyway.js
+python3 gen_vsop87.py                     # -> vsop87.js
 ```
 
 Most scripts auto-download their source CSV files from [SSCore](https://github.com/timmyd7777/SSCore) if not already present. Move the generated `.js` files into the project root to update the app.
