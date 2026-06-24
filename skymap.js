@@ -40,10 +40,14 @@ let selectedObject = null;
 // Used by changeFrame() to convert the view center between frames.
 let curMFrame = null;
 
-// Solar system position cache. Recomputed only when JD or j2000 changes.
-// Each entry: {type, name, x, y, z, mag, color, ...} with J2000 equatorial unit vector.
+// Solar system position cache. Each entry holds a J2000 equatorial unit vector
+// (x, y, z) plus magnitude, color, name, etc. Recomputed when JD or observer
+// location changes; during drag/zoom these are just transformed through the
+// frame matrix like stars, avoiding expensive orbit recomputation every frame.
 let ssCache = [];
 let ssCacheJD = -1;
+let ssCacheLat = null;  // observer latitude at last computation
+let ssCacheLon = null;  // observer longitude at last computation (Moon topocentric)
 
 // ---- Constants ----
 
@@ -854,11 +858,14 @@ function skymapDraw(canvas, params) {
   // Update the solar system position cache. Called only when JD changes.
   // Computes J2000 equatorial unit vectors for all solar system bodies.
   function updateSSCache() {
-    if (jd === ssCacheJD) return;
+    if (jd === ssCacheJD && loc.latRad === ssCacheLat && loc.lonDeg === ssCacheLon) return;
     ssCacheJD = jd;
+    ssCacheLat = loc.latRad;
+    ssCacheLon = loc.lonDeg;
     ssCache = [];
 
     const d = daysSinceJ2000 + 1.5;
+    const tau = daysSinceJ2000 / 365250;
     const lonCorr = j2000 ? eclLonJ2000Corr(d) : 0;
     const bodyEps = j2000 ? obliquity(0) : epsTrue;
     function toJ2000(ra, dec) { return mvmul(mPT, ...sph2uxyz(ra, dec)); }
@@ -867,46 +874,72 @@ function skymapDraw(canvas, params) {
       return toJ2000(ra, dec);
     }
 
-    const sun = sunPosition(d);
-    const [sx, sy, sz] = bodyJ2000(sun.lon, sun.lat);
+    // Sun position from VSOP87 Earth
+    const earth = vsop87Position('EARTH', tau);
+    const sunLon = ((earth.L + PI) % TAU + TAU) % TAU;
+    const sunLat = -earth.B;
+    const sunR = earth.R;
+    const [sx, sy, sz] = bodyJ2000(sunLon, sunLat);
     ssCache.push({ type:'sun', name:'Sun', x:sx, y:sy, z:sz,
-      mag:-26.74, color:'#fd0', angSize:(SUN_DIAM1AU / sun.r) / 60, dist:sun.r });
+      mag:-26.74, color:'#fd0', angSize:(SUN_DIAM1AU / sunR) / 60, dist:sunR });
 
-    const earthLon = sun.lon + PI;
-    const earthX = sun.r * cos(earthLon), earthY = sun.r * sin(earthLon), earthZ = 0;
+    // Earth heliocentric Cartesian for geocentric conversion (formula 33.1)
+    const earthX = earth.R * cos(earth.B) * cos(earth.L);
+    const earthY = earth.R * cos(earth.B) * sin(earth.L);
+    const earthZ = earth.R * sin(earth.B);
 
-    for (const p of PLANETS) {
-      const el = p.elems(d);
-      let h = planetHelioEcl(el);
-      h = planetPerturbations(p.name, d, h.lon, h.lat, h.r);
-      const [hx, hy, hz] = sph2xyz(h.lon, h.lat, h.r);
+    // VSOP87 planets (Mercury through Neptune)
+    const VSOP_PLANETS = [
+      ['MERCURY','Mercury'], ['VENUS','Venus'], ['MARS','Mars'],
+      ['JUPITER','Jupiter'], ['SATURN','Saturn'], ['URANUS','Uranus'], ['NEPTUNE','Neptune']
+    ];
+    for (const [vsopKey, name] of VSOP_PLANETS) {
+      const h = vsop87Position(vsopKey, tau);
+      const hx = h.R * cos(h.B) * cos(h.L);
+      const hy = h.R * cos(h.B) * sin(h.L);
+      const hz = h.R * sin(h.B);
       const px = hx - earthX, py = hy - earthY, pz = hz - earthZ;
       const [geoLon, geoLat] = uxyz2sph(px, py, pz);
       const geoDist = sqrt(px*px + py*py + pz*pz);
-      const { FV } = phaseElongation(sun.r, geoDist, h.r);
+      const { FV } = phaseElongation(sunR, geoDist, h.R);
       const FVdeg = FV * RAD;
-      const ringMagn = p.name === 'Saturn' ? saturnRingMagn(geoLon, geoLat, d) : 0;
+      const ringMagn = name === 'Saturn' ? saturnRingMagn(geoLon, geoLat, d) : 0;
       const [jx, jy, jz] = bodyJ2000(geoLon, geoLat);
-      ssCache.push({ type:'planet', name:p.name, x:jx, y:jy, z:jz,
-        mag: planetMag(p.name, h.r, geoDist, FVdeg, ringMagn),
-        color: PLANET_COLORS[p.name], symbol: PLANET_SYMBOLS[p.name],
-        helioDist:h.r, geoDist, phaseAngle:FVdeg });
+      ssCache.push({ type:'planet', name, x:jx, y:jy, z:jz,
+        mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
+        color: PLANET_COLORS[name], symbol: PLANET_SYMBOLS[name],
+        helioDist:h.R, geoDist, phaseAngle:FVdeg });
     }
 
-    const moonPos = moonPosition(d, sun.M, sun.w);
+    // Pluto via Schlyter (not in VSOP87)
+    const plutoEl = PLANETS[7].elems(d);
+    const plutoH = planetHelioEcl(plutoEl);
+    const [phx, phy, phz] = sph2xyz(plutoH.lon, plutoH.lat, plutoH.r);
+    const ppx = phx - earthX, ppy = phy - earthY, ppz = phz - earthZ;
+    const [plutoGeoLon, plutoGeoLat] = uxyz2sph(ppx, ppy, ppz);
+    const plutoDist = sqrt(ppx*ppx + ppy*ppy + ppz*ppz);
+    const { FV: plutoFV } = phaseElongation(sunR, plutoDist, plutoH.r);
+    const [pjx, pjy, pjz] = bodyJ2000(plutoGeoLon, plutoGeoLat);
+    ssCache.push({ type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
+      mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
+      color: PLANET_COLORS['Pluto'], symbol: PLANET_SYMBOLS['Pluto'],
+      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV*RAD });
+
+    const moonPos = moonPositionMeeus(d);
     const moonAngArcmin = (MOON_DIAM_FACTOR / moonPos.dist) / 60;
-    const [moonRA, moonDec] = eclToEq(moonPos.lon, moonPos.lat, epsTrue);
-    const [topoRA, topoDec] = topocentricCorrection(moonRA, moonDec, moonPos.dist, lstR, loc.latRad);
-    const [mx, my, mz] = toJ2000(topoRA, topoDec);
-    const moonPhase = ((moonPos.lon - sun.lon) % TAU + TAU) % TAU;
+    const [moonGRA, moonGDec] = eclToEq(moonPos.lon + lonCorr, moonPos.lat, bodyEps);
+    const mPrecInv = j2000 ? mtranspose(frameMatrix('equatorial', jd, loc.latRad, loc.lonDeg, false)) : null;
+    const [topoRA, topoDec] = topocentricCorrection(moonGRA, moonGDec, moonPos.dist, lstR, loc.latRad, mPrecInv);
+    const [mx, my, mz] = j2000 ? sph2uxyz(topoRA, topoDec) : toJ2000(topoRA, topoDec);
+    const moonPhase = ((moonPos.lon - sunLon) % TAU + TAU) % TAU;
     const moonFVdeg = abs((PI - moonPhase) * RAD);
     ssCache.push({ type:'moon', name:'Moon', x:mx, y:my, z:mz,
-      mag: moonMag(sun.r, moonPos.dist, moonFVdeg),
+      mag: moonMag(sunR, moonPos.dist, moonFVdeg),
       color: '#ddd', angSize: moonAngArcmin, dist: moonPos.dist, phase: moonPhase });
 
     // Comets and asteroids: when j2000, compute in J2000 ecliptic (no node
     // precession, Sun longitude corrected to J2000). Otherwise ecliptic of-date.
-    const bodySun = j2000 ? { lon: sun.lon + lonCorr, r: sun.r } : sun;
+    const bodySun = j2000 ? { lon: sunLon + lonCorr, r: sunR } : { lon: sunLon, r: sunR };
 
     if (params.comets) {
       for (const c of params.comets) {
@@ -924,7 +957,7 @@ function skymapDraw(canvas, params) {
       for (const a of params.asteroids) {
         const h = asteroidPosition(a, d, j2000);
         const geo = helioToGeo(h, bodySun);
-        const { FV } = phaseElongation(sun.r, geo.r, h.r);
+        const { FV } = phaseElongation(sunR, geo.r, h.r);
         const amag = asteroidMagnitude(a.H, a.G, h.r, geo.r, FV);
         const [ra, dec] = eclToEq(geo.lon, geo.lat, bodyEps);
         const [ax, ay, az] = j2000 ? sph2uxyz(ra, dec) : toJ2000(ra, dec);
