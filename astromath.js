@@ -1,5 +1,5 @@
 // ---- Constants ----
-const {PI, sin, cos, tan, atan2, sqrt, abs, max, min, round, floor, ceil, asin} = Math;
+const {PI, sin, cos, tan, atan2, sqrt, abs, max, min, round, floor, ceil, asin, pow} = Math;
 const TAU = 2 * PI;
 const DEG = PI / 180;       // multiply degrees by this to get radians
 const RAD = 180 / PI;       // multiply radians by this to get degrees

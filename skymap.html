@@ -187,6 +187,7 @@ canvas { display: block; }
         <label><input type="checkbox" id="showPlanets" checked autocomplete="off"> Planets</label><label style="margin:0"><input type="checkbox" id="showPlanetSymbols" autocomplete="off"> Sym</label><label style="margin:0"><input type="checkbox" id="showPlanetNames" checked autocomplete="off"> Names</label>
         <label><input type="checkbox" id="showComets" autocomplete="off"> Comets</label><span></span><label style="margin:0"><input type="checkbox" id="showCometNames" autocomplete="off"> Names</label>
         <label><input type="checkbox" id="showAsteroids" autocomplete="off"> Asteroids</label><span></span><label style="margin:0"><input type="checkbox" id="showAsteroidNames" autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showSatellites" autocomplete="off"> Satellites</label><span></span><label style="margin:0"><input type="checkbox" id="showSatelliteNames" autocomplete="off"> Names</label>
       </div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showConst" checked autocomplete="off"> Constellations</label><label><input type="checkbox" id="showConstNames" checked autocomplete="off"> Names</label></div>
       <label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label>
@@ -215,11 +216,13 @@ canvas { display: block; }
 <script src="milkyway.js?v=4"></script>
 <script src="deepsky.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=8"></script>
+<script src="astromath.js?v=9"></script>
 <script src="vsop87.js?v=1"></script>
 <script src="planets.js?v=9"></script>
 <script src="mpc.js?v=1"></script>
-<script src="skymap.js?v=8"></script>
+<script src="sgp4.js?v=2"></script>
+<script src="satmag.js?v=2"></script>
+<script src="skymap.js?v=16"></script>
 <script>
 
 // ---- Time zone helpers ----
@@ -259,6 +262,7 @@ function localToUTC(y, m, d, h, mi, s) {
 let canvas;
 let loadedComets = null;
 let loadedAsteroids = null;
+let loadedSatellites = null;
 let animTimer = null;
 let animDir = 0;
 let animStepKey = '1d';
@@ -333,8 +337,9 @@ function stepTimePart(part, dir) {
   const utH = dt.localH + dt.localMi / 60 + dt.localS / 3600;
   const jd = julianDate(dt.localY, dt.localM, dt.localD, utH) + deltaDays;
   const cal = calendarDate(jd);
-  const h = floor(cal.ut), mFrac = (cal.ut - h) * 60, mi = floor(mFrac), s = round((mFrac - mi) * 60);
-  setDateTimeFields(max(1500, min(2500, cal.y)), cal.m, cal.d, h, mi, min(59, s));
+  const totalS = round(cal.ut * 3600);
+  const h = floor(totalS / 3600), mi = floor((totalS % 3600) / 60), s = totalS % 60;
+  setDateTimeFields(max(1500, min(2500, cal.y)), cal.m, cal.d, h, mi, s);
   draw();
 }
 
@@ -550,10 +555,13 @@ function draw() {
     showCometNames: document.getElementById('showCometNames').checked,
     showAsteroids: document.getElementById('showAsteroids').checked,
     showAsteroidNames: document.getElementById('showAsteroidNames').checked,
+    showSatellites: document.getElementById('showSatellites').checked,
+    showSatelliteNames: document.getElementById('showSatelliteNames').checked,
     showGrid: document.getElementById('showGrid').checked,
     showHeader: document.getElementById('showHeader').checked,
     comets: loadedComets,
     asteroids: loadedAsteroids,
+    satellites: loadedSatellites,
   });
 }
 
@@ -597,8 +605,9 @@ function init() {
     ssCacheJD = -1; draw();
   });
   fetchCached(`${BASE}/satellites/celestrak/visual.txt`, 'satellites', (data, fromCache) => {
-    const lines = data.split('\n').filter(l => l.trim().length > 0);
-    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${lines.length / 3 | 0} satellites`);
+    loadedSatellites = parseSatellites(data);
+    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${loadedSatellites.length} satellites`);
+    ssCacheJD = -1; draw();
   });
 
   // Populate timezone dropdown
@@ -666,7 +675,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {

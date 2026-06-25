@@ -169,6 +169,10 @@ function formatSelection(obj) {
     type = 'Comet';
     name = d.name;
     mag = d.mag;
+  } else if (obj.type === 'satellite') {
+    type = 'Satellite';
+    name = d.name;
+    mag = d.mag;
   }
   let s = type + ': ';
   const parts = [];
@@ -248,6 +252,7 @@ function skymapDraw(canvas, params) {
     showConst, showConstNames, showBounds,
     showPlanets, showPlanetSymbols, showPlanetNames, j2000,
     showComets, showCometNames, showAsteroids, showAsteroidNames,
+    showSatellites, showSatelliteNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
     showMilkyWay, showEcliptic, showCelEq, showGalEq,
     showGrid, showHeader,
@@ -903,7 +908,7 @@ function skymapDraw(canvas, params) {
     const sunR = earth.R;
     const [sx, sy, sz] = mvmul(mEcl2J2000, ...sph2uxyz(sunLon, sunLat));
     ssCache.push({ type:'sun', name:'Sun', x:sx, y:sy, z:sz,
-      mag:-26.74, color:'#fd0', angSize:(SUN_DIAM1AU / sunR) / 60, dist:sunR });
+      mag:-26.74, angSize:(SUN_DIAM1AU / sunR) / 60, dist:sunR });
 
     // Earth heliocentric Cartesian (ecliptic of-date) for planet geocentric conversion
     const earthX = earth.R * cos(earth.B) * cos(earth.L);
@@ -943,7 +948,7 @@ function skymapDraw(canvas, params) {
       const [jx, jy, jz] = mvmul(mEcl2J2000, ...sph2uxyz(geoLon, geoLat));
       ssCache.push({ type:'planet', name, x:jx, y:jy, z:jz,
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
-        color: PLANET_COLORS[name], symbol: PLANET_SYMBOLS[name],
+        symbol: PLANET_SYMBOLS[name],
         helioDist:h.R, geoDist, phaseAngle:FVdeg });
     }
 
@@ -960,7 +965,7 @@ function skymapDraw(canvas, params) {
     const [pjx, pjy, pjz] = mvmul(mEcl2J2000, ...sph2uxyz(plutoGeoLon, plutoGeoLat));
     ssCache.push({ type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
       mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
-      color: PLANET_COLORS['Pluto'], symbol: PLANET_SYMBOLS['Pluto'],
+      symbol: PLANET_SYMBOLS['Pluto'],
       helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV*RAD });
 
     // Moon: ecliptic of-date → true equatorial → topocentric → J2000
@@ -973,7 +978,7 @@ function skymapDraw(canvas, params) {
     const moonFVdeg = abs((PI - moonPhase) * RAD);
     ssCache.push({ type:'moon', name:'Moon', x:mx, y:my, z:mz,
       mag: moonMag(sunR, moonPos.dist, moonFVdeg),
-      color: '#ddd', angSize: moonAngArcmin, dist: moonPos.dist, phase: moonPhase });
+      angSize: moonAngArcmin, dist: moonPos.dist, phase: moonPhase });
 
     // Comets: J2000 ecliptic elements → J2000 equatorial via Cartesian subtraction
     if (params.comets) {
@@ -988,7 +993,7 @@ function skymapDraw(canvas, params) {
         const cmag = cometMagnitude(c.H, c.k, h.r, geoDist);
         ssCache.push({ type:'comet', name:c.name,
           x:gx/geoDist, y:gy/geoDist, z:gz/geoDist,
-          mag:cmag, color:'#4de', helioDist:h.r, geoDist });
+          mag:cmag, helioDist:h.r, geoDist });
       }
     }
 
@@ -1006,7 +1011,38 @@ function skymapDraw(canvas, params) {
         const amag = asteroidMagnitude(a.H, a.G, h.r, geoDist, FV);
         ssCache.push({ type:'asteroid', name:a.name,
           x:gx/geoDist, y:gy/geoDist, z:gz/geoDist,
-          mag:amag, color:'#a96', helioDist:h.r, geoDist, phaseAngle:FV*RAD });
+          mag:amag, helioDist:h.r, geoDist, phaseAngle:FV*RAD });
+      }
+    }
+
+    // Satellites: SGP4 gives TEME (equatorial of date) in Earth-radii.
+    // Use JD (UTC), not JDE — satellite epochs are UTC.
+    if (params.satellites) {
+      // Observer TEME position and Sun TEME direction for magnitude computation
+      const WGS84_F = 1/298.257223563, WGS84_E2 = WGS84_F*(2 - WGS84_F);
+      const sinLat = sin(loc.latRad), cosLat = cos(loc.latRad);
+      const Nobs = 1/sqrt(1 - WGS84_E2*sinLat*sinLat);
+      const obsX = Nobs*cosLat*cos(lstR), obsY = Nobs*cosLat*sin(lstR);
+      const obsZ = Nobs*(1 - WGS84_E2)*sinLat;
+      const [sunTx, sunTy, sunTz] = mvmul(mNP, sx, sy, sz);
+
+      for (const sat of params.satellites) {
+        const tsince = (jd - sat.epoch) * 1440;
+        if (abs(tsince) > 40320) continue;
+        try {
+          const rv = sgp4Propagate(sat, tsince);
+          const [gx, gy, gz] = rv.pos;
+          const mag = satApparentMag(sat.norad, gx, gy, gz,
+            obsX, obsY, obsZ, sunTx, sunTy, sunTz);
+          if (!isFinite(mag)) continue;
+          const geoDist = sqrt(gx*gx + gy*gy + gz*gz);
+          const ra = atan2(gy, gx);
+          const dec = atan2(gz, sqrt(gx*gx + gy*gy));
+          const [topoRA, topoDec] = topocentricCorrection(ra, dec, geoDist, lstR, loc.latRad, null);
+          const [jx, jy, jz] = mvmul(mtranspose(mNP), ...sph2uxyz(topoRA, topoDec));
+          ssCache.push({ type:'satellite', name:sat.name, mag,
+            x:jx, y:jy, z:jz });
+        } catch(e) {}
       }
     }
   }
@@ -1034,33 +1070,34 @@ function skymapDraw(canvas, params) {
       if (obj.type === 'sun' && showPlanets) {
         const r = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
         if (showPlanetSymbols) {
-          ctx.fillStyle = obj.color; ctx.font = symFontSize;
+          ctx.fillStyle = '#fd0'; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(PLANET_SYMBOLS.Sun, sx, sy);
         } else {
-          ctx.fillStyle = obj.color;
+          ctx.fillStyle = '#fd0';
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         }
         drawnObjects.push({x:sx, y:sy, r, type:'sun', data:{name:'Sun', mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
-          ctx.fillStyle = darkMode ? '#fff' : '#000'; ctx.font = labelFont;
+          ctx.fillStyle = '#fd0'; ctx.font = labelFont;
           ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 4, 'Sun');
         }
       } else if (obj.type === 'planet' && showPlanets) {
         const drawMag = max(-1.46, min(magLimit, obj.mag));
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const pColor = PLANET_COLORS[obj.name];
         if (showPlanetSymbols) {
-          ctx.fillStyle = obj.color; ctx.font = symFontSize;
+          ctx.fillStyle = pColor; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(obj.symbol, sx, sy);
         } else {
-          ctx.fillStyle = obj.color;
+          ctx.fillStyle = pColor;
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         }
         drawnObjects.push({x:sx, y:sy, r, type:'planet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
-          ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
+          ctx.fillStyle = pColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 3, obj.name);
         }
@@ -1077,7 +1114,7 @@ function skymapDraw(canvas, params) {
           if (obj.phase > 0.05 && obj.phase < TAU - 0.05) {
             const toSunAngle = atan2(sy - sunSy, sunSx - sx);
             const k = cos(obj.phase);
-            ctx.fillStyle = 'rgba(240,240,220,0.95)';
+            ctx.fillStyle = 'rgba(210,210,190,0.95)';
             ctx.beginPath();
             for (let i = 0; i <= 24; i++) {
               const t = PI/2 - i*PI/24;
@@ -1099,7 +1136,7 @@ function skymapDraw(canvas, params) {
           ctx.beginPath(); ctx.arc(sx, sy, phaseR, 0, TAU); ctx.stroke();
         }
         if (showPlanetNames) {
-          ctx.fillStyle = darkMode ? '#fff' : '#000'; ctx.font = labelFont;
+          ctx.fillStyle = darkMode ? '#ddd' : '#444'; ctx.font = labelFont;
           ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, phaseR + 4, 'Moon');
         }
@@ -1107,7 +1144,7 @@ function skymapDraw(canvas, params) {
         if (!showComets || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-        ctx.fillStyle = obj.color;
+        ctx.fillStyle = '#4de';
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'comet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showCometNames) {
@@ -1119,11 +1156,25 @@ function skymapDraw(canvas, params) {
         if (!showAsteroids || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-        ctx.fillStyle = obj.color;
+        const astColor = darkMode ? '#ff0' : '#996600';
+        ctx.fillStyle = astColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'asteroid', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showAsteroidNames) {
-          ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
+          ctx.fillStyle = astColor; ctx.font = labelFont;
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          placeLabel(sx, sy, r + 3, obj.name);
+        }
+      } else if (obj.type === 'satellite') {
+        if (!showSatellites || obj.mag > magLimit + 3) continue;
+        const drawMag = min(magLimit, obj.mag);
+        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const satColor = darkMode ? '#0f0' : '#060';
+        ctx.fillStyle = satColor;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, mag:obj.mag}, jx:obj.x, jy:obj.y, jz:obj.z});
+        if (showSatelliteNames) {
+          ctx.fillStyle = satColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 3, obj.name);
         }
@@ -1270,7 +1321,7 @@ function skymapDraw(canvas, params) {
   drawConstellations(starPositions, spos);
   if (showDeepSky) drawDeepSky();
   if (showStars) drawStars(starPositions);
-  if (showPlanets || showComets || showAsteroids) drawSolarSystem();
+  if (showPlanets || showComets || showAsteroids || showSatellites) drawSolarSystem();
   if (viewFrame === 'horizon') drawHorizon();
 
   ctx.restore();

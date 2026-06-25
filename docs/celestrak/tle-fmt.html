@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<title>CelesTrak: NORAD Two-Line Element Set Format</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/web/bootstrap4/css/bootstrap.min.css">
+<script src="/web/jquery/jquery-3.7.1.min.js"></script>
+<script src="/web/popper/umd/popper.min.js"></script>
+<!-- <script src="https://unpkg.com/@popperjs/core@2"></script> -->
+<script src="/web/bootstrap4/js/bootstrap.min.js"></script>
+
+<link rel="stylesheet" type="text/css" href="/new-site.css">
+
+</head>
+
+<body>
+
+<div class=container>
+
+<br>
+
+<h1 class=center>NORAD Two-Line Element Set Format</h1>
+
+<p>Data for each satellite consists of three lines in the following format:</p>
+
+<ul>
+<pre>
+AAAAAAAAAAAAAAAAAAAAAAAA
+1 NNNNNU NNNNNAAA NNNNN.NNNNNNNN +.NNNNNNNN +NNNNN-N +NNNNN-N N NNNNN
+2 NNNNN NNN.NNNN NNN.NNNN NNNNNNN NNN.NNNN NNN.NNNN NN.NNNNNNNNNNNNNN
+</pre>
+</ul>
+
+<p>Line 0 is a twenty-four character name (to be consistent with the name length in the
+NORAD SATCAT).</p>
+
+<p>Lines 1 and 2 are the standard Two-Line Orbital Element Set Format identical to that
+used by NORAD and NASA. The format description is:</p>
+
+<table class="center outline striped" style="max-width: 475px;" cellpadding=4>
+  <tr class=header>
+    <th colspan=2>Line 1</th>
+  </tr>
+  <tr>
+    <th width=75>Column</th>
+    <th width=400>Description</th>
+  </tr>
+  <tr>
+    <td class=center>01</td>
+    <td>Line Number of Element Data</td>
+  </tr>
+  <tr>
+    <td class=center>03-07</td>
+    <td>Satellite Number</td>
+  </tr>
+  <tr>
+    <td class=center>08</td>
+    <td>Classification (U=Unclassified)</td>
+  </tr>
+  <tr>
+    <td class=center>10-11</td>
+    <td>International Designator (Last two digits of launch year)</td>
+  </tr>
+  <tr>
+    <td class=center>12-14</td>
+    <td>International Designator (Launch number of the year)</td>
+  </tr>
+  <tr>
+    <td class=center>15-17</td>
+    <td>International Designator (Piece of the launch)</td>
+  </tr>
+  <tr>
+    <td class=center>19-20</td>
+    <td>Epoch Year (Last two digits of year)</td>
+  </tr>
+  <tr>
+    <td class=center>21-32</td>
+    <td>Epoch (Day of the year and fractional portion of the day)</td>
+  </tr>
+  <tr>
+    <td class=center>34-43</td>
+    <td>First Time Derivative of the Mean Motion</td>
+  </tr>
+  <tr>
+    <td class=center>45-52</td>
+    <td>Second Time Derivative of Mean Motion (Leading decimal point assumed)</td>
+  </tr>
+  <tr>
+    <td class=center>54-61</td>
+    <td>BSTAR drag term (Leading decimal point assumed)</td>
+  </tr>
+  <tr>
+    <td class=center>63</td>
+    <td>Ephemeris type</td>
+  </tr>
+  <tr>
+    <td class=center>65-68</td>
+    <td>Element number</td>
+  </tr>
+  <tr>
+    <td class=center>69</td>
+    <td>Checksum (Modulo 10)<br>
+    (Letters, blanks, periods, plus signs&nbsp;=&nbsp;0; minus signs&nbsp;=&nbsp;1)</td>
+  </tr>
+</table>
+<br>
+<table class="center outline striped" style="max-width: 475px;" cellpadding=4>
+  <tr class=header>
+    <th colspan=2>Line 2</th>
+  </tr>
+  <tr>
+    <th width=75>Column</th>
+    <th width=400>Description</th>
+  </tr>
+  <tr>
+    <td class=center>01</td>
+    <td>Line Number of Element Data</td>
+  </tr>
+  <tr>
+    <td class=center>03-07</td>
+    <td>Satellite Number</td>
+  </tr>
+  <tr>
+    <td class=center>09-16</td>
+    <td>Inclination [Degrees]</td>
+  </tr>
+  <tr>
+    <td class=center>18-25</td>
+    <td>Right Ascension of the Ascending Node [Degrees]</td>
+  </tr>
+  <tr>
+    <td class=center>27-33</td>
+    <td>Eccentricity (Leading decimal point assumed)</td>
+  </tr>
+  <tr>
+    <td class=center>35-42</td>
+    <td>Argument of Perigee [Degrees]</td>
+  </tr>
+  <tr>
+    <td class=center>44-51</td>
+    <td>Mean Anomaly [Degrees]</td>
+  </tr>
+  <tr>
+    <td class=center>53-63</td>
+    <td>Mean Motion [Revs per day]</td>
+  </tr>
+  <tr>
+    <td class=center>64-68</td>
+    <td>Revolution number at epoch [Revs]</td>
+  </tr>
+  <tr>
+    <td class=center>69</td>
+    <td>Checksum (Modulo 10)</td>
+  </tr>
+</table>
+<br>
+<p>All other columns are blank or fixed.</p>
+
+<p>Example:</p>
+
+<ul>
+<pre>
+NOAA 14                 
+1 23455U 94089A   97320.90946019  .00000140  00000-0  10191-3 0  2621
+2 23455  99.0090 272.6745 0008546 223.1686 136.8816 14.11711747148495
+</pre>
+</ul>
+
+<p>For further information, see <a href="/columns/v04n03/">"Frequently
+Asked Questions: Two-Line Element Set Format"</a> in the <i>Computers &amp;
+Satellites</i> column of <i>Satellite Times</i>, Volume 4 Number 3 and 
+<a href="ADCOM%20DO%20Form%2012.pdf">ADCOM/DO Form 12 (Element Set Formats)</a>.</p>
+
+<br>
+<footer class="footer lightBG">
+	<div class="d-flex justify-content-between align-items-center">
+		<span class=NOmobile>
+		<img src="/images/CT-icon-256-t.png" alt="CelesTrak" height=100 style="padding-left: 25px; padding-right: 50px;">
+		</span>
+  	<span class="center mediumSize" style="padding-top: 10px; padding-bottom: 10px; font-style: italic; margin: auto;">
+    	<a href="/webmaster.php" title="About the Webmaster">Dr. T.S. Kelso</a>
+    	<a href="mailto:TS.Kelso@celestrak.org">[TS.Kelso@celestrak.org]</a><br>
+    	Follow <a href="https://bsky.app/profile/tskelso.bsky.social">@TSKelso</a> on Bluesky<br>
+  		  Last updated: 2022 Jul 01 17:14:05 UTC<br>
+  Accessed 537,128 times<br>
+  Current system time: 2026 Jun 24 04:25:18 UTC<br>
+  		<a tabindex="0" title="CelesTrak's Simple Privacy Policy" data-toggle="popover" data-trigger="focus"
+  		data-placement="top" data-content="We do not use cookies on CelesTrak and
+  		we do not collect any personal information, other than IP addresses, which
+  		are used to detect and block malicious activity and to assess system
+  		performance. We do not use IP addresses for tracking or any other
+  		purposes. No personal data is shared with third parties."><span style="color:blue">CelesTrak's
+  		Simple Privacy Policy</span></a>
+  	</span>
+		<span class=NOmobile>
+		<img src="/images/CT-icon-256-t.png" alt="CelesTrak" height=100 style="padding-left: 50px; padding-right: 25px;">
+		</span>
+	</div>
+</footer>
+
+<script>
+$(document).ready(function(){
+    $('[data-toggle="popover"]').popover();   
+});
+$('.popover-dismiss').popover({
+  trigger: 'focus'
+});
+</script>
+</div>
+
+</body>
+
+</html>

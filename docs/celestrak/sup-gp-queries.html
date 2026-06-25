@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<title>CelesTrak: How to Perform SupGP Queries</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+</head>
+
+<body>
+
+<div class=container>
+
+<h2 class=center>How to Perform SupGP Queries</h2>
+
+<p class=center><b><i>by Dr. T.S. Kelso</i></b><br>2022 Jun 19<br>Updated 2026 May 09</p>
+
+<h3>Background</h3>
+
+<p>Just like with <a href="/NORAD/documentation/gp-data-formats.php">standard GP queries</a>, users may now use standard queries to extract data from the Supplemental GP (SupGP) data.</p>
+
+<h3>The Implementation</h3>
+
+<p>All SupGP queries on CelesTrak take the form:
+<ul><li>https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?{QUERY}=VALUE[&FORMAT=VALUE]</li></ul>
+</p>
+
+<p>where {QUERY} is:
+<ul>
+<li>CATNR: Catalog Number (1 to 9 digits). Allows return of data for a single catalog number.</li>
+<li>INTDES: International Designator (yyyy-nnn). Allows return of data for all objects associated with a particular launch.</li>
+<li>SOURCE: Input source of data for groups of satellites provided on the CelesTrak SupGP data page. These groups are based on the DATA_SOURCE:
+  <ul>
+    <li>AST-E (AST SpaceMobile Ephemeris</li>
+    <li>CPF (Consolidated Laser Ranging Predictions)</li>
+    <li>CSS-E (CSS Ephemeris)</li>
+    <li>EUMETSAT-E (EUMETSAT Ephemeris)</li>
+    <li>GLONASS-RE (GLONASS Rapid Ephemeris)</li>
+    <li>GPS-A (GPS Almanac)</li>
+    <li>GPS-E (GPS Ephemeris)</li>
+    <li>Intelsat-11P (Intelsat 11-Parameter Data)</li>
+    <li>Intelsat-E (Intelsat Epehemeris)</li>
+    <li>Iridium-E (Iridium Ephemeris)</li>
+    <li>ISS-E (ISS Ephemeris)</li>
+    <li>ISS-TLE (ISS TLE [legacy data])</li>
+    <li>Kuiper-E (Kuiper Ephemeris)</li>
+    <li>METEOSAT-SV (METEOSAT State Vector)</li>
+    <li>OneWeb-E (OneWeb Ephemeris)</li>
+    <li>Orbcomm-TLE (Orbcomm-Provided SupTLE)</li>
+    <li>Planet-E (Planet Ephemeris)</li>
+    <li>SES-11P (SES 11-Parameter Data)</li>
+    <li>SES-E (SES Ephemeris)</li>
+    <li>SpaceX-E (SpaceX Ephemeris)</li>
+    <li>SpaceX-SV (SpaceX State Vectors)</li>
+    <li>Telesat-E (Telesat Ephemeris)</li>
+    <li>Transporter-SV (Transporter State Vectors)</li>
+    <li>Bandwagon-SV (Bandwagon State Vectors)</li>
+  </ul>
+</li>
+<li>NAME: Satellite Name. Allows searching for satellites by parts of their name.</li>
+<li>SPECIAL: Special data sets for the GEO Protected Zone (GPZ) or GPZ Plus.</li>
+<li>FILE: Name of the standard data sets on the SupGP page (e.g., starlink, oneweb, planet). Easiest way to get the current pre-launch data for specific Starlink or Transporter launches (e.g., starlink-g4-22).</li>
+</ul>
+</p>
+
+<p>Allowed formats are:
+<ul>
+	<li>TLE or 3LE: Three-line element sets.</li>
+	<li>2LE: Two-line element sets (no satellite name on Line 0).</li>
+	<li>XML: OMM XML format including all mandatory elements.</li>
+	<li>KVN: OMM KVN format including all mandatory elements.</li>
+	<li>JSON: OMM keywords for all GP elements in JSON format.</li>
+	<li>JSON-PRETTY: OMM keywords for all GP elements in JSON pretty-print format.</li>
+	<li>CSV: OMM keywords for all GP elements in CSV format.</li>
+</ul>
+</p>
+
+<p>The FORMAT specification is optional, but defaults to CSV (as of 2026 May 09).</p>
+
+<p>Examples:
+<ul>
+<li>TLE format for ISS (25544)<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?CATNR=25544&FORMAT=TLE">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?CATNR=25544&FORMAT=TLE</a></li>
+<li>KVN format for ISS (25544)<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?CATNR=25544&FORMAT=KVN">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?CATNR=25544&FORMAT=KVN</a></li>
+<li>XML format for the SupGP data produced using Telesat ephemeris<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SOURCE=Telesat-E&FORMAT=XML">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SOURCE=Telesat-E&FORMAT=XML</a></li>
+<li>JSON format (pretty print) for all objects from the Starlink launch using International Designator 2020-025<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?INTDES=2020-025&FORMAT=JSON-PRETTY">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?INTDES=2020-025&FORMAT=JSON-PRETTY</a></li>
+<li>JSON format for all objects with FLOCK in their name<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?NAME=FLOCK&FORMAT=JSON">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?NAME=FLOCK&FORMAT=JSON</a></li>
+<li>CSV format for the SupGP data produced using the GPS SEM almanac<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SOURCE=GPS-A&FORMAT=CSV">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SOURCE=GPS-A&FORMAT=CSV</a></li>
+<li>CSV format for GEO Protected Zone objects<br>
+<a href="https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SPECIAL=gpz&FORMAT=CSV">https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?SPECIAL=gpz&FORMAT=CSV</a></li>
+</ul>
+</p>
+
+<h3>Differences from Standard GP Queries</h3>
+
+<p>Unlike in the standard GP queries, it is possible to get multiple SupGP elements for a single object. That is because some objects have data produced by multiple sources (e.g., with the CPF data) or because there is data for multiple epochs.</p>
+
+<p>In the CPF data, multiple observatories track objects and produce predictions for ILRS satellites. That data shows the CPF name with the 3-character prediction center in brackets as the OBJECT_NAME.</p>
+
+<p>The ISS ephemeris, which spans two weeks, is broken into 6-hour segments to best represent changes due to drag or ISS maneuvers.</p>
+
+<p>The Intelsat data includes weekly updates along with post-maneuver [PM] updates (if applicable), so there may be weekly/post-maneuver/weekly data for the same object.</p>
+
+<p>It is important that users use the appropriate data when multiple epochs are available. SupGP data is fitted from the current epoch forward, as opposed to GP data where that is fit to past observations.</p>
+
+<br>
+
+</body>
+
+</html>
