@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<title>CelesTrak: Documentation</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+</head>
+
+<body>
+
+<h1 class=center>Documentation</h1>
+
+<ul>
+  <li><a href="tle-fmt.html">Description of NORAD Two-Line Element Set Format</a></li>
+  <li><a href="tle.pdf">ADCOM/DO Form 12</a> (NORAD two-line element set format from 
+  	  <i>Spacetrack Report Number 3</i>)</li>
+  <li><a href="NASA%20Prediction%20Bulletins.pdf">NASA Prediction Bulletins</a>
+    <blockquote>
+      For many years&mdash;until the early 1990s&mdash;the TLE data on CelesTrak was entered by hand
+      from Part I of the NASA Prediction Bulletins, which were received via First Class Mail. If you
+      have ever been curious about this data and how it was used to allow manual calculations back
+      before computers were widely available, this document explains it all.
+    </blockquote>
+  </li>
+  <li><a href="checksum.html">Two-Line Element Set Checksum Controversy</a> (circa January 1992)</li>
+  <li><i>Spacetrack Report Number 3</i><br>
+    (<a href="spacetrk.pdf">Adobe Acrobat Version 7.x (PDF Version 1.6) document</a>, 484,938 bytes)<br>
+    (<a href="spacetrk.zip">L<sup>A</sup>T<sub>E</sub>X Version</a>, 36,069 bytes)
+    <blockquote>
+      NORAD maintains general perturbation element sets on all resident space objects. These
+      element sets are periodically refined so as to maintain a reasonable prediction capability
+      on all space objects. In turn, these element sets are provided to users. The purpose of
+      this report is to provide the user with a means of propagating these element sets in time
+      to obtain a position and velocity of the space object.
+    </blockquote>
+    <blockquote>
+      The most important point to be noted is that not just any prediction model will
+      suffice. The NORAD element sets are "mean" values obtained by removing periodic
+      variations in a particular way. In order to obtain good predictions, these periodic
+      variations must be reconstructed (by the prediction model) in exactly the same way they
+      were removed by NORAD. Hence, inputting NORAD element sets into a different model (even
+      though the model may be more accurate or even a numerical integrator) will result in
+      degraded predictions. The NORAD element sets must be used with one of the models described
+      in this report in order to retain maximum prediction accuracy.
+    </blockquote>
+  </li>
+  <li><a href="sgp4.pdf">Revisiting Spacetrack Report #3</a>
+    <blockquote>
+      Over a quarter century ago, the United States Department of Defense (DoD) 
+      released the equations and source code used to predict satellite positions 
+      through SpaceTrack Report Number 3 (STR#3). Because the DoD's two-line 
+      element sets (TLEs) were the only source of orbital data, widely available 
+      through NASA, this code became commonplace among users needing accurate 
+      results. However, end users made code changes to correct the 
+      implementation of the equations and to handle rare cases encountered in 
+      operations. These changes migrated into numerous new versions and compiled 
+      programs outside the DoD. Changes made to the original STR#3 code have not 
+      been released in a comprehensive form to the public, so the code available 
+      to the public no longer matches the code used by DoD to produce the TLEs. 
+      Fortunately, independent efforts, technical papers, and source code 
+      enabled us to synthesize a non-proprietary version which we believe is 
+      up-to-date and accurate. This paper provides source code, test cases, 
+      results, and analysis of a version of SGP4 theory designed to be highly 
+      compatible with recent DoD versions. 
+    </blockquote>
+  </li>
+  <li><a href="gp-data-formats.html"><b>"A New Way to Obtain GP Data (aka TLEs)"</b></a>
+    <blockquote>
+      New ways to get GP data are now available! Up until now, we've used the TLE
+      format to ingest data into SGP4. With the growth of the catalog soon to
+      exceed the current range of 5-digit catalog numbers, you may be wondering
+      how we will handle that. If so, be sure to read this article!
+    </blockquote>
+  </li>
+  <li><a href="sup-gp-queries.html"><b>"How to Perform SupGP Queries"</b></a>
+    <blockquote>
+      New ways to get SupGP data are now available, too!
+    </blockquote>
+  </li>
+</ul>
+
+<h1 class=center>Data Sources</h1>
+
+<ul>
+  <li><a target="_BLANK" href="http://nssdc.gsfc.nasa.gov/spacewarn/">SPACEWARN Bulletin</a>
+    <blockquote>
+      The SPACEWARN Bulletin is intended to serve as an international communication mechanism
+      for the rapid distribution of information on satellites and space probes. The material it
+      contains is based on guidelines in "COSPAR Guide to Rocket and Satellite Information
+      and Data Exchange," COSPAR Transactions #8, December 1972, and various Committee on
+      Space Research (COSPAR) resolutions.
+    </blockquote>
+  </li>
+  <li><a target="_BLANK" href="http://www.planet4589.org/space/jsr/jsr.html">Jonathan's Space Report</a>
+    <blockquote>
+      The Space Report ("JSR") is issued about once a week. It describes all space
+      launches, including both piloted missions and automated satellites.
+    </blockquote>
+  </li>
+</ul>
+
+<br>
+
+</body>
+
+</html>
