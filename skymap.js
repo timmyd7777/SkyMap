@@ -128,6 +128,31 @@ function formatCoords(lonDeg, latDeg) {
   }
 }
 
+function formatDist(d) {
+  const LY_PER_PC = 3.26156;
+  if (d.type === 'star') {
+    const pc = d.data.dist;
+    if (!pc || pc <= 0) return '';
+    const ly = pc * LY_PER_PC;
+    return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
+  } else if (d.type === 'deepsky') {
+    const pc = d.data[4];
+    if (!pc || pc <= 0) return '';
+    const ly = pc * LY_PER_PC;
+    if (d.data[0] === 'GX') return `${(ly/1e6).toFixed(1)} Mly`;
+    return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
+  } else if (d.type === 'moon' || d.type === 'satellite') {
+    const km = d.data.dist;
+    if (!km || km <= 0) return '';
+    return `${round(km).toLocaleString()} km`;
+  } else if (d.type === 'sun' || d.type === 'planet' || d.type === 'comet' || d.type === 'asteroid') {
+    const au = d.data.geoDist || d.data.dist;
+    if (!au || au <= 0) return '';
+    return `${au.toFixed(3)} AU`;
+  }
+  return '';
+}
+
 function formatSelection(obj) {
   const d = obj.data;
   const ids = [];
@@ -181,6 +206,8 @@ function formatSelection(obj) {
   s += parts.join(', ');
   if (obj.coords) s += ` - ${obj.coords}`;
   if (mag != null) s += `  Mag ${mag >= 0 ? '+' : ''}${mag.toFixed(2)}`;
+  const dist = formatDist(obj);
+  if (dist) s += `  Dist ${dist}`;
   return s;
 }
 
@@ -698,7 +725,7 @@ function skymapDraw(canvas, params) {
         [sx, sy] = toScreen(2 * x1 / d, -2 * vy / d);
       }
       const inView = vz > -1e-10 && sx >= 0 && sx <= W && sy >= 0 && sy <= H;
-      const p = {sx, sy, mag: s[2], hr, hd: s[5], hip: s[6], bayer: s[7], flamsteed: s[8], name: s[9], inView, jx: x0, jy: y0, jz: z0};
+      const p = {sx, sy, mag: s[2], dist: s[3], hr, hd: s[5], hip: s[6], bayer: s[7], flamsteed: s[8], name: s[9], inView, jx: x0, jy: y0, jz: z0};
       starPositions.push(p);
       if (hr) spos[hr] = p;
     }
@@ -968,17 +995,21 @@ function skymapDraw(canvas, params) {
       symbol: PLANET_SYMBOLS['Pluto'],
       helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV*RAD });
 
+    // Observer geocentric position in Earth-radii (WGS84 ellipsoid)
+    const [obsX, obsY, obsZ] = geocentricXYZ(lstR, loc.latRad);
+
     // Moon: ecliptic of-date → true equatorial → topocentric → J2000
     const moonPos = moonPositionMeeus(d);
     const moonAngArcmin = (MOON_DIAM_FACTOR / moonPos.dist) / 60;
     const [moonGRA, moonGDec] = eclToEq(moonPos.lon, moonPos.lat, epsTrue);
-    const [topoRA, topoDec] = topocentricCorrection(moonGRA, moonGDec, moonPos.dist, lstR, loc.latRad, null);
+    const [moonBx, moonBy, moonBz] = sph2xyz(moonGRA, moonGDec, moonPos.dist);
+    const [topoRA, topoDec, topoDistER] = topocentricCorrectionXYZ(moonBx, moonBy, moonBz, obsX, obsY, obsZ);
     const [mx, my, mz] = mvmul(mtranspose(mNP), ...sph2uxyz(topoRA, topoDec));
     const moonPhase = ((moonPos.lon - sunLon) % TAU + TAU) % TAU;
     const moonFVdeg = abs((PI - moonPhase) * RAD);
     ssCache.push({ type:'moon', name:'Moon', x:mx, y:my, z:mz,
       mag: moonMag(sunR, moonPos.dist, moonFVdeg),
-      angSize: moonAngArcmin, dist: moonPos.dist, phase: moonPhase });
+      angSize: moonAngArcmin, dist: topoDistER * 6378.14, phase: moonPhase });
 
     // Comets: J2000 ecliptic elements → J2000 equatorial via Cartesian subtraction
     if (params.comets) {
@@ -1018,12 +1049,6 @@ function skymapDraw(canvas, params) {
     // Satellites: SGP4 gives TEME (equatorial of date) in Earth-radii.
     // Use JD (UTC), not JDE — satellite epochs are UTC.
     if (params.satellites) {
-      // Observer TEME position and Sun TEME direction for magnitude computation
-      const WGS84_F = 1/298.257223563, WGS84_E2 = WGS84_F*(2 - WGS84_F);
-      const sinLat = sin(loc.latRad), cosLat = cos(loc.latRad);
-      const Nobs = 1/sqrt(1 - WGS84_E2*sinLat*sinLat);
-      const obsX = Nobs*cosLat*cos(lstR), obsY = Nobs*cosLat*sin(lstR);
-      const obsZ = Nobs*(1 - WGS84_E2)*sinLat;
       const [sunTx, sunTy, sunTz] = mvmul(mNP, sx, sy, sz);
 
       for (const sat of params.satellites) {
@@ -1035,13 +1060,11 @@ function skymapDraw(canvas, params) {
           const mag = satApparentMag(sat.norad, gx, gy, gz,
             obsX, obsY, obsZ, sunTx, sunTy, sunTz);
           if (!isFinite(mag)) continue;
-          const geoDist = sqrt(gx*gx + gy*gy + gz*gz);
-          const ra = atan2(gy, gx);
-          const dec = atan2(gz, sqrt(gx*gx + gy*gy));
-          const [topoRA, topoDec] = topocentricCorrection(ra, dec, geoDist, lstR, loc.latRad, null);
-          const [jx, jy, jz] = mvmul(mtranspose(mNP), ...sph2uxyz(topoRA, topoDec));
+          const [satTopoRA, satTopoDec, satTopoER] = topocentricCorrectionXYZ(gx, gy, gz, obsX, obsY, obsZ);
+          const [jx, jy, jz] = mvmul(mtranspose(mNP), ...sph2uxyz(satTopoRA, satTopoDec));
           ssCache.push({ type:'satellite', name:sat.name, mag,
-            x:jx, y:jy, z:jz });
+            // WGS72 radius (6378.135 km), not WGS84 — SGP4 assumes WGS72; using WGS84 shifts positions by tens of meters at GEO range.
+            x:jx, y:jy, z:jz, dist:satTopoER * 6378.135 });
         } catch(e) {}
       }
     }
@@ -1172,7 +1195,7 @@ function skymapDraw(canvas, params) {
         const satColor = darkMode ? '#0f0' : '#060';
         ctx.fillStyle = satColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
-        drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, mag:obj.mag}, jx:obj.x, jy:obj.y, jz:obj.z});
+        drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showSatelliteNames) {
           ctx.fillStyle = satColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -1334,6 +1357,19 @@ function skymapDraw(canvas, params) {
   }
 
   if (viewFrame === 'horizon') drawCardinals();
+  if (selectedObject && selectedObject.data.name) {
+    const sel = selectedObject;
+    const fresh = ssCache.find(o => o.type === sel.type && o.name === sel.data.name);
+    if (fresh) {
+      sel.jx = fresh.x; sel.jy = fresh.y; sel.jz = fresh.z;
+      sel.data.mag = fresh.mag;
+      if (fresh.dist !== undefined) sel.data.dist = fresh.dist;
+      if (fresh.helioDist !== undefined) sel.data.helioDist = fresh.helioDist;
+      if (fresh.geoDist !== undefined) sel.data.geoDist = fresh.geoDist;
+      if (fresh.phase !== undefined) sel.data.phase = fresh.phase;
+      if (fresh.phaseAngle !== undefined) sel.data.phaseAngle = fresh.phaseAngle;
+    }
+  }
   drawHeader();
 }
 

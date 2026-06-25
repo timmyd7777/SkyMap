@@ -224,22 +224,33 @@ function moonPosition(d, sunM, sunW) {
 // lstR = apparent LST (radians), latRad = observer geodetic latitude.
 // mObs = optional matrix to precess observer position (for J2000 mode).
 // Returns [topoRA, topoDec] in radians.
-function topocentricCorrection(ra, dec, distER, lstR, latRad, mObs) {
-  const A_AU = 6378.137 / 149597870.7;   // WGS84 equatorial radius in AU
-  const F = 1 / 298.257223563;           // WGS84 flattening
-  const E2 = F * (2 - F);
-  const distAU = distER * A_AU;
-  const [geoX, geoY, geoZ] = sph2xyz(ra, dec, distAU);
-  // Observer's geocentric position on the WGS84 ellipsoid (sea level).
-  // N = radius of curvature in the prime vertical.
+// Observer's geocentric XYZ on the WGS84 ellipsoid (sea level), in Earth-radii.
+// lstR = local sidereal time (radians), latRad = geodetic latitude (radians).
+function geocentricXYZ(lstR, latRad) {
+  const WGS84_F = 1 / 298.257223563, WGS84_E2 = WGS84_F * (2 - WGS84_F);
   const sinLat = sin(latRad), cosLat = cos(latRad);
-  const N = A_AU / sqrt(1 - E2 * sinLat * sinLat);
-  let obsX = N * cosLat * cos(lstR);
-  let obsY = N * cosLat * sin(lstR);
-  let obsZ = N * (1 - E2) * sinLat;
+  const N = 1 / sqrt(1 - WGS84_E2 * sinLat * sinLat);
+  return [N * cosLat * cos(lstR), N * cosLat * sin(lstR), N * (1 - WGS84_E2) * sinLat];
+}
+
+// Topocentric correction from Cartesian geocentric coordinates.
+// Body position (bx,by,bz) and observer position (obsX,obsY,obsZ) both in Earth-radii.
+// Returns [topoRA, topoDec, topoDist] where topoDist is in Earth-radii.
+function topocentricCorrectionXYZ(bx, by, bz, obsX, obsY, obsZ) {
+  return xyz2sph(bx - obsX, by - obsY, bz - obsZ);
+}
+
+// Topocentric correction from spherical geocentric coordinates.
+// ra, dec = geocentric equatorial (radians), distER = geocentric distance (Earth-radii),
+// lstR = local sidereal time (radians), latRad = geodetic latitude (radians),
+// mObs = optional rotation matrix applied to observer position.
+// Returns [topoRA, topoDec].
+function topocentricCorrection(ra, dec, distER, lstR, latRad, mObs) {
+  const [bx, by, bz] = sph2xyz(ra, dec, distER);
+  let [obsX, obsY, obsZ] = geocentricXYZ(lstR, latRad);
   if (mObs) [obsX, obsY, obsZ] = mvmul(mObs, obsX, obsY, obsZ);
-  const tx = geoX - obsX, ty = geoY - obsY, tz = geoZ - obsZ;
-  return [atan2(ty, tx), atan2(tz, sqrt(tx * tx + ty * ty))];
+  const [topoRA, topoDec] = topocentricCorrectionXYZ(bx, by, bz, obsX, obsY, obsZ);
+  return [topoRA, topoDec];
 }
 
 // Ecliptic longitude precession correction from of-date to J2000 (Schlyter, ppcomp section 8).
@@ -361,14 +372,10 @@ function cometPosition(comet, d, j2000) {
 // body = {lon, lat, r} of the body, sun = {lon, r} of the Sun.
 // Returns {lon, lat, r}: geocentric ecliptic lon/lat (radians), distance (AU).
 function helioToGeo(body, sun) {
-  const xh = body.r * cos(body.lon) * cos(body.lat);
-  const yh = body.r * sin(body.lon) * cos(body.lat);
-  const zh = body.r * sin(body.lat);
-  const xs = sun.r * cos(sun.lon);
-  const ys = sun.r * sin(sun.lon);
-  const xg = xh + xs, yg = yh + ys, zg = zh;
-  const R = sqrt(xg * xg + yg * yg + zg * zg);
-  return { lon: atan2(yg, xg), lat: atan2(zg, sqrt(xg * xg + yg * yg)), r: R };
+  const [xh, yh, zh] = sph2xyz(body.lon, body.lat, body.r);
+  const [xs, ys] = sph2xyz(sun.lon, 0, sun.r);
+  const [lon, lat, r] = xyz2sph(xh + xs, yh + ys, zh);
+  return { lon, lat, r };
 }
 
 // Asteroid apparent magnitude (H,G system, Bowell et al. 1989).

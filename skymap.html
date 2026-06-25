@@ -218,11 +218,11 @@ canvas { display: block; }
 <script src="cities.js?v=5"></script>
 <script src="astromath.js?v=9"></script>
 <script src="vsop87.js?v=1"></script>
-<script src="planets.js?v=9"></script>
+<script src="planets.js?v=10"></script>
 <script src="mpc.js?v=1"></script>
 <script src="sgp4.js?v=2"></script>
 <script src="satmag.js?v=2"></script>
-<script src="skymap.js?v=16"></script>
+<script src="skymap.js?v=18"></script>
 <script>
 
 // ---- Time zone helpers ----
@@ -596,17 +596,17 @@ function init() {
   const BASE = 'https://www.southernstars.com/updates';
   fetchCached(`${BASE}/comets/Soft00Cmt.txt`, 'comets', (data, fromCache) => {
     loadedComets = parseMPCComets(data);
-    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${loadedComets.length} comets`);
+    console.log(`${fromCache ? 'Locally retrieved' : 'Downloaded and stored'} ${loadedComets.length} comets`);
     ssCacheJD = -1; draw();
   });
   fetchCached(`${BASE}/asteroids/Soft00Bright.txt`, 'asteroids', (data, fromCache) => {
     loadedAsteroids = parseMPCAsteroids(data);
-    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${loadedAsteroids.length} asteroids`);
+    console.log(`${fromCache ? 'Locally retrieved' : 'Downloaded and stored'} ${loadedAsteroids.length} asteroids`);
     ssCacheJD = -1; draw();
   });
-  fetchCached(`${BASE}/satellites/celestrak/visual.txt`, 'satellites', (data, fromCache) => {
+  fetchCached(`${BASE}/satellites/celestrak/visual.csv`, 'satellites', (data, fromCache) => {
     loadedSatellites = parseSatellites(data);
-    console.log(`${fromCache ? 'Cached' : 'Fetched'} ${loadedSatellites.length} satellites`);
+    console.log(`${fromCache ? 'Locally retrieved' : 'Downloaded and stored'} ${loadedSatellites.length} satellites`);
     ssCacheJD = -1; draw();
   });
 
