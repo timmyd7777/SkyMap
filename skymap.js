@@ -145,7 +145,7 @@ function formatDist(d) {
     const km = d.data.dist;
     if (!km || km <= 0) return '';
     return `${round(km).toLocaleString()} km`;
-  } else if (d.type === 'sun' || d.type === 'planet' || d.type === 'comet' || d.type === 'asteroid') {
+  } else if (d.type === 'sun' || d.type === 'planet' || d.type === 'comet' || d.type === 'asteroid' || d.type === 'planetmoon') {
     const au = d.data.geoDist || d.data.dist;
     if (!au || au <= 0) return '';
     return `${au.toFixed(3)} AU`;
@@ -198,6 +198,9 @@ function formatSelection(obj) {
     type = 'Satellite';
     name = d.name;
     mag = d.mag;
+  } else if (obj.type === 'planetmoon') {
+    type = d.parent + ' moon';
+    name = d.name;
   }
   let s = type + ': ';
   const parts = [];
@@ -1068,6 +1071,27 @@ function skymapDraw(canvas, params) {
         } catch(e) {}
       }
     }
+
+    // Planetary moons: ESAA3 ch.9 theories return planetocentric J2000 equatorial AU.
+    // Add to parent's geocentric J2000 Cartesian position, convert to unit vector.
+    const MOON_FUNCS = [
+      ['Mars', marsMoons], ['Jupiter', jupiterMoons], ['Saturn', saturnMoons],
+      ['Uranus', uranusMoons], ['Neptune', neptuneMoons], ['Pluto', plutoMoons]
+    ];
+    for (const [parentName, moonFunc] of MOON_FUNCS) {
+      const primary = ssCache.find(o => o.type === 'planet' && o.name === parentName);
+      if (!primary) continue;
+      const pgx = primary.x * primary.geoDist;
+      const pgy = primary.y * primary.geoDist;
+      const pgz = primary.z * primary.geoDist;
+      const pmoons = moonFunc(jde - primary.geoDist * LIGHT_TIME_AU);
+      for (const pm of pmoons) {
+        const gx = pgx + pm.x, gy = pgy + pm.y, gz = pgz + pm.z;
+        const gd = sqrt(gx*gx + gy*gy + gz*gz);
+        ssCache.push({ type:'planetmoon', name:pm.name, parent:parentName,
+          x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd });
+      }
+    }
   }
 
   // Render solar system from cached positions.
@@ -1198,6 +1222,18 @@ function skymapDraw(canvas, params) {
         drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showSatelliteNames) {
           ctx.fillStyle = satColor; ctx.font = labelFont;
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          placeLabel(sx, sy, r + 3, obj.name);
+        }
+      } else if (obj.type === 'planetmoon') {
+        if (!showPlanets || vWidthDeg >= 10) continue;
+        const r = max(1.5, min(W, H) / 500);
+        const pmColor = PLANET_COLORS[obj.parent] || (darkMode ? '#ccc' : '#666');
+        ctx.fillStyle = pmColor;
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        drawnObjects.push({x:sx, y:sy, r, type:'planetmoon', data:{name:obj.name, parent:obj.parent, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
+        if (showPlanetNames) {
+          ctx.fillStyle = pmColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, r + 3, obj.name);
         }
