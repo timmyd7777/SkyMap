@@ -209,6 +209,7 @@ function formatSelection(obj) {
   } else if (obj.type === 'planetmoon') {
     type = d.parent + ' moon';
     name = d.name;
+    mag = d.mag;
   }
   let s = type + ': ';
   const parts = [];
@@ -1108,7 +1109,8 @@ function skymapDraw(canvas, params) {
         const gx = pgx + pm.x, gy = pgy + pm.y, gz = pgz + pm.z;
         const gd = sqrt(gx*gx + gy*gy + gz*gz);
         ssCache.push({ type:'planetmoon', name:pm.name, parent:parentName,
-          x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd });
+          x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd,
+          mag:planetMoonMagnitude(pm.name, primary.helioDist, gd) });
       }
     }
 
@@ -1328,11 +1330,12 @@ function skymapDraw(canvas, params) {
         }
       } else if (obj.type === 'planetmoon') {
         if (!showPlanets || vWidthDeg >= 10) continue;
-        const r = max(1.5, min(W, H) / 500);
+        const drawMag = min(magLimit, obj.mag);
+        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const pmColor = PLANET_COLORS[obj.parent] || (darkMode ? '#ccc' : '#666');
         ctx.fillStyle = pmColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
-        drawnObjects.push({x:sx, y:sy, r, type:'planetmoon', data:{name:obj.name, parent:obj.parent, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
+        drawnObjects.push({x:sx, y:sy, r, type:'planetmoon', data:{name:obj.name, parent:obj.parent, mag:obj.mag, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
           ctx.fillStyle = pmColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';

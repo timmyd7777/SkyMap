@@ -700,3 +700,20 @@ function plutoMoons(jd) {
   const [x, y, z] = mvmul(m, a*cos(u), a*sin(u), 0);
   return [{name: 'Charon', x, y, z}];
 }
+
+// Absolute visual magnitudes (H) at 1 AU from Sun and observer, zero phase.
+// From SSCore Moons.csv; Charon corrected from apparent to absolute.
+const MOON_HMAG = {
+  Phobos:11.9, Deimos:12.9,
+  Io:-1.7, Europa:-1.4, Ganymede:-2.1, Callisto:-1.2,
+  Mimas:3.2, Enceladus:2.1, Tethys:0.7, Dione:0.8, Rhea:0.1,
+  Titan:-1.3, Hyperion:4.8, Iapetus:1.2, Phoebe:6.7,
+  Ariel:1.0, Umbriel:1.7, Titania:0.8, Oberon:1.0, Miranda:3.5,
+  Triton:-1.2, Nereid:4.4, Charon:1.0
+};
+
+function planetMoonMagnitude(name, helioDist, geoDist) {
+  const H = MOON_HMAG[name];
+  if (H === undefined) return 99;
+  return H + 5 * Math.log10(helioDist * geoDist);
+}
