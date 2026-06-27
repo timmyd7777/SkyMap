@@ -52,14 +52,6 @@ let ssCacheLon = null;  // observer longitude at last computation (Moon topocent
 // ---- Constants ----
 
 // Drawing colors for solar system bodies (not from orbital element data).
-// Polar flattening (1 - Rpolar/Requatorial) for visibly oblate planets
-const PLANET_OBLATENESS = { Jupiter: 0.065, Saturn: 0.098 };
-// Jupiter north pole J2000 equatorial unit vector (RA=268.057°, Dec=64.495°)
-const JUPITER_POLE_J2K = [
-  cos(64.495*DEG)*cos(268.057*DEG),
-  cos(64.495*DEG)*sin(268.057*DEG),
-  sin(64.495*DEG)
-];
 const PLANET_COLORS = {
   Mercury:'#b0b0b0', Venus:'#e8d060', Mars:'#e04020', Jupiter:'#d89040',
   Saturn:'#c8a830', Uranus:'#40b8c0', Neptune:'#7090f0', Pluto:'#a07050'
@@ -989,14 +981,15 @@ function skymapDraw(canvas, params) {
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
         symbol: PLANET_SYMBOLS[name],
         helioDist:h.R, geoDist, phaseAngle:FV };
-      if (PLANET_OBLATENESS[name]) entry.oblateness = PLANET_OBLATENESS[name];
-      if (name === 'Jupiter') {
-        entry.poleJ2k = JUPITER_POLE_J2K;
-      } else if (name === 'Saturn') {
-        const ir = 28.06 * DEG, Nr = (169.51 + 3.82e-5 * (d + 1.5)) * DEG;
-        entry.ringTilt = asin(sin(geoLat)*cos(ir) - cos(geoLat)*sin(ir)*sin(geoLon - Nr));
-        const pole = [sin(ir)*sin(Nr), -sin(ir)*cos(Nr), cos(ir)];
-        entry.poleJ2k = mvmul(mEcl2J2000, ...pole);
+      const phys = PLANET_PHYS[name];
+      if (phys) {
+        if (phys.flattening > 0) entry.oblateness = phys.flattening;
+        const ra = phys.poleRA(T) * DEG, dec = phys.poleDec(T) * DEG;
+        entry.poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
+      }
+      if (name === 'Saturn') {
+        const [px, py, pz] = entry.poleJ2k;
+        entry.ringTilt = asin(-(px*jx + py*jy + pz*jz));
         entry.ringPoleJ2k = entry.poleJ2k;
       }
       ssCache.push(entry);
@@ -1013,10 +1006,14 @@ function skymapDraw(canvas, params) {
     const plutoDist = sqrt(ppx*ppx + ppy*ppy + ppz*ppz);
     const { FV: plutoFV } = phaseElongation(sunR, plutoDist, plutoH.r);
     const [pjx, pjy, pjz] = mvmul(mEcl2J2000, ...sph2uxyz(plutoGeoLon, plutoGeoLat));
-    ssCache.push({ type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
+    const plutoEntry = { type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
       mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
       symbol: PLANET_SYMBOLS['Pluto'],
-      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV });
+      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV };
+    const plutoPhys = PLANET_PHYS.Pluto;
+    const plutoRA = plutoPhys.poleRA(T) * DEG, plutoDc = plutoPhys.poleDec(T) * DEG;
+    plutoEntry.poleJ2k = [cos(plutoDc)*cos(plutoRA), cos(plutoDc)*sin(plutoRA), sin(plutoDc)];
+    ssCache.push(plutoEntry);
 
     // Observer geocentric position in Earth-radii (WGS84 ellipsoid)
     const [obsX, obsY, obsZ] = geocentricXYZ(lstR, loc.latRad);

@@ -599,3 +599,74 @@ function vsop87Position(planet, tau) {
   return { L, B, R };
 }
 
+// Physical parameters of the major planets and Pluto.
+// ESAA 3rd Ed. Tables 10.1 and 10.2.
+// T = Julian centuries from J2000, t = days from J2000 (86400 SI seconds).
+// poleRA(T), poleDec(T) return degrees; W(t) returns prime meridian in degrees.
+// For Jupiter and Neptune, poleRA/poleDec include periodic terms.
+const PLANET_PHYS = {
+  Mercury: { radius: 2439.7, flattening: 0.0,
+    poleRA: (T) => 281.0097 - 0.0328*T,
+    poleDec: (T) => 61.4143 - 0.0049*T,
+    W: (t) => {
+      const M1 = (174.791086 + 4.092335*t) * DEG;
+      const M2 = (349.582171 + 8.184670*t) * DEG;
+      const M3 = (164.373257 + 12.277005*t) * DEG;
+      const M4 = (339.164343 + 16.369340*t) * DEG;
+      const M5 = (153.955429 + 20.461675*t) * DEG;
+      return 329.5469 + 6.1385205*t
+        + 0.00993822*sin(M1) - 0.00104581*sin(M2) - 0.00010280*sin(M3)
+        - 0.00002364*sin(M4) - 0.00000532*sin(M5);
+    } },
+  Venus: { radius: 6051.8, flattening: 0.0,
+    poleRA: () => 272.76,
+    poleDec: () => 67.16,
+    W: (t) => 160.20 - 1.4813688*t },
+  Earth: { radius: 6378.14, flattening: 0.00335364,
+    poleRA: (T) => 0.00 - 0.641*T,
+    poleDec: (T) => 90.00 - 0.557*T,
+    W: (t) => 190.147 + 360.9856235*t },
+  Mars: { radius: 3396.2, flattening: 0.006772,
+    poleRA: (T) => 317.68143 - 0.1061*T,
+    poleDec: (T) => 52.88650 - 0.0609*T,
+    W: (t) => 176.630 + 350.89198226*t },
+  Jupiter: { radius: 71492, flattening: 0.064874,
+    poleRA: (T) => {
+      const J1 = (99.360714 + 4850.4046*T) * DEG;
+      const J2 = (175.895369 + 1191.9605*T) * DEG;
+      const J3 = (300.323162 + 262.5475*T) * DEG;
+      const J4 = (114.012305 + 6070.2476*T) * DEG;
+      const J5 = (49.511251 + 64.3000*T) * DEG;
+      return 268.056595 - 0.006499*T
+        + 0.000117*sin(J1) + 0.000938*sin(J2) + 0.001432*sin(J3)
+        + 0.000030*sin(J4) + 0.002150*sin(J5);
+    },
+    poleDec: (T) => {
+      const J1 = (99.360714 + 4850.4046*T) * DEG;
+      const J2 = (175.895369 + 1191.9605*T) * DEG;
+      const J3 = (300.323162 + 262.5475*T) * DEG;
+      const J4 = (114.012305 + 6070.2476*T) * DEG;
+      const J5 = (49.511251 + 64.3000*T) * DEG;
+      return 64.495303 + 0.002413*T
+        + 0.000050*cos(J1) + 0.000404*cos(J2) + 0.000617*cos(J3)
+        - 0.000013*cos(J4) + 0.000926*cos(J5);
+    },
+    W: (t) => 284.95 + 870.5360000*t },
+  Saturn: { radius: 60268, flattening: 0.097962,
+    poleRA: (T) => 40.589 - 0.036*T,
+    poleDec: (T) => 83.537 - 0.004*T,
+    W: (t) => 38.90 + 810.7939024*t },
+  Uranus: { radius: 25559, flattening: 0.022927,
+    poleRA: () => 257.311,
+    poleDec: () => -15.175,
+    W: (t) => 203.81 - 501.1600928*t },
+  Neptune: { radius: 24764, flattening: 0.017081,
+    poleRA: (T) => { const N = (357.85 + 52.316*T) * DEG; return 299.36 + 0.70*sin(N); },
+    poleDec: (T) => { const N = (357.85 + 52.316*T) * DEG; return 43.46 - 0.51*cos(N); },
+    W: (t) => { const T = t/36525; const N = (357.85 + 52.316*T) * DEG; return 253.18 + 536.3128492*t - 0.48*sin(N); } },
+  Pluto: { radius: 1195, flattening: 0.0,
+    poleRA: () => 132.993,
+    poleDec: () => -6.163,
+    W: (t) => 302.695 + 56.3625225*t }
+};
+

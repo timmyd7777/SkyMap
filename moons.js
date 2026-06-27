@@ -709,7 +709,7 @@ const MOON_HMAG = {
   Mimas:3.2, Enceladus:2.1, Tethys:0.7, Dione:0.8, Rhea:0.1,
   Titan:-1.3, Hyperion:4.8, Iapetus:1.2, Phoebe:6.7,
   Ariel:1.0, Umbriel:1.7, Titania:0.8, Oberon:1.0, Miranda:3.5,
-  Triton:-1.2, Nereid:4.4, Charon:1.0
+  Triton:-1.2, Nereid:4.4, Charon:0.9
 };
 
 function planetMoonMagnitude(name, helioDist, geoDist) {
