@@ -536,8 +536,8 @@ function draw() {
     document.getElementById('viewAzVal').textContent = round(vLonDisp) + '°';
   }
   document.getElementById('viewAltVal').textContent = (viewLatPrecise >= 0 ? '+' : '') + round(viewLatPrecise) + '°';
-  document.getElementById('viewWidthVal').textContent = viewFovPrecise < 10
-    ? viewFovPrecise.toFixed(1) + '°' : round(viewFovPrecise) + '°';
+  document.getElementById('viewWidthVal').textContent = viewFovPrecise < 1
+    ? round(viewFovPrecise * 60) + "'" : round(viewFovPrecise) + '°';
 
   skymapDraw(canvas, {
     dt, loc, darkMode,
