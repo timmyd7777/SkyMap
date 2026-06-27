@@ -313,7 +313,7 @@ function skymapDraw(canvas, params) {
   const vCosT = cos(vTheta), vSinT = sin(vTheta);
   const rEdge = 2 * tan(vWidth / 4);                // stereographic radius at FOV edge
   const scale = chartR / rEdge;                      // pixels per unit stereographic radius
-  const magBoost = Math.log2(180 / vWidthDeg);       // faint-star boost for zoom level
+  const magBoost = min(5, Math.log2(180 / vWidthDeg));
   const minFontSize = 12;                            // minimum label font size (pixels)
   const starMagLimit = 5.05 + magBoost;              // faintest star magnitude to draw
   const clipR = 2 * scale;                           // clip circle radius (180° hemisphere, pixels)
@@ -979,7 +979,7 @@ function skymapDraw(canvas, params) {
       ssCache.push({ type:'planet', name, x:jx, y:jy, z:jz,
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
         symbol: PLANET_SYMBOLS[name],
-        helioDist:h.R, geoDist, phaseAngle:FVdeg });
+        helioDist:h.R, geoDist, phaseAngle:FV });
     }
 
     // Pluto via Schlyter (not in VSOP87)
@@ -996,7 +996,7 @@ function skymapDraw(canvas, params) {
     ssCache.push({ type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
       mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
       symbol: PLANET_SYMBOLS['Pluto'],
-      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV*RAD });
+      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV });
 
     // Observer geocentric position in Earth-radii (WGS84 ellipsoid)
     const [obsX, obsY, obsZ] = geocentricXYZ(lstR, loc.latRad);
@@ -1008,11 +1008,11 @@ function skymapDraw(canvas, params) {
     const [moonBx, moonBy, moonBz] = sph2xyz(moonGRA, moonGDec, moonPos.dist);
     const [topoRA, topoDec, topoDistER] = topocentricCorrectionXYZ(moonBx, moonBy, moonBz, obsX, obsY, obsZ);
     const [mx, my, mz] = mvmul(mtranspose(mNP), ...sph2uxyz(topoRA, topoDec));
-    const moonPhase = ((moonPos.lon - sunLon) % TAU + TAU) % TAU;
-    const moonFVdeg = abs((PI - moonPhase) * RAD);
+    const moonElong = ((moonPos.lon - sunLon) % TAU + TAU) % TAU;
+    const moonFV = abs(PI - moonElong);
     ssCache.push({ type:'moon', name:'Moon', x:mx, y:my, z:mz,
-      mag: moonMag(sunR, moonPos.dist, moonFVdeg),
-      angSize: moonAngArcmin, dist: topoDistER * 6378.14, phase: moonPhase });
+      mag: moonMag(sunR, moonPos.dist, moonFV * RAD),
+      angSize: moonAngArcmin, dist: topoDistER * 6378.14, phaseAngle: moonFV });
 
     // Comets: J2000 ecliptic elements → J2000 equatorial via Cartesian subtraction
     if (params.comets) {
@@ -1045,7 +1045,7 @@ function skymapDraw(canvas, params) {
         const amag = asteroidMagnitude(a.H, a.G, h.r, geoDist, FV);
         ssCache.push({ type:'asteroid', name:a.name,
           x:gx/geoDist, y:gy/geoDist, z:gz/geoDist,
-          mag:amag, helioDist:h.r, geoDist, phaseAngle:FV*RAD });
+          mag:amag, helioDist:h.r, geoDist, phaseAngle:FV });
       }
     }
 
@@ -1092,6 +1092,39 @@ function skymapDraw(canvas, params) {
           x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd });
       }
     }
+
+    // Sort farthest first for correct painter's algorithm occlusion.
+    const KM_PER_AU = 149597870.7;
+    for (const o of ssCache) o._d = o.geoDist ?? (o.type === 'sun' ? o.dist : o.dist / KM_PER_AU);
+    ssCache.sort((a, b) => b._d - a._d);
+  }
+
+  // Draw a phase-shaded disc: dark side first, then lit crescent/gibbous.
+  // FVrad = phase angle in radians (0 = full, PI = new). litColor = color for lit side.
+  function drawPhaseDisc(sx, sy, r, FVrad, sunSx, sunSy, litColor) {
+    ctx.fillStyle = darkMode ? '#333' : '#555';
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+    if (FVrad < PI - 0.05) {
+      const toSun = atan2(sy - sunSy, sunSx - sx);
+      const cs = cos(toSun), sn = sin(toSun), k = -cos(FVrad);
+      ctx.fillStyle = litColor;
+      ctx.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const t = PI/2 - i*PI/24;
+        const bx = r*cos(t), by = r*sin(t);
+        const px = sx + bx*cs - by*sn, py = sy - bx*sn - by*cs;
+        if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      for (let i = 0; i <= 24; i++) {
+        const t = -PI/2 + i*PI/24;
+        const bx = r*k*cos(t), by = r*sin(t);
+        const px = sx + bx*cs - by*sn, py = sy - bx*sn - by*cs;
+        ctx.lineTo(px,py);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.stroke();
   }
 
   // Render solar system from cached positions.
@@ -1132,12 +1165,16 @@ function skymapDraw(canvas, params) {
         }
       } else if (obj.type === 'planet' && showPlanets) {
         const drawMag = max(-1.46, min(magLimit, obj.mag));
-        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const discR = arcminToPx(sx, sy, (PLANET_DIAM1AU[obj.name] || 0) / obj.geoDist / 60) / 2;
+        const r = max(starR, discR);
         const pColor = PLANET_COLORS[obj.name];
         if (showPlanetSymbols) {
           ctx.fillStyle = pColor; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(obj.symbol, sx, sy);
+        } else if (discR > starR) {
+          drawPhaseDisc(sx, sy, r, obj.phaseAngle, sunSx, sunSy, pColor);
         } else {
           ctx.fillStyle = pColor;
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
@@ -1150,37 +1187,13 @@ function skymapDraw(canvas, params) {
         }
       } else if (obj.type === 'moon' && showPlanets) {
         const phaseR = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
-        drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phase:obj.phase}, jx:obj.x, jy:obj.y, jz:obj.z});
+        drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetSymbols) {
           ctx.fillStyle = darkMode ? '#ddd' : '#444'; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(PLANET_SYMBOLS.Moon, sx, sy);
         } else {
-          ctx.fillStyle = darkMode ? '#333' : '#555';
-          ctx.beginPath(); ctx.arc(sx, sy, phaseR, 0, TAU); ctx.fill();
-          if (obj.phase > 0.05 && obj.phase < TAU - 0.05) {
-            const toSunAngle = atan2(sy - sunSy, sunSx - sx);
-            const k = cos(obj.phase);
-            ctx.fillStyle = 'rgba(210,210,190,0.95)';
-            ctx.beginPath();
-            for (let i = 0; i <= 24; i++) {
-              const t = PI/2 - i*PI/24;
-              const bx = phaseR*cos(t), by = phaseR*sin(t);
-              const rx = sx + bx*cos(toSunAngle) - by*sin(toSunAngle);
-              const ry = sy - bx*sin(toSunAngle) - by*cos(toSunAngle);
-              if (i===0) ctx.moveTo(rx,ry); else ctx.lineTo(rx,ry);
-            }
-            for (let i = 0; i <= 24; i++) {
-              const t = -PI/2 + i*PI/24;
-              const bx = phaseR*k*cos(t), by = phaseR*sin(t);
-              const rx = sx + bx*cos(toSunAngle) - by*sin(toSunAngle);
-              const ry = sy - bx*sin(toSunAngle) - by*cos(toSunAngle);
-              ctx.lineTo(rx,ry);
-            }
-            ctx.closePath(); ctx.fill();
-          }
-          ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = 0.5;
-          ctx.beginPath(); ctx.arc(sx, sy, phaseR, 0, TAU); ctx.stroke();
+          drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, sunSx, sunSy, 'rgba(210,210,190,0.95)');
         }
         if (showPlanetNames) {
           ctx.fillStyle = darkMode ? '#ddd' : '#444'; ctx.font = labelFont;
@@ -1402,7 +1415,6 @@ function skymapDraw(canvas, params) {
       if (fresh.dist !== undefined) sel.data.dist = fresh.dist;
       if (fresh.helioDist !== undefined) sel.data.helioDist = fresh.helioDist;
       if (fresh.geoDist !== undefined) sel.data.geoDist = fresh.geoDist;
-      if (fresh.phase !== undefined) sel.data.phase = fresh.phase;
       if (fresh.phaseAngle !== undefined) sel.data.phaseAngle = fresh.phaseAngle;
     }
   }
