@@ -52,6 +52,14 @@ let ssCacheLon = null;  // observer longitude at last computation (Moon topocent
 // ---- Constants ----
 
 // Drawing colors for solar system bodies (not from orbital element data).
+// Polar flattening (1 - Rpolar/Requatorial) for visibly oblate planets
+const PLANET_OBLATENESS = { Jupiter: 0.065, Saturn: 0.098 };
+// Jupiter north pole J2000 equatorial unit vector (RA=268.057°, Dec=64.495°)
+const JUPITER_POLE_J2K = [
+  cos(64.495*DEG)*cos(268.057*DEG),
+  cos(64.495*DEG)*sin(268.057*DEG),
+  sin(64.495*DEG)
+];
 const PLANET_COLORS = {
   Mercury:'#b0b0b0', Venus:'#e8d060', Mars:'#e04020', Jupiter:'#d89040',
   Saturn:'#c8a830', Uranus:'#40b8c0', Neptune:'#3040d0', Pluto:'#a07050'
@@ -976,10 +984,21 @@ function skymapDraw(canvas, params) {
       // d + 1.5: Schlyter functions use epoch JD 2451543.5 (1.5 days before J2000)
       const ringMagn = name === 'Saturn' ? saturnRingMagn(geoLon, geoLat, d + 1.5) : 0;
       const [jx, jy, jz] = mvmul(mEcl2J2000, ...sph2uxyz(geoLon, geoLat));
-      ssCache.push({ type:'planet', name, x:jx, y:jy, z:jz,
+      const entry = { type:'planet', name, x:jx, y:jy, z:jz,
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
         symbol: PLANET_SYMBOLS[name],
-        helioDist:h.R, geoDist, phaseAngle:FV });
+        helioDist:h.R, geoDist, phaseAngle:FV };
+      if (PLANET_OBLATENESS[name]) entry.oblateness = PLANET_OBLATENESS[name];
+      if (name === 'Jupiter') {
+        entry.poleJ2k = JUPITER_POLE_J2K;
+      } else if (name === 'Saturn') {
+        const ir = 28.06 * DEG, Nr = (169.51 + 3.82e-5 * (d + 1.5)) * DEG;
+        entry.ringTilt = asin(sin(geoLat)*cos(ir) - cos(geoLat)*sin(ir)*sin(geoLon - Nr));
+        const pole = [sin(ir)*sin(Nr), -sin(ir)*cos(Nr), cos(ir)];
+        entry.poleJ2k = mvmul(mEcl2J2000, ...pole);
+        entry.ringPoleJ2k = entry.poleJ2k;
+      }
+      ssCache.push(entry);
     }
 
     // Pluto via Schlyter (not in VSOP87)
@@ -1099,32 +1118,84 @@ function skymapDraw(canvas, params) {
     ssCache.sort((a, b) => b._d - a._d);
   }
 
+  // Draw one half of Saturn's ring (front=true or back=false).
+  // Ring is the area between two concentric ellipses (outer/inner radii),
+  // rotated by position angle pa, flattened by sin(|B|).
+  // When B>0 (north face visible), back=top half, front=bottom half; B<0 reverses.
+  function drawSaturnRing(sx, sy, outerR, innerR, ringTilt, pa, color, front) {
+    const sinB = abs(sin(ringTilt));
+    if (sinB < 0.01) return;
+    const backIsTop = ringTilt > 0;
+    const drawTop = front !== backIsTop;
+    const startA = drawTop ? 0 : PI, endA = drawTop ? PI : TAU;
+    const steps = 32;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(-pa);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const a = startA + (endA - startA) * i / steps;
+      const x = outerR * cos(a), y = outerR * sinB * sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    for (let i = steps; i >= 0; i--) {
+      const a = startA + (endA - startA) * i / steps;
+      ctx.lineTo(innerR * cos(a), innerR * sinB * sin(a));
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // Draw a phase-shaded disc: dark side first, then lit crescent/gibbous.
   // FVrad = phase angle in radians (0 = full, PI = new). litColor = color for lit side.
-  function drawPhaseDisc(sx, sy, r, FVrad, sunSx, sunSy, litColor) {
+  // Optional oblateness (0–1) and polePA (radians) for oblate planets.
+  function drawPhaseDisc(sx, sy, r, FVrad, sunSx, sunSy, litColor, oblateness, polePA) {
+    const ob = oblateness || 0;
+    const pa = polePA || 0;
+    const yScale = 1 - ob;
+    if (ob > 0) {
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(-pa);
+      ctx.scale(1, yScale);
+    }
+    const cx0 = ob > 0 ? 0 : sx, cy0 = ob > 0 ? 0 : sy;
+    let toSun;
+    if (ob > 0) {
+      const dsx = sunSx - sx, dsy = sunSy - sy;
+      const lsx = cos(pa)*dsx + sin(pa)*dsy;
+      const lsy = (-sin(pa)*dsx + cos(pa)*dsy) / yScale;
+      toSun = atan2(-lsy, lsx);
+    } else {
+      toSun = atan2(sy - sunSy, sunSx - sx);
+    }
     ctx.fillStyle = darkMode ? '#333' : '#555';
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx0, cy0, r, 0, TAU); ctx.fill();
     if (FVrad < PI - 0.05) {
-      const toSun = atan2(sy - sunSy, sunSx - sx);
       const cs = cos(toSun), sn = sin(toSun), k = -cos(FVrad);
       ctx.fillStyle = litColor;
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
         const t = PI/2 - i*PI/24;
         const bx = r*cos(t), by = r*sin(t);
-        const px = sx + bx*cs - by*sn, py = sy - bx*sn - by*cs;
+        const px = cx0 + bx*cs - by*sn, py = cy0 - bx*sn - by*cs;
         if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
       }
       for (let i = 0; i <= 24; i++) {
         const t = -PI/2 + i*PI/24;
         const bx = r*k*cos(t), by = r*sin(t);
-        const px = sx + bx*cs - by*sn, py = sy - bx*sn - by*cs;
+        const px = cx0 + bx*cs - by*sn, py = cy0 - bx*sn - by*cs;
         ctx.lineTo(px,py);
       }
       ctx.closePath(); ctx.fill();
     }
-    ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = ob > 0 ? 0.5 / yScale : 0.5;
+    ctx.beginPath(); ctx.arc(cx0, cy0, r, 0, TAU); ctx.stroke();
+    if (ob > 0) ctx.restore();
   }
 
   // Render solar system from cached positions.
@@ -1169,17 +1240,34 @@ function skymapDraw(canvas, params) {
         const discR = arcminToPx(sx, sy, (PLANET_DIAM1AU[obj.name] || 0) / obj.geoDist / 60) / 2;
         const r = max(starR, discR);
         const pColor = PLANET_COLORS[obj.name];
+        let polePA = 0;
+        if (obj.poleJ2k && discR > starR) {
+          const [pvx, pvy, pvz] = mvmul(M, ...obj.poleJ2k);
+          const dot = vx*pvx + vy*pvy + vz*pvz;
+          const dvx = pvx - dot*vx, dvy = pvy - dot*vy, dvz = pvz - dot*vz;
+          const dd = 1 + vz;
+          const dsx = 2*dvx/dd - 2*vx*dvz/(dd*dd);
+          const dsy = -2*dvy/dd + 2*vy*dvz/(dd*dd);
+          polePA = atan2(dsx, -dsy);
+        }
         if (showPlanetSymbols) {
           ctx.fillStyle = pColor; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(obj.symbol, sx, sy);
+        } else if (obj.ringPoleJ2k && discR > starR) {
+          const ringOuter = discR * 2.27, ringInner = discR * 1.24;
+          const ringColor = darkMode ? '#d8d0c0' : '#a09880';
+          drawSaturnRing(sx, sy, ringOuter, ringInner, obj.ringTilt, polePA, ringColor, false);
+          drawPhaseDisc(sx, sy, discR, obj.phaseAngle, sunSx, sunSy, pColor, obj.oblateness, polePA);
+          drawSaturnRing(sx, sy, ringOuter, ringInner, obj.ringTilt, polePA, ringColor, true);
         } else if (discR > starR) {
-          drawPhaseDisc(sx, sy, r, obj.phaseAngle, sunSx, sunSy, pColor);
+          drawPhaseDisc(sx, sy, r, obj.phaseAngle, sunSx, sunSy, pColor, obj.oblateness, polePA);
         } else {
           ctx.fillStyle = pColor;
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         }
-        drawnObjects.push({x:sx, y:sy, r, type:'planet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
+        const hitR = obj.ringPoleJ2k && discR > starR ? discR * 2.27 : r;
+        drawnObjects.push({x:sx, y:sy, r:hitR, type:'planet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
           ctx.fillStyle = pColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';

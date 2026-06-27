@@ -176,7 +176,7 @@ canvas { display: block; }
     <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
       <span>Size</span><span id="viewWidthVal">180°</span>
     </div>
-    <input type="range" id="viewWidth" min="100" max="1800" value="1800" autocomplete="off" style="width:100%">
+    <input type="range" id="viewWidth" min="0" max="1800" value="1800" autocomplete="off" style="width:100%">
   </div>
   <div>
     <label style="text-align:center; display:block;">Other Options</label>
@@ -223,8 +223,10 @@ canvas { display: block; }
 <script src="sgp4.js?v=2"></script>
 <script src="satmag.js?v=2"></script>
 <script src="moons.js?v=2"></script>
-<script src="skymap.js?v=20"></script>
+<script src="skymap.js?v=21"></script>
 <script>
+
+const minFovDeg = 10;
 
 // ---- Time zone helpers ----
 const systemTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -496,10 +498,13 @@ function updateFrameLabels() {
   document.getElementById('viewAltLabel').textContent = labels[1];
 }
 
+function fovToSlider(fov) { return (fov - minFovDeg) / (180 - minFovDeg) * 1800; }
+function sliderToFov(s) { return minFovDeg + s / 1800 * (180 - minFovDeg); }
+
 function syncSlidersFromPrecise() {
   document.getElementById('viewAz').value = round(azToDisp(viewLonPrecise));
   document.getElementById('viewAlt').value = round(viewLatPrecise);
-  document.getElementById('viewWidth').value = round(viewFovPrecise * 10);
+  document.getElementById('viewWidth').value = round(fovToSlider(viewFovPrecise));
 }
 
 // ---- Main draw (UI wrapper around skymapDraw) ----
@@ -701,7 +706,7 @@ function init() {
     draw();
   });
   document.getElementById('viewWidth').addEventListener('input', () => {
-    viewFovPrecise = parseFloat(document.getElementById('viewWidth').value) / 10;
+    viewFovPrecise = sliderToFov(parseFloat(document.getElementById('viewWidth').value));
     draw();
   });
 
@@ -761,7 +766,7 @@ function init() {
     if (e.touches.length === 2) {
       const d = touchDist(e);
       if (pinchDist > 0) {
-        viewFovPrecise = max(10, min(180, viewFovPrecise * pinchDist / d));
+        viewFovPrecise = max(minFovDeg, min(180, viewFovPrecise * pinchDist / d));
         syncSlidersFromPrecise();
         draw();
       }
@@ -782,7 +787,7 @@ function init() {
     const sensitivity = e.ctrlKey ? 0.005 : 0.00025;
     const zoomFactor = 1 + sensitivity * abs(e.deltaY);
     viewFovPrecise = e.deltaY > 0 ? viewFovPrecise * zoomFactor : viewFovPrecise / zoomFactor;
-    viewFovPrecise = max(10, min(180, viewFovPrecise));
+    viewFovPrecise = max(minFovDeg, min(180, viewFovPrecise));
     syncSlidersFromPrecise();
     draw();
   }, {passive: false});
