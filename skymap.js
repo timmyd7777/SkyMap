@@ -62,7 +62,7 @@ const JUPITER_POLE_J2K = [
 ];
 const PLANET_COLORS = {
   Mercury:'#b0b0b0', Venus:'#e8d060', Mars:'#e04020', Jupiter:'#d89040',
-  Saturn:'#c8a830', Uranus:'#40b8c0', Neptune:'#3040d0', Pluto:'#a07050'
+  Saturn:'#c8a830', Uranus:'#40b8c0', Neptune:'#7090f0', Pluto:'#a07050'
 };
 const PLANET_SYMBOLS = {
   Sun:'☉', Moon:'☽', Mercury:'☿', Venus:'♀', Mars:'♂',
@@ -1293,7 +1293,7 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'comet') {
         if (!showComets || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
-        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         ctx.fillStyle = '#4de';
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'comet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
@@ -1305,7 +1305,7 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'asteroid') {
         if (!showAsteroids || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
-        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const astColor = darkMode ? '#ff0' : '#996600';
         ctx.fillStyle = astColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
@@ -1318,7 +1318,7 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'satellite') {
         if (!showSatellites || obj.mag > magLimit + 3) continue;
         const drawMag = min(magLimit, obj.mag);
-        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const satColor = darkMode ? '#0f0' : '#060';
         ctx.fillStyle = satColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
@@ -1331,7 +1331,7 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'planetmoon') {
         if (!showPlanets || vWidthDeg >= 10) continue;
         const drawMag = min(magLimit, obj.mag);
-        const r = max(1, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const pmColor = PLANET_COLORS[obj.parent] || (darkMode ? '#ccc' : '#666');
         ctx.fillStyle = pmColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
@@ -1441,7 +1441,10 @@ function skymapDraw(canvas, params) {
       const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
       const fovW = min(180, (2 * atan2(rLeft, 2) + 2 * atan2(rRight, 2)) / DEG);
       const fovH = min(180, (2 * atan2(rTop, 2) + 2 * atan2(rBot, 2)) / DEG);
-      const fmtFov = v => v >= 100 ? round(v) + '°' : v.toFixed(1) + '°';
+      const useArcmin = min(fovW, fovH) < 1;
+      const fmtFov = v => useArcmin
+        ? (v * 60 >= 100 ? round(v * 60) + "'" : (v * 60).toFixed(1) + "'")
+        : (v >= 100 ? round(v) + '°' : v.toFixed(1) + '°');
       ctx.textAlign = 'right';
       const hdrR = W - 16;
       ctx.fillText(formatCoords(vLonDisp, vLatDeg), hdrR, sfs * 1.4);
