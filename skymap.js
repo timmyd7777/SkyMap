@@ -1308,14 +1308,14 @@ function skymapDraw(canvas, params) {
         const phaseR = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
         drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetSymbols) {
-          ctx.fillStyle = darkMode ? '#ddd' : '#444'; ctx.font = symFontSize;
+          ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(PLANET_SYMBOLS.Moon, sx, sy);
         } else {
-          drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, sunSx, sunSy, 'rgba(210,210,190,0.95)');
+          drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, sunSx, sunSy, 'rgba(187,187,187,0.95)');
         }
         if (showPlanetNames) {
-          ctx.fillStyle = darkMode ? '#ddd' : '#444'; ctx.font = labelFont;
+          ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = labelFont;
           ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
           placeLabel(sx, sy, phaseR + 4, 'Moon');
         }
@@ -1361,7 +1361,7 @@ function skymapDraw(canvas, params) {
         if (!showPlanets || vWidthDeg >= 10) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-        const pmColor = PLANET_COLORS[obj.parent] || (darkMode ? '#ccc' : '#666');
+        const pmColor = darkMode ? '#bbb' : '#555';
         ctx.fillStyle = pmColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'planetmoon', data:{name:obj.name, parent:obj.parent, mag:obj.mag, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
