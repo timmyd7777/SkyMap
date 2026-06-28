@@ -602,7 +602,7 @@ function vsop87Position(planet, tau) {
 // Physical parameters of the major planets and Pluto.
 // ESAA 3rd Ed. Tables 10.1 and 10.2.
 // T = Julian centuries from J2000, t = days from J2000 (86400 SI seconds).
-// poleRA(T), poleDec(T) return degrees; W(t) returns prime meridian in degrees.
+// poleRA(T), poleDec(T) return degrees; W(t) returns argument of prime meridian in degrees.
 // For Jupiter and Neptune, poleRA/poleDec include periodic terms.
 const PLANET_PHYS = {
   Mercury: { radius: 2439.7, flattening: 0.0,

@@ -984,7 +984,8 @@ function skymapDraw(canvas, params) {
       const phys = PLANET_PHYS[name];
       if (phys) {
         if (phys.flattening > 0) entry.oblateness = phys.flattening;
-        const ra = phys.poleRA(T) * DEG, dec = phys.poleDec(T) * DEG;
+        const Tlt = T - lt / 36525;
+        const ra = phys.poleRA(Tlt) * DEG, dec = phys.poleDec(Tlt) * DEG;
         entry.poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
       }
       if (name === 'Saturn') {
@@ -1011,7 +1012,8 @@ function skymapDraw(canvas, params) {
       symbol: PLANET_SYMBOLS['Pluto'],
       helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV };
     const plutoPhys = PLANET_PHYS.Pluto;
-    const plutoRA = plutoPhys.poleRA(T) * DEG, plutoDc = plutoPhys.poleDec(T) * DEG;
+    const plutoTlt = T - plutoLt / 36525;
+    const plutoRA = plutoPhys.poleRA(plutoTlt) * DEG, plutoDc = plutoPhys.poleDec(plutoTlt) * DEG;
     plutoEntry.poleJ2k = [cos(plutoDc)*cos(plutoRA), cos(plutoDc)*sin(plutoRA), sin(plutoDc)];
     ssCache.push(plutoEntry);
 
