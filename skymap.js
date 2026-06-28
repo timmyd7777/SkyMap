@@ -36,6 +36,10 @@ let drawnObjects = [];
 // Currently selected (picked) object, or null.
 let selectedObject = null;
 
+// Object the view is tracking (stays centered). Set by double-click, cleared by drag/slider.
+// {type, name, jx, jy, jz} — type+name identify SS objects in ssCache; jx/jy/jz are J2000 coords.
+let centerObject = null;
+
 // Frame rotation matrix from last draw (J2000 equatorial → current frame).
 // Used by changeFrame() to convert the view center between frames.
 let curMFrame = null;
@@ -203,6 +207,7 @@ function formatSelection(obj) {
     name = d.name;
     mag = d.mag;
   }
+  if (centerObject) type = 'Tracking ' + type;
   let s = type + ': ';
   const parts = [];
   if (name) parts.push(name);
@@ -301,6 +306,24 @@ function skymapDraw(canvas, params) {
   const epsTrue = obliquity(T) + nut.dEps;
   const lstR = (localSiderealTime(jd, loc.lonDeg) + nut.dPsi * cos(epsTrue) * RAD) * DEG;
 
+  // ---- Frame matrix (computed before view params for object centering) ----
+  const mFrame = frameMatrix(viewFrame, jd, loc.latRad, loc.lonDeg, j2000);
+  const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonDeg, j2000);
+  curMFrame = mFrame;
+  const mPT = mtranspose(mPrecess);
+
+  // ---- Center on tracked object ----
+  if (centerObject) {
+    if (centerObject.type !== 'star' && centerObject.type !== 'deepsky') {
+      updateSSCache();
+      const fresh = ssCache.find(o => o.type === centerObject.type && o.name === centerObject.name);
+      if (fresh) { centerObject.jx = fresh.x; centerObject.jy = fresh.y; centerObject.jz = fresh.z; }
+    }
+    const [fx, fy, fz] = mvmul(mFrame, centerObject.jx, centerObject.jy, centerObject.jz);
+    viewLonPrecise = ((atan2(fx, fy) * RAD) % 360 + 360) % 360;
+    viewLatPrecise = max(-90, min(90, asin(max(-1, min(1, fz))) * RAD));
+  }
+
   // ---- View projection parameters ----
   const cx = W / 2, cy = H / 2;                     // canvas center (pixels)
   const chartR = (min(W, H) / 2) - 1;               // radius of chart area (pixels)
@@ -319,16 +342,9 @@ function skymapDraw(canvas, params) {
   const starMagLimit = 5.05 + magBoost;              // faintest star magnitude to draw
   const clipR = 2 * scale;                           // clip circle radius (180° hemisphere, pixels)
 
-  // ---- Rotation matrices ----
-  // M = mView · mFrame maps J2000 equatorial unit vectors to view coordinates.
-  // mFrame: J2000 equatorial → current coordinate frame.
-  // mView: current frame → stereographic projection (view center at +Z).
-  const mFrame = frameMatrix(viewFrame, jd, loc.latRad, loc.lonDeg, j2000);
-  const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonDeg, j2000);
-  curMFrame = mFrame;
+  // ---- Rotation matrices (continued) ----
   const mView = mmul(rx(vTheta), rz(vLon));                             // frame coords → view coords
   const M = mmul(mView, mFrame);       // combined: J2000 equatorial → view
-  const mPT = mtranspose(mPrecess);    // inverse precession: of-date → J2000
 
   // ---- Projection helpers ----
   // All projection functions operate in the view coordinate system where
@@ -1125,14 +1141,28 @@ function skymapDraw(canvas, params) {
   // When B>0 (north face visible), back=top half, front=bottom half; B<0 reverses.
   function drawSaturnRing(sx, sy, outerR, innerR, ringTilt, pa, color, front) {
     const sinB = abs(sin(ringTilt));
-    if (sinB < 0.01) return;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(-pa);
+    // Near edge-on, the filled ellipse collapses to sub-pixel height.
+    // Draw a single line across the full ring diameter instead; only on
+    // the front pass so it renders on top of the planet disc.
+    if (sinB < 0.003) {
+      if (!front) { ctx.restore(); return; }
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-outerR, 0); ctx.lineTo(outerR, 0);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      return;
+    }
     const backIsTop = ringTilt > 0;
     const drawTop = front !== backIsTop;
     const startA = drawTop ? 0 : PI, endA = drawTop ? PI : TAU;
     const steps = 32;
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(-pa);
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.7;
     ctx.beginPath();

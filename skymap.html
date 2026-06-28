@@ -506,6 +506,19 @@ function syncSlidersFromPrecise() {
   document.getElementById('viewAlt').value = round(viewLatPrecise);
   document.getElementById('viewWidth').value = round(fovToSlider(viewFovPrecise));
 }
+function updateSliderLabels() {
+  const vLonDisp = azToDisp(viewLonPrecise);
+  if (viewFrame === 'equatorial') {
+    const raH = ((vLonDisp / 15) % 24 + 24) % 24;
+    const raHi = floor(raH), raMin = round((raH - raHi) * 60);
+    document.getElementById('viewAzVal').textContent = `${raHi}h ${p2(raMin)}m`;
+  } else {
+    document.getElementById('viewAzVal').textContent = round(vLonDisp) + '°';
+  }
+  document.getElementById('viewAltVal').textContent = (viewLatPrecise >= 0 ? '+' : '') + round(viewLatPrecise) + '°';
+  document.getElementById('viewWidthVal').textContent = viewFovPrecise < 1
+    ? round(viewFovPrecise * 60) + "'" : round(viewFovPrecise) + '°';
+}
 
 // ---- Main draw (UI wrapper around skymapDraw) ----
 function draw() {
@@ -527,17 +540,7 @@ function draw() {
   const tzLabel = isLMT ? 'Local Mean Time' : isDST ? 'Daylight Time' : 'Standard Time';
   document.getElementById('utcOffsetText').textContent = `UTC ${offStr} (${tzLabel})`;
 
-  const vLonDisp = azToDisp(viewLonPrecise);
-  if (viewFrame === 'equatorial') {
-    const raH = ((vLonDisp / 15) % 24 + 24) % 24;
-    const raHi = floor(raH), raMin = round((raH - raHi) * 60);
-    document.getElementById('viewAzVal').textContent = `${raHi}h ${p2(raMin)}m`;
-  } else {
-    document.getElementById('viewAzVal').textContent = round(vLonDisp) + '°';
-  }
-  document.getElementById('viewAltVal').textContent = (viewLatPrecise >= 0 ? '+' : '') + round(viewLatPrecise) + '°';
-  document.getElementById('viewWidthVal').textContent = viewFovPrecise < 1
-    ? round(viewFovPrecise * 60) + "'" : round(viewFovPrecise) + '°';
+  updateSliderLabels();
 
   skymapDraw(canvas, {
     dt, loc, darkMode,
@@ -570,6 +573,7 @@ function draw() {
     asteroids: loadedAsteroids,
     satellites: loadedSatellites,
   });
+  if (centerObject) { syncSlidersFromPrecise(); updateSliderLabels(); }
 }
 
 // ---- Init ----
@@ -698,10 +702,12 @@ function init() {
     draw();
   });
   document.getElementById('viewAz').addEventListener('input', () => {
+    centerObject = null;
     viewLonPrecise = azToDisp(parseFloat(document.getElementById('viewAz').value));
     draw();
   });
   document.getElementById('viewAlt').addEventListener('input', () => {
+    centerObject = null;
     viewLatPrecise = parseFloat(document.getElementById('viewAlt').value);
     draw();
   });
@@ -721,6 +727,7 @@ function init() {
   }
   function dragMove(x, y) {
     if (!dragging || !viewUnproject) return;
+    centerObject = null;
     const dx = x - dragX, dy = y - dragY;
     dragX = x; dragY = y;
     const rect = canvas.getBoundingClientRect();
@@ -742,6 +749,9 @@ function init() {
       if (dx*dx + dy*dy <= 1) {
         const rect = canvas.getBoundingClientRect();
         pickObject(rect ? x - rect.left : x, rect ? y - rect.top : y);
+        if (!selectedObject || !centerObject
+            || selectedObject.type !== centerObject.type
+            || selectedObject.data.name !== centerObject.name) centerObject = null;
         draw();
       }
     }
@@ -750,6 +760,17 @@ function init() {
   canvas.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); dragStart(e.clientX, e.clientY); });
   window.addEventListener('mousemove', e => { if (dragging) { e.preventDefault(); e.stopPropagation(); } dragMove(e.clientX, e.clientY); });
   window.addEventListener('mouseup', e => { if (dragging) { e.preventDefault(); e.stopPropagation(); } dragEnd(e.clientX, e.clientY); });
+  canvas.addEventListener('dblclick', e => {
+    e.preventDefault();
+    if (selectedObject) {
+      centerObject = {
+        type: selectedObject.type,
+        name: selectedObject.data.name,
+        jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
+      };
+      draw();
+    }
+  });
   let pinchDist = 0;
   function touchDist(e) {
     const a = e.touches[0], b = e.touches[1];
@@ -773,10 +794,26 @@ function init() {
       pinchDist = d;
     } else if (e.touches.length === 1) { const t = e.touches[0]; dragMove(t.clientX, t.clientY); }
   }, {passive: false});
+  let lastTapTime = 0, lastTapX = 0, lastTapY = 0;
   canvas.addEventListener('touchend', e => {
     if (e.touches.length === 0) {
       pinchDist = 0;
-      const t = e.changedTouches[0]; dragEnd(t.clientX, t.clientY);
+      const t = e.changedTouches[0];
+      const now = Date.now();
+      const tdx = t.clientX - lastTapX, tdy = t.clientY - lastTapY;
+      if (now - lastTapTime < 350 && tdx*tdx + tdy*tdy < 400) {
+        if (selectedObject) {
+          centerObject = {
+            type: selectedObject.type, name: selectedObject.data.name,
+            jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
+          };
+          draw();
+        }
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now; lastTapX = t.clientX; lastTapY = t.clientY;
+      }
+      dragEnd(t.clientX, t.clientY);
     } else if (e.touches.length === 1) {
       pinchDist = 0;
       const t = e.touches[0]; dragStart(t.clientX, t.clientY);
