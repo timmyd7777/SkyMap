@@ -176,7 +176,7 @@ canvas { display: block; }
     <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
       <span>Size</span><span id="viewWidthVal">180°</span>
     </div>
-    <input type="range" id="viewWidth" min="0" max="1800" value="1800" autocomplete="off" style="width:100%">
+    <input type="range" id="viewWidth" min="1" max="209" value="209" autocomplete="off" style="width:100%">
   </div>
   <div>
     <label style="text-align:center; display:block;">Other Options</label>
@@ -498,8 +498,14 @@ function updateFrameLabels() {
   document.getElementById('viewAltLabel').textContent = labels[1];
 }
 
-function fovToSlider(fov) { return (fov - minFovDeg) / (180 - minFovDeg) * 1800; }
-function sliderToFov(s) { return minFovDeg + s / 1800 * (180 - minFovDeg); }
+function fovToSlider(fov) {
+  if (fov <= 1) return 1 + (fov - 1/60) / (1 - 1/60) * 29;
+  return fov + 29;
+}
+function sliderToFov(s) {
+  if (s <= 30) return 1/60 + (s - 1) / 29 * (1 - 1/60);
+  return s - 29;
+}
 
 function syncSlidersFromPrecise() {
   document.getElementById('viewAz').value = round(azToDisp(viewLonPrecise));
