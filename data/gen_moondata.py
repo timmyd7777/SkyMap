@@ -75,7 +75,9 @@ def parse_orbits(text):
     while i < len(lines):
         line = lines[i]
 
-        # Detect planet
+        # Detect planet (reset epoch to J2000 default for each new planet section,
+        # since not all sections state an explicit epoch — e.g. Pluto)
+        prev_planet = current_planet
         if 'Satellites of Earth' in line:
             current_planet = 'earth'
         elif 'Satellites of Mars' in line:
@@ -90,6 +92,9 @@ def parse_orbits(text):
             current_planet = 'neptune'
         elif 'Satellites of Pluto' in line:
             current_planet = 'pluto'
+        if current_planet != prev_planet:
+            epoch_jde = 2451545.0
+            header_cols = None
 
         # Detect reference frame
         if 'ecliptic' in line.lower() and ('orbital' in line.lower() or 'mean' in line.lower()):
