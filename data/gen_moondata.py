@@ -181,8 +181,13 @@ def parse_orbits(text):
                 moon['Pw'] = moon['Pw']
                 moon['Pnode'] = moon['Pnode']
 
-                # Equatorial frame offset: +180 to M (see README.parse_jpl_elements.md)
-                if moon['ref_type'] == 'equatorial':
+                # The GUST86 analytical theory for Uranus's 5 classical moons uses
+                # a south-pole equatorial frame where the x-axis points to the
+                # descending node, while the JPL elements measure the longitude
+                # of the ascending node from the ascending node. The 180° offset
+                # in M compensates. Evidence: the GUST86 code in moons.js
+                # computes M = L - P + PI, where +PI is exactly this offset.
+                if name in ('Ariel', 'Umbriel', 'Titania', 'Oberon', 'Miranda'):
                     moon['M'] = (moon['M'] + 180.0) % 360.0
 
                 moons.append(moon)
