@@ -736,6 +736,46 @@ const MOON_DATA = {
   Charon: {a:19591, e:0.0002, w:146.106, M:131.070, i:0.080, node:26.928, epoch:2452800.5, n:56.3623149, Pw:10178.040, Pnode:9020.398, RA:132.993, Dec:-6.163, radius:603.6, H:1.4},
 };
 
+// Compute planetocentric J2000 equatorial position {x, y, z} in AU
+// from MOON_DATA Keplerian elements, propagated to Julian Ephemeris Date jde.
+function moonPositionKepler(name, jde) {
+  const md = MOON_DATA[name];
+  if (!md) return null;
+  const dt = jde - md.epoch;
+  const wRate = md.Pw > 0 ? 360.0 / md.Pw : 0;
+  const nRate = md.Pnode > 0 ? 360.0 / md.Pnode : 0;
+  const M = ((md.M + md.n * dt) % 360 + 360) % 360 * DEG;
+  const w = ((md.w + wRate * dt / 365.25) % 360 + 360) % 360 * DEG;
+  const N = ((md.node + nRate * dt / 365.25) % 360 + 360) % 360 * DEG;
+  const inc = md.i * DEG;
+
+  const E = solveKepler(M, md.e);
+  const nu = trueAnomaly(E, md.e);
+  const r = md.a * (1 - md.e * cos(E));
+  const u = nu + w;
+
+  // Position in reference plane (z along pole, x toward ascending node of J2000 equator)
+  const cosN = cos(N), sinN = sin(N), cosi = cos(inc), sini = sin(inc);
+  const cosu = cos(u), sinu = sin(u);
+  const xr = r * (cosN * cosu - sinN * sinu * cosi);
+  const yr = r * (sinN * cosu + cosN * sinu * cosi);
+  const zr = r * sinu * sini;
+
+  // Rotate from reference plane to J2000 equatorial using pole (RA, Dec).
+  // Reference plane x-axis = ascending node of J2000 equator on ref plane
+  //   = z_J2000 × pole = (-sin(RA), cos(RA), 0)
+  // y-axis = pole × x-axis = (-sin(Dec)cos(RA), -sin(Dec)sin(RA), cos(Dec))
+  // z-axis = pole = (cos(Dec)cos(RA), cos(Dec)sin(RA), sin(Dec))
+  const ra = md.RA * DEG, dec = md.Dec * DEG;
+  const cosRA = cos(ra), sinRA = sin(ra), cosDec = cos(dec), sinDec = sin(dec);
+  const KM_PER_AU = 149597870.7;
+  return {
+    x: (-sinRA * xr - sinDec * cosRA * yr + cosDec * cosRA * zr) / KM_PER_AU,
+    y: ( cosRA * xr - sinDec * sinRA * yr + cosDec * sinRA * zr) / KM_PER_AU,
+    z: (                cosDec * yr +        sinDec * zr)         / KM_PER_AU,
+  };
+}
+
 function planetMoonMagnitude(name, helioDist, geoDist) {
   const d = MOON_DATA[name];
   if (!d || d.H === undefined) return 99;
