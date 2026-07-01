@@ -1360,10 +1360,18 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'planetmoon') {
         if (!showPlanets || vWidthDeg >= 10) continue;
         const drawMag = min(magLimit, obj.mag);
-        const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
+        const md = MOON_DATA[obj.name];
+        const discR = md && md.radius ? arcminToPx(sx, sy, 2 * md.radius / (obj.geoDist * 149597870.7) * RAD * 60) / 2 : 0;
+        const r = max(starR, discR);
         const pmColor = darkMode ? '#bbb' : '#555';
-        ctx.fillStyle = pmColor;
-        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        if (discR > starR) {
+          ctx.fillStyle = pmColor;
+          ctx.beginPath(); ctx.arc(sx, sy, discR, 0, TAU); ctx.fill();
+        } else {
+          ctx.fillStyle = pmColor;
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        }
         drawnObjects.push({x:sx, y:sy, r, type:'planetmoon', data:{name:obj.name, parent:obj.parent, mag:obj.mag, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
           ctx.fillStyle = pmColor; ctx.font = labelFont;
