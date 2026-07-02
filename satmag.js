@@ -2398,19 +2398,19 @@ const SATMAG = {
 // Returns Infinity if eclipsed by Earth or backlit. Uses McCants standard magnitude
 // with diffuse-sphere phase correction and slant-range scaling.
 function satApparentMag(norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz) {
-  const geoDist = sqrt(gx*gx + gy*gy + gz*gz);
+  const geoDist = vmag(gx, gy, gz);
 
   // Cylindrical Earth shadow: satellite behind Earth relative to Sun
-  const sunDot = gx*sunTx + gy*sunTy + gz*sunTz;
+  const sunDot = dot(gx, gy, gz, sunTx, sunTy, sunTz);
   if (sunDot < 0 && geoDist*geoDist - sunDot*sunDot < 1) return Infinity;
 
   // Topocentric slant range
   const dx = gx - obsX, dy = gy - obsY, dz = gz - obsZ;
-  const slantER = sqrt(dx*dx + dy*dy + dz*dz);
+  const slantER = vmag(dx, dy, dz);
   const rangeKm = slantER * SGP4_ER;
 
   // Phase angle (Sun-satellite-observer) via diffuse sphere model
-  const cosPhase = -(dx*sunTx + dy*sunTy + dz*sunTz) / slantER;
+  const cosPhase = -dot(dx, dy, dz, sunTx, sunTy, sunTz) / slantER;
   const phase = Math.acos(max(-1, min(1, cosPhase)));
   const phaseFn = sin(phase) + (PI - phase)*cos(phase);
   if (phaseFn <= 0) return Infinity;

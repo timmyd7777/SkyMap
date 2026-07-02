@@ -14,12 +14,11 @@ const mGalactic = (function() {
   const cRA = 266.405 * DEG, cDec = -28.936 * DEG;
   const pz = [cos(pDec)*cos(pRA), cos(pDec)*sin(pRA), sin(pDec)];
   const gc = [cos(cDec)*cos(cRA), cos(cDec)*sin(cRA), sin(cDec)];
-  const px = [gc[0] - pz[0]*(pz[0]*gc[0]+pz[1]*gc[1]+pz[2]*gc[2]),
-              gc[1] - pz[1]*(pz[0]*gc[0]+pz[1]*gc[1]+pz[2]*gc[2]),
-              gc[2] - pz[2]*(pz[0]*gc[0]+pz[1]*gc[1]+pz[2]*gc[2])];
-  const pxLen = sqrt(px[0]*px[0]+px[1]*px[1]+px[2]*px[2]);
+  const d = dot(pz[0],pz[1],pz[2], gc[0],gc[1],gc[2]);
+  const px = [gc[0] - pz[0]*d, gc[1] - pz[1]*d, gc[2] - pz[2]*d];
+  const pxLen = vmag(px[0], px[1], px[2]);
   px[0] /= pxLen; px[1] /= pxLen; px[2] /= pxLen;
-  const py = [pz[1]*px[2]-pz[2]*px[1], pz[2]*px[0]-pz[0]*px[2], pz[0]*px[1]-pz[1]*px[0]];
+  const py = cross(pz[0],pz[1],pz[2], px[0],px[1],px[2]);
   return [px[0],px[1],px[2], py[0],py[1],py[2], pz[0],pz[1],pz[2]];
 })();
 
@@ -238,11 +237,28 @@ function sph2uxyz(lon, lat) {
 }
 // Cartesian → spherical. Returns [lon, lat, r] in radians.
 function xyz2sph(x, y, z) {
-  return [atan2(y, x), atan2(z, sqrt(x * x + y * y)), sqrt(x * x + y * y + z * z)];
+  return [atan2(y, x), atan2(z, sqrt(x * x + y * y)), vmag(x, y, z)];
 }
 // Unit-sphere inverse: Cartesian → [lon, lat] in radians (ignores radius).
 function uxyz2sph(x, y, z) {
   return [atan2(y, x), atan2(z, sqrt(x * x + y * y))];
+}
+
+// ---- Vector helpers ----
+
+// Dot product of two 3-vectors.
+function dot(x1, y1, z1, x2, y2, z2) {
+  return x1 * x2 + y1 * y2 + z1 * z2;
+}
+
+// Cross product of two 3-vectors. Returns [x, y, z].
+function cross(x1, y1, z1, x2, y2, z2) {
+  return [y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2];
+}
+
+// Magnitude (length) of a 3-vector.
+function vmag(x, y, z) {
+  return sqrt(x * x + y * y + z * z);
 }
 
 // Angular separation between two unit vectors using the haversine approach:
@@ -250,7 +266,17 @@ function uxyz2sph(x, y, z) {
 // unlike acos(dot) which loses precision when vectors are nearly parallel.
 function angSep(x1, y1, z1, x2, y2, z2) {
   const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
-  return 2 * asin(min(1, sqrt(dx * dx + dy * dy + dz * dz) / 2));
+  return 2 * asin(min(1, vmag(dx, dy, dz) / 2));
+}
+
+// Position angle from unit vector (x1,y1,z1) to unit vector (x2,y2,z2),
+// measured north through east in radians. z-axis is the pole.
+function posAng(x1, y1, z1, x2, y2, z2) {
+  const nz = sqrt(1 - z1 * z1);
+  if (nz === 0) return 0;
+  const ex = -y1 / nz, ey = x1 / nz;
+  const nx = -x1 * z1 / nz, ny = -y1 * z1 / nz;
+  return atan2(ex * x2 + ey * y2, nx * x2 + ny * y2 + nz * z2);
 }
 
 // ---- Matrix helpers ----
