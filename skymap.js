@@ -1363,6 +1363,18 @@ function skymapDraw(canvas, params) {
         }
       } else if (obj.type === 'planetmoon') {
         if (!showPlanets || vWidthDeg >= 10) continue;
+        // Skip Mars moons occluded behind the planet's disc. Safari doesn't
+        // reliably paint over earlier arc fills, so we can't rely on the
+        // painter's algorithm alone for correct occlusion. Not applied to
+        // oblate planets (Jupiter, Saturn) where the spherical check would
+        // be overly aggressive near the poles.
+        if (obj.parent === 'Mars') {
+          const primary = ssCache.find(o => o.type === 'planet' && o.name === 'Mars');
+          if (primary && obj._d > primary._d) {
+            const discAngR = (PLANET_DIAM1AU.Mars / primary.geoDist / 2) * DEG / 3600;
+            if (angSep(obj.x, obj.y, obj.z, primary.x, primary.y, primary.z) < discAngR) continue;
+          }
+        }
         const drawMag = min(magLimit, obj.mag);
         const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const md = MOON_DATA[obj.name];

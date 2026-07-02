@@ -245,6 +245,14 @@ function uxyz2sph(x, y, z) {
   return [atan2(y, x), atan2(z, sqrt(x * x + y * y))];
 }
 
+// Angular separation between two unit vectors using the haversine approach:
+// chord = |v2 - v1|, sep = 2 * asin(chord / 2). Stable for small angles
+// unlike acos(dot) which loses precision when vectors are nearly parallel.
+function angSep(x1, y1, z1, x2, y2, z2) {
+  const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+  return 2 * asin(min(1, sqrt(dx * dx + dy * dy + dz * dz) / 2));
+}
+
 // ---- Matrix helpers ----
 
 // Transpose a 3×3 matrix (row-major). For rotation matrices, transpose = inverse.
