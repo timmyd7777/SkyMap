@@ -660,6 +660,7 @@ function neptuneMoons(jd) {
   }
 
   // Nereid (Jacobson 1990, §9.11.2)
+  // ESAA formula is inaccurate; use JPL mean orbit elements for reliable positions.
   // B1950 equatorial frame. γ=10° — use full formula.
   {
     const t = jd - 2433680.5;

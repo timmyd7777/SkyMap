@@ -1109,6 +1109,8 @@ function skymapDraw(canvas, params) {
 
     // Planetary moons: ESAA3 ch.9 theories return planetocentric J2000 equatorial AU.
     // Add to parent's geocentric J2000 Cartesian position, convert to unit vector.
+    // Phoebe and Nereid use Keplerian orbits (ESAA formulae are inaccurate for these).
+    const KEPLER_MOONS = ['Phoebe', 'Nereid'];
     const MOON_FUNCS = [
       ['Mars', marsMoons], ['Jupiter', jupiterMoons], ['Saturn', saturnMoons],
       ['Uranus', uranusMoons], ['Neptune', neptuneMoons], ['Pluto', plutoMoons]
@@ -1119,8 +1121,10 @@ function skymapDraw(canvas, params) {
       const pgx = primary.x * primary.geoDist;
       const pgy = primary.y * primary.geoDist;
       const pgz = primary.z * primary.geoDist;
-      const pmoons = moonFunc(jde - primary.geoDist * LIGHT_TIME_AU);
+      const ltJde = jde - primary.geoDist * LIGHT_TIME_AU;
+      const pmoons = moonFunc(ltJde);
       for (const pm of pmoons) {
+        if (KEPLER_MOONS.includes(pm.name)) Object.assign(pm, moonPositionKepler(pm.name, ltJde));
         const gx = pgx + pm.x, gy = pgy + pm.y, gz = pgz + pm.z;
         const gd = sqrt(gx*gx + gy*gy + gz*gz);
         ssCache.push({ type:'planetmoon', name:pm.name, parent:parentName,
