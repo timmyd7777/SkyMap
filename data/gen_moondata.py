@@ -299,7 +299,8 @@ def format_js(moons, phys, analytical_only=False):
             if h:
                 fields.append(f"H:{h}")
 
-            lines.append(f"  {name}: {{{', '.join(fields)}}},")
+            jskey = f"'{name}'" if '/' in name or ' ' in name else name
+            lines.append(f"  {jskey}: {{{', '.join(fields)}}},")
 
     lines.append('};')
     return '\n'.join(lines)
