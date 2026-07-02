@@ -60,7 +60,7 @@ All code is vanilla JavaScript with no frameworks or bundling. The files load vi
 
 - **`stars.js` / `stars_hr.js`** — Star arrays: `[RA_rad, Dec_rad, mag, dist_pc, HR, HD, HIP, bayer, flamsteed, name]`. Unit vectors `[x,y,z]` appended at runtime by `skymapInit()`.
 - **`constellations.js`** — `CONSTELLATIONS` (stick figures by HR number pairs), `CON_CENTERS` (label positions), `BOUNDARIES` (IAU boundaries in B1875 RA/Dec, precessed to J2000 at init).
-- **`deepsky.js`** — Messier + Caldwell objects: `[type, RA, Dec, mag, dist, size, M/C id, NGC/IC, name]`.
+- **`deepsky.js`** — Messier + Caldwell objects: `[type, RA, Dec, mag, dist, major_arcmin, minor_arcmin, pa_deg, M/C id, NGC/IC, name]`. Galaxies with both axes are rendered as oriented ellipses; those with only a major axis are drawn as circles. Galaxy PA orientation is computed by displacing the object ~1° toward the J2000 NCP in view coords and reprojecting to find the screen direction of celestial north — this works correctly in all coordinate frames.
 - **`cities.js`** — `[name, admin1, countryCode, lat, lon, timezone]` for ~4400 cities.
 - **`milkyway.js`** — Polygons in galactic lon/lat pairs, converted to xyz Float32Arrays at init. `COALSACK_INDEX` marks the Coal Sack dark nebula polygon.
 - **`vsop87.js`** — VSOP87D truncated series: `VSOP87.MERCURY` through `VSOP87.NEPTUNE`, each with `{L, B, R}` arrays of series. ~2430 terms, ~149KB.

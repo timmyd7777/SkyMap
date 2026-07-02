@@ -174,9 +174,9 @@ function formatSelection(obj) {
     const DS_TYPES = {OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
       DN:'Dark Nebula',PN:'Planetary Nebula',GX:'Galaxy'};
     type = DS_TYPES[d[0]] || d[0];
-    name = d[8] || '';
-    if (d[6]) ids.push(d[6]);
-    if (d[7]) ids.push(d[7]);
+    name = d[10] || '';
+    if (d[8]) ids.push(d[8]);
+    if (d[9]) ids.push(d[9]);
     mag = d[3];
   } else if (obj.type === 'planet') {
     type = 'Planet';
@@ -826,7 +826,7 @@ function skymapDraw(canvas, params) {
     ctx.lineWidth = 1;
     const dsPositions = [];
     for (let dsi = 0; dsi < DEEPSKY.length; dsi++) { const ds = DEEPSKY[dsi];
-      const x0 = ds[9], y0 = ds[10], z0 = ds[11];
+      const x0 = ds[11], y0 = ds[12], z0 = ds[13];
       const [x1, vy, vz] = mvmul(M, x0, y0, z0);
       if (vz < -1e-10) { dsPositions.push(null); continue; }
       const d = 1 + vz;
@@ -861,7 +861,33 @@ function skymapDraw(canvas, params) {
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - t); ctx.lineTo(pt[0], pt[1] - r); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] + r); ctx.lineTo(pt[0], pt[1] + t); ctx.stroke();
       } else if (typ === 'GX') {
-        ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, r * 0.5, 0, 0, TAU); ctx.stroke();
+        const minorSize = ds[6];
+        if (minorSize) {
+          const rMinor = max(3, arcminToPx(pt[0], pt[1], minorSize) / 2);
+          const pa = ds[7];
+          // Galaxy PA is measured from celestial north through east. To orient
+          // the ellipse on screen: displace the object ~1° toward the J2000 NCP
+          // in view coords, reproject, and take the screen angle. This gives the
+          // screen direction of celestial north at the object's position, correct
+          // in all coordinate frames and across the stereographic projection.
+          let rot = 0;
+          if (pa != null) {
+            const ncpX = M[2], ncpY = M[5], ncpZ = M[8]; // J2000 NCP in view coords
+            const dp = dot(x1, vy, vz, ncpX, ncpY, ncpZ);
+            const t = DEG / sqrt(1 - dp * dp || 1e-20);   // ~1° along tangent plane
+            const nx = x1 + t * (ncpX - dp * x1);
+            const ny = vy + t * (ncpY - dp * vy);
+            const nz2 = vz + t * (ncpZ - dp * vz);
+            if (nz2 > -1) {
+              const nd = 1 + nz2;
+              const np = toScreen(2 * nx / nd, -2 * ny / nd);
+              rot = atan2(np[1] - pt[1], np[0] - pt[0]) - pa * DEG;
+            }
+          }
+          ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
+        }
       } else {
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
       }
@@ -873,8 +899,8 @@ function skymapDraw(canvas, params) {
       for (let i = 0; i < DEEPSKY.length; i++) {
         if (!dsPositions[i]) continue;
         const p = dsPositions[i];
-        const mcId = DEEPSKY[i][6];
-        const name = DEEPSKY[i][8];
+        const mcId = DEEPSKY[i][8];
+        const name = DEEPSKY[i][10];
         if (showDeepSkyIds && mcId) placeLabel(p.x, p.y, p.r + 3, mcId);
         if (showDeepSkyNames && name) placeLabel(p.x, p.y, p.r + 3, name);
       }

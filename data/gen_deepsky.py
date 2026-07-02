@@ -42,6 +42,16 @@ def parse_row(fields):
         maj = float(maj) if maj else None
     except ValueError:
         maj = None
+    minor = fields[11].strip() if len(fields) > 11 else ''
+    try:
+        minor = float(minor) if minor else None
+    except ValueError:
+        minor = None
+    pa = fields[12].strip() if len(fields) > 12 else ''
+    try:
+        pa = float(pa) if pa else None
+    except ValueError:
+        pa = None
 
     # Identifiers start at field 13; common names are non-catalog strings
     catalog_pat = re.compile(
@@ -72,7 +82,9 @@ def parse_row(fields):
         'dec': dec,
         'mag': vmag,
         'dist': dist,
-        'size': maj,
+        'major': maj,
+        'minor': minor,
+        'pa': pa,
         'mc': mc_id,
         'ngc': ngc_ic,
         'name': common,
@@ -107,7 +119,7 @@ def sort_key(o):
 objects.sort(key=sort_key)
 
 with open('deepsky.js', 'w') as out:
-    out.write('// Deep sky objects: [type, ra_rad, dec_rad, mag, dist_pc, size_arcmin, mc_id, ngc_ic, name]\n')
+    out.write('// Deep sky objects: [type, ra_rad, dec_rad, mag, dist_pc, major_arcmin, minor_arcmin, pa_deg, mc_id, ngc_ic, name]\n')
     out.write('const DEEPSKY = [\n')
     for o in objects:
         parts = [
@@ -116,7 +128,9 @@ with open('deepsky.js', 'w') as out:
             '%.6f' % o['dec'],
             js_val(o['mag']),
             js_val(o['dist']),
-            js_val(o['size']),
+            js_val(o['major']),
+            js_val(o['minor']),
+            js_val(o['pa']),
             js_val(o['mc']),
             js_val(o['ngc']),
             js_val(o['name']),
