@@ -174,6 +174,7 @@ function formatSelection(obj) {
     if (obj.hr) ids.push(`HR ${obj.hr}`);
     if (d.hd) ids.push(`HD ${d.hd}`);
     if (d.hip) ids.push(`HIP ${d.hip}`);
+    if (d.dm) ids.push(d.dm);
     mag = d.mag;
   } else if (obj.type === 'deepsky') {
     const DS_TYPES = {OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
@@ -752,9 +753,9 @@ function skymapDraw(canvas, params) {
     const spos = {};
     const starPositions = [];
     for (const s of STARS) {
-      const hr = s[4];
+      const hr = s[5];
       if (s[2] > starMagLimit && !hr) { starPositions.push(null); continue; }
-      const x0 = s[10], y0 = s[11], z0 = s[12];
+      const x0 = s[12], y0 = s[13], z0 = s[14];
       const [x1, vy, vz] = mvmul(M, x0, y0, z0);
       let sx, sy;
       const d = 1 + vz;
@@ -766,7 +767,7 @@ function skymapDraw(canvas, params) {
         [sx, sy] = toScreen(2 * x1 / d, -2 * vy / d);
       }
       const inView = vz > -1e-10 && sx >= 0 && sx <= W && sy >= 0 && sy <= H;
-      const p = {sx, sy, mag: s[2], dist: s[3], hr, hd: s[5], hip: s[6], bayer: s[7], flamsteed: s[8], name: s[9], inView, jx: x0, jy: y0, jz: z0};
+      const p = {sx, sy, mag: s[2], bmv: s[3], dist: s[4], hr, hd: s[6], hip: s[7], bayer: s[8], flamsteed: s[9], name: s[10], dm: s[11], inView, jx: x0, jy: y0, jz: z0};
       starPositions.push(p);
       if (hr) spos[hr] = p;
     }
@@ -845,20 +846,27 @@ function skymapDraw(canvas, params) {
     const dsColor = darkMode ? 'rgba(200,200,200,0.8)' : 'rgba(80,80,80,0.8)';
     ctx.strokeStyle = dsColor;
     ctx.lineWidth = 1;
+    const skipContours = new Set([37, 79]); // IC 434 extended, M 8 extended
     function drawDSContours(cis) {
+      const rings = [];
       for (const ci of cis) {
+        if (skipContours.has(ci)) continue;
         const ring = NEBULA_CONTOURS[ci];
         const nv = ring.length / 3;
         if (nv < 3) continue;
+        const pts = [];
         ctx.beginPath();
         for (let j = 0; j < nv; j++) {
           const [cx, cy, cz] = mvmul(M, ring[j*3], ring[j*3+1], ring[j*3+2]);
           const cd = max(1 + cz, 0.1);
           const cp = toScreen(2*cx/cd, -2*cy/cd);
+          pts.push(cp);
           if (j === 0) ctx.moveTo(cp[0], cp[1]); else ctx.lineTo(cp[0], cp[1]);
         }
         ctx.closePath(); ctx.stroke();
+        rings.push(pts);
       }
+      return rings;
     }
     const dsPositions = [];
     const dsMagLimit = starMagLimit + 4;
@@ -874,26 +882,29 @@ function skymapDraw(canvas, params) {
       const dsSize = ds[5];
       const r = dsSize ? max(5, arcminToPx(pt[0], pt[1], dsSize) / 2) : 5;
       dsPositions.push({x: pt[0], y: pt[1], r});
-      drawnObjects.push({x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: x0, jy: y0, jz: z0});
+      const dObj = {x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: x0, jy: y0, jz: z0};
       const typ = ds[0];
       ctx.strokeStyle = dsColor;
       if (typ === 'OC') {
         ctx.setLineDash([3, 3]);
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
         ctx.setLineDash([]);
-        if (dsContours[dsi]) drawDSContours(dsContours[dsi]);
+        if (dsContours[dsi]) dObj.contourPts = drawDSContours(dsContours[dsi]);
       } else if (typ === 'GC') {
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0] - r, pt[1]); ctx.lineTo(pt[0] + r, pt[1]); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0], pt[1] + r); ctx.stroke();
       } else if (typ === 'BN') {
-        if (dsContours[dsi]) drawDSContours(dsContours[dsi]);
+        if (dsContours[dsi]) dObj.contourPts = drawDSContours(dsContours[dsi]);
         else if (ds[3] != null || !dsSize || dsSize < 60) ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
       } else if (typ === 'DN') {
-        ctx.beginPath();
-        ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0] + r, pt[1]);
-        ctx.lineTo(pt[0], pt[1] + r); ctx.lineTo(pt[0] - r, pt[1]);
-        ctx.closePath(); ctx.stroke();
+        if (dsContours[dsi]) dObj.contourPts = drawDSContours(dsContours[dsi]);
+        else {
+          ctx.beginPath();
+          ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0] + r, pt[1]);
+          ctx.lineTo(pt[0], pt[1] + r); ctx.lineTo(pt[0] - r, pt[1]);
+          ctx.closePath(); ctx.stroke();
+        }
       } else if (typ === 'PN') {
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
         const t = 2 * r;
@@ -932,19 +943,23 @@ function skymapDraw(canvas, params) {
       } else {
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
       }
+      drawnObjects.push(dObj);
     }
     if (showDeepSkyNames || showDeepSkyIds) {
       ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
       ctx.fillStyle = dsColor;
       ctx.textAlign = 'left';
+      const dsLabelMagLimit = dsMagLimit - 2;
       for (let i = 0; i < DEEPSKY.length; i++) {
         if (!dsPositions[i]) continue;
         const p = dsPositions[i];
         const mcId = DEEPSKY[i][8];
         const ngcic = DEEPSKY[i][9];
         const name = DEEPSKY[i][11];
-        if (showDeepSkyIds) placeLabel(p.x, p.y, p.r + 3, mcId || ngcic || '');
-        if (showDeepSkyNames && name) placeLabel(p.x, p.y, p.r + 3, name);
+        const isMC = !!mcId;
+        const labelOk = isMC || dsContours[i] || vWidthDeg < 3 || (DEEPSKY[i][3] != null && DEEPSKY[i][3] <= dsLabelMagLimit);
+        if (showDeepSkyIds && labelOk) placeLabel(p.x, p.y, p.r + 3, mcId || ngcic || '');
+        if (showDeepSkyNames && labelOk && name) placeLabel(p.x, p.y, p.r + 3, name);
       }
     }
   }
@@ -1647,9 +1662,25 @@ const PICK_TOL = 5;  // extra pixels beyond object radius for hit-testing
 function pickObject(canvasX, canvasY) {
   const hits = [];
   for (const obj of drawnObjects) {
-    const dx = canvasX - obj.x, dy = canvasY - obj.y;
-    const limit = obj.r + PICK_TOL;
-    if (dx*dx + dy*dy <= limit*limit) hits.push(obj);
+    if (obj.contourPts) {
+      // Ray-casting point-in-polygon: test each contour ring separately;
+      // hit if click is inside any ring.
+      let hit = false;
+      for (const pts of obj.contourPts) {
+        let inside = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          if ((pts[i][1] > canvasY) !== (pts[j][1] > canvasY) &&
+              canvasX < (pts[j][0] - pts[i][0]) * (canvasY - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0])
+            inside = !inside;
+        }
+        if (inside) { hit = true; break; }
+      }
+      if (hit) hits.push(obj);
+    } else {
+      const dx = canvasX - obj.x, dy = canvasY - obj.y;
+      const limit = obj.r + PICK_TOL;
+      if (dx*dx + dy*dy <= limit*limit) hits.push(obj);
+    }
   }
   if (hits.length === 0) { selectedObject = null; return selectedObject; }
   if (abs(canvasX - lastPickX) < 2 && abs(canvasY - lastPickY) < 2 && hits.length === lastPickList.length) {

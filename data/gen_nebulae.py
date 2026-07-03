@@ -27,13 +27,17 @@ DEG2RAD = math.pi / 180.0
 
 contours = {}
 with open('Contours.csv') as f:
-    for row in csv.reader(f):
+    reader = csv.reader(f)
+    next(reader)
+    for row in reader:
         ra_deg, dec_deg, idx = float(row[0]), float(row[1]), int(row[2])
         contours.setdefault(idx, []).append((ra_deg * DEG2RAD, dec_deg * DEG2RAD))
 
 index = {}
 with open('Index.csv') as f:
-    for row in csv.reader(f, skipinitialspace=True):
+    reader = csv.reader(f, skipinitialspace=True)
+    next(reader)
+    for row in reader:
         idx = int(row[0])
         names = [n.strip() for n in row[1].split(';')]
         index[idx] = names

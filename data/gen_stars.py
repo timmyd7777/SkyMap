@@ -23,14 +23,27 @@ if not os.path.exists(INPUT_FILE) and INPUT_FILE.lower() in DOWNLOAD_FILES:
     print(f"Downloading {url} -> {INPUT_FILE}", file=sys.stderr)
     urllib.request.urlretrieve(url, INPUT_FILE)
 
-GREEK = ('alpha','beta','gamma','delta','epsilon','zeta','eta','theta',
-         'iota','kappa','lambda','mu','nu','xi','omicron','pi','rho',
-         'sigma','tau','upsilon','phi','chi','psi','omega')
-GREEK_PAT = re.compile(r'^(' + '|'.join(GREEK) + r')[0-9]* [A-Z][A-Za-z]+$')
-FLAMSTEED_PAT = re.compile(r'^\d+ [A-Z][A-Za-z]+$')
-CATALOG_PREFIX = ('HR ','HD ','SAO ','BD ','HIP ','TYC ','GAIA ','WDS ','GJ ',
+IAU_CON = {'And','Ant','Aps','Aqr','Aql','Ara','Ari','Aur','Boo','Cae',
+    'Cam','Cnc','CVn','CMa','CMi','Cap','Car','Cas','Cen','Cep','Cet','Cha',
+    'Cir','Col','Com','CrA','CrB','Crv','Crt','Cru','Cyg','Del','Dor','Dra',
+    'Equ','Eri','For','Gem','Gru','Her','Hor','Hya','Hyi','Ind','Lac','Leo',
+    'LMi','Lep','Lib','Lup','Lyn','Lyr','Men','Mic','Mon','Mus','Nor','Oct',
+    'Oph','Ori','Pav','Peg','Per','Phe','Pic','Psc','PsA','Pup','Pyx','Ret',
+    'Sge','Sgr','Sco','Scl','Sct','Ser','Sex','Tau','Tel','Tri','TrA','Tuc',
+    'UMa','UMi','Vel','Vir','Vol','Vul'}
+CATALOG_PREFIX = ('HR ','HD ','SAO ','BD ','CD ','HIP ','TYC ','GAIA ','WDS ','GJ ',
                   'GC ','NGC ','IC ','PK ','PNG ','PGC ','UGC ','LBN ',
                   'CST:','LTT ','GCVS ','NSV ','CP ')
+
+def con_designation(f):
+    """If f is 'prefix Con' where Con is an IAU abbreviation, return (prefix, Con).
+    Numeric prefix = Flamsteed, otherwise Bayer/variable."""
+    if ' ' not in f:
+        return None
+    prefix, suffix = f.rsplit(' ', 1)
+    if suffix in IAU_CON:
+        return (prefix, suffix)
+    return None
 
 def parse_ra(s):
     parts = s.strip().split()
@@ -55,7 +68,16 @@ def parse_star_line(line):
     try:
         ra = parse_ra(parts[1])
         dec = parse_dec(parts[2])
-        mag = float(parts[5].strip())
+        v_str = parts[5].strip()
+        b_str = parts[6].strip()
+        if v_str:
+            mag = float(v_str)
+            bmv = round(float(b_str) - mag, 2) if b_str else 0
+        elif b_str:
+            mag = float(b_str)
+            bmv = 0
+        else:
+            return None
     except (ValueError, IndexError):
         return None
 
@@ -66,6 +88,8 @@ def parse_star_line(line):
     hd = int(hd_match.group(1)) if hd_match else 0
     hip_match = re.search(r'\bHIP (\d+)\b', line)
     hip = int(hip_match.group(1)) if hip_match else 0
+    dm_match = re.search(r'\b(BD|CD|CP) [+-]\d+ \d+', line)
+    dm = dm_match.group(0) if dm_match else ''
 
     dist_str = parts[7].strip()
     try:
@@ -78,12 +102,14 @@ def parse_star_line(line):
     name = ''
     for f in parts:
         f = f.strip()
-        if not f:
-            continue
-        if GREEK_PAT.match(f) and not bayer:
-            bayer = f
-        elif FLAMSTEED_PAT.match(f) and not flamsteed:
-            flamsteed = f
+        cd = con_designation(f)
+        if cd:
+            if re.match(r'^\d+$', cd[0]):
+                if not flamsteed:
+                    flamsteed = f
+            else:
+                if not bayer:
+                    bayer = f
     # The common name is the last non-catalog, non-Bayer, non-Flamsteed field
     for f in reversed(parts):
         f = f.strip()
@@ -91,7 +117,7 @@ def parse_star_line(line):
             continue
         if any(f.startswith(p) for p in CATALOG_PREFIX):
             break
-        if not GREEK_PAT.match(f) and not FLAMSTEED_PAT.match(f):
+        if not con_designation(f):
             name = f
             break
 
@@ -103,8 +129,8 @@ def parse_star_line(line):
 
     base = {
         'hd': hd, 'hip': hip,
-        'ra': ra, 'dec': dec, 'mag': mag, 'dist': dist,
-        'name': name, 'bayer': bayer, 'flamsteed': flamsteed,
+        'ra': ra, 'dec': dec, 'mag': mag, 'bmv': bmv, 'dist': dist,
+        'name': name, 'bayer': bayer, 'flamsteed': flamsteed, 'dm': dm,
     }
 
     results = []
@@ -154,12 +180,12 @@ def js_str(s):
 
 with open('stars.js', 'w', encoding='utf-8') as out:
     out.write(f'// {len(stars)} stars from {INPUT_FILE} (mag <= {MAG_LIMIT})\n')
-    out.write('// Star: [RA_rad, Dec_rad, mag, dist_pc, HR, HD, HIP, bayer, flamsteed, name]\n')
+    out.write('// Star: [RA_rad, Dec_rad, mag, bmv, dist_pc, HR, HD, HIP, bayer, flamsteed, name, dm]\n')
     out.write('var STARS = [\n')
     for s in stars:
         dist = 'null' if s['dist'] is None else f"{s['dist']:.1f}"
-        out.write(f"[{s['ra']:.5f},{s['dec']:.5f},{s['mag']:.2f},{dist},"
-                  f"{s['hr']},{s['hd']},{s['hip']},{js_str(s['bayer'])},{js_str(s['flamsteed'])},{js_str(s['name'])}],\n")
+        out.write(f"[{s['ra']:.5f},{s['dec']:.5f},{s['mag']:.2f},{s['bmv']:.2f},{dist},"
+                  f"{s['hr']},{s['hd']},{s['hip']},{js_str(s['bayer'])},{js_str(s['flamsteed'])},{js_str(s['name'])},{js_str(s['dm'])}],\n")
     out.write('];\n')
 
 print("Wrote stars.js", file=sys.stderr)
