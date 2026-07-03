@@ -888,7 +888,7 @@ function skymapDraw(canvas, params) {
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0], pt[1] + r); ctx.stroke();
       } else if (typ === 'BN') {
         if (dsContours[dsi]) drawDSContours(dsContours[dsi]);
-        else ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
+        else if (ds[3] != null || !dsSize || dsSize < 60) ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
       } else if (typ === 'DN') {
         ctx.beginPath();
         ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0] + r, pt[1]);
