@@ -670,3 +670,34 @@ const PLANET_PHYS = {
     W: (t) => 302.695 + 56.3625225*t }
 };
 
+// Compute a planet's pole orientation and sub-observer coordinates.
+// name: planet name (key into PLANET_PHYS)
+// T: Julian centuries from J2000 (light-time corrected)
+// tDays: days from J2000 (light-time corrected, for W(t))
+// jx,jy,jz: J2000 equatorial unit vector from observer toward planet
+// Returns { poleJ2k, subObsLat, subObsLon, oblateness }
+//   poleJ2k: J2000 unit vector of north pole [x,y,z]
+//   subObsLat: planetographic latitude of sub-observer point (radians)
+//   subObsLon: planetographic longitude of sub-observer point (radians, 0 to 2π)
+//   oblateness: geometric flattening
+function planetOrientation(name, T, tDays, jx, jy, jz) {
+  const phys = PLANET_PHYS[name];
+  if (!phys) return null;
+  const ra = phys.poleRA(T) * DEG, dec = phys.poleDec(T) * DEG;
+  const poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
+  const subObsLat = asin(-dot(poleJ2k[0], poleJ2k[1], poleJ2k[2], jx, jy, jz));
+  const nodeRA = (phys.poleRA(T) + 90) * DEG;
+  const eNx = cos(nodeRA), eNy = sin(nodeRA);
+  const [ePx, ePy, ePz] = cross(poleJ2k[0], poleJ2k[1], poleJ2k[2], eNx, eNy, 0);
+  const Wrad = phys.W(tDays) * DEG;
+  const pmX = eNx*cos(Wrad) + ePx*sin(Wrad);
+  const pmY = eNy*cos(Wrad) + ePy*sin(Wrad);
+  const pmZ =                 ePz*sin(Wrad);
+  const [secX, secY, secZ] = cross(pmX, pmY, pmZ, poleJ2k[0], poleJ2k[1], poleJ2k[2]);
+  const obsX = -jx, obsY = -jy, obsZ = -jz;
+  const lon = atan2(dot(obsX,obsY,obsZ, secX,secY,secZ),
+                    dot(obsX,obsY,obsZ, pmX,pmY,pmZ));
+  const subObsLon = ((lon % TAU) + TAU) % TAU;
+  return { poleJ2k, subObsLat, subObsLon, oblateness: phys.flattening };
+}
+

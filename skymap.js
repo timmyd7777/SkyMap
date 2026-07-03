@@ -308,7 +308,7 @@ function skymapDraw(canvas, params) {
     dt, loc, darkMode,
     showStars, showNames, showStarIds,
     showConst, showConstNames, showBounds,
-    showPlanets, showPlanetSymbols, showPlanetNames, j2000,
+    showPlanets, showPlanetSymbols, showPlanetNames, showPlanetGrid, j2000,
     showComets, showCometNames, showAsteroids, showAsteroidNames,
     showSatellites, showSatelliteNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
@@ -1080,12 +1080,12 @@ function skymapDraw(canvas, params) {
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
         symbol: PLANET_SYMBOLS[name],
         helioDist:h.R, geoDist, phaseAngle:FV };
-      const phys = PLANET_PHYS[name];
-      if (phys) {
-        if (phys.flattening > 0) entry.oblateness = phys.flattening;
-        const Tlt = T - lt / 36525;
-        const ra = phys.poleRA(Tlt) * DEG, dec = phys.poleDec(Tlt) * DEG;
-        entry.poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
+      const ori = planetOrientation(name, T - lt / 36525, d - lt, jx, jy, jz);
+      if (ori) {
+        entry.poleJ2k = ori.poleJ2k;
+        if (ori.oblateness > 0) entry.oblateness = ori.oblateness;
+        entry.subObsLat = ori.subObsLat;
+        entry.subObsLon = ori.subObsLon;
       }
       if (name === 'Saturn') {
         const [px, py, pz] = entry.poleJ2k;
@@ -1110,10 +1110,12 @@ function skymapDraw(canvas, params) {
       mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
       symbol: PLANET_SYMBOLS['Pluto'],
       helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV };
-    const plutoPhys = PLANET_PHYS.Pluto;
-    const plutoTlt = T - plutoLt / 36525;
-    const plutoRA = plutoPhys.poleRA(plutoTlt) * DEG, plutoDc = plutoPhys.poleDec(plutoTlt) * DEG;
-    plutoEntry.poleJ2k = [cos(plutoDc)*cos(plutoRA), cos(plutoDc)*sin(plutoRA), sin(plutoDc)];
+    const plutoOri = planetOrientation('Pluto', T - plutoLt / 36525, d - plutoLt, pjx, pjy, pjz);
+    if (plutoOri) {
+      plutoEntry.poleJ2k = plutoOri.poleJ2k;
+      plutoEntry.subObsLat = plutoOri.subObsLat;
+      plutoEntry.subObsLon = plutoOri.subObsLon;
+    }
     ssCache.push(plutoEntry);
 
     // Observer geocentric position in Earth-radii (WGS84 ellipsoid)
@@ -1270,8 +1272,9 @@ function skymapDraw(canvas, params) {
 
   // Draw a phase-shaded disc: dark side first, then lit crescent/gibbous.
   // FVrad = phase angle in radians (0 = full, PI = new). litColor = color for lit side.
+  // toSunAngle = screen-space angle from planet toward Sun (radians, math convention).
   // Optional oblateness (0–1) and polePA (radians) for oblate planets.
-  function drawPhaseDisc(sx, sy, r, FVrad, sunSx, sunSy, litColor, oblateness, polePA) {
+  function drawPhaseDisc(sx, sy, r, FVrad, toSunAngle, litColor, oblateness, polePA) {
     const ob = oblateness || 0;
     const pa = polePA || 0;
     const yScale = 1 - ob;
@@ -1284,12 +1287,12 @@ function skymapDraw(canvas, params) {
     const cx0 = ob > 0 ? 0 : sx, cy0 = ob > 0 ? 0 : sy;
     let toSun;
     if (ob > 0) {
-      const dsx = sunSx - sx, dsy = sunSy - sy;
-      const lsx = cos(pa)*dsx + sin(pa)*dsy;
-      const lsy = (-sin(pa)*dsx + cos(pa)*dsy) / yScale;
+      const sdx = cos(toSunAngle), sdy = -sin(toSunAngle);
+      const lsx = cos(pa)*sdx + sin(pa)*sdy;
+      const lsy = (-sin(pa)*sdx + cos(pa)*sdy) / yScale;
       toSun = atan2(-lsy, lsx);
     } else {
-      toSun = atan2(sy - sunSy, sunSx - sx);
+      toSun = toSunAngle;
     }
     ctx.fillStyle = darkMode ? '#333' : '#555';
     ctx.beginPath(); ctx.arc(cx0, cy0, r, 0, TAU); ctx.fill();
@@ -1316,6 +1319,79 @@ function skymapDraw(canvas, params) {
     if (ob > 0) ctx.restore();
   }
 
+  function drawPlanetGrid(sx, sy, r, polePA, oblateness, subObsLat, subObsLon) {
+    const ob = oblateness || 0;
+    const pa = polePA || 0;
+    const yScale = 1 - ob;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(-pa);
+    ctx.scale(1, yScale);
+    ctx.lineWidth = 0.5 / yScale;
+
+    const phi0 = -subObsLat, lam0 = subObsLon;
+    const sinPhi0 = sin(phi0), cosPhi0 = cos(phi0);
+
+    function gridLine(points) {
+      ctx.beginPath();
+      let started = false;
+      for (const [xd, yd, zc] of points) {
+        if (zc > 0.001) {
+          if (!started) { ctx.moveTo(xd * r, -yd * r); started = true; }
+          else ctx.lineTo(xd * r, -yd * r);
+        } else {
+          started = false;
+        }
+      }
+      ctx.stroke();
+    }
+
+    // Latitude lines at ±30, ±60
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    for (const latDeg of [30, 60, -30, -60]) {
+      const phi = latDeg * DEG;
+      const sinPhi = sin(phi), cosPhi = cos(phi);
+      const pts = [];
+      for (let i = 0; i <= 72; i++) {
+        const dLam = i * 5 * DEG - lam0;
+        pts.push([cosPhi * sin(dLam),
+                  cosPhi0 * sinPhi - sinPhi0 * cosPhi * cos(dLam),
+                  sinPhi0 * sinPhi + cosPhi0 * cosPhi * cos(dLam)]);
+      }
+      gridLine(pts);
+    }
+    // Equator: thicker
+    ctx.lineWidth = 1.0 / yScale;
+    const eqPts = [];
+    for (let i = 0; i <= 72; i++) {
+      const dLam = i * 5 * DEG - lam0;
+      eqPts.push([sin(dLam),
+                  -sinPhi0 * cos(dLam),
+                  cosPhi0 * cos(dLam)]);
+    }
+    gridLine(eqPts);
+
+    // Longitude lines every 30°
+    ctx.lineWidth = 0.5 / yScale;
+    for (let lonDeg = 0; lonDeg < 360; lonDeg += 30) {
+      const dLam = lonDeg * DEG - lam0;
+      const sinDLam = sin(dLam), cosDLam = cos(dLam);
+      const pts = [];
+      for (let i = 0; i <= 36; i++) {
+        const phi = (-90 + i * 5) * DEG;
+        const sinPhi = sin(phi), cosPhi = cos(phi);
+        pts.push([cosPhi * sinDLam,
+                  cosPhi0 * sinPhi - sinPhi0 * cosPhi * cosDLam,
+                  sinPhi0 * sinPhi + cosPhi0 * cosPhi * cosDLam]);
+      }
+      if (lonDeg === 0) ctx.lineWidth = 1.0 / yScale;
+      gridLine(pts);
+      if (lonDeg === 0) ctx.lineWidth = 0.5 / yScale;
+    }
+
+    ctx.restore();
+  }
+
   // Render solar system from cached positions.
   function drawSolarSystem() {
     updateSSCache();
@@ -1323,11 +1399,9 @@ function skymapDraw(canvas, params) {
     const labelFont = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
     const magLimit = 5.05 + magBoost;
 
-    // Project Sun position for Moon phase orientation (even if Sun is off-screen)
+    // Sun view-space direction for phase orientation
     const sunObj = ssCache.find(o => o.type === 'sun');
     const [sunVx, sunVy, sunVz] = mvmul(M, sunObj.x, sunObj.y, sunObj.z);
-    const sunD = 1 + sunVz;
-    const [sunSx, sunSy] = toScreen(2 * sunVx / sunD, -2 * sunVy / sunD);
 
     for (const obj of ssCache) {
       const [vx, vy, vz] = mvmul(M, obj.x, obj.y, obj.z);
@@ -1335,6 +1409,12 @@ function skymapDraw(canvas, params) {
       const d = 1 + vz;
       const [sx, sy] = toScreen(2 * vx / d, -2 * vy / d);
       if (sx < -50 || sx > W + 50 || sy < -50 || sy > H + 50) continue;
+      // Sun direction at this object's position via stereographic Jacobian
+      const dpS = dot(vx, vy, vz, sunVx, sunVy, sunVz);
+      const tsx = sunVx - dpS*vx, tsy = sunVy - dpS*vy, tsz = sunVz - dpS*vz;
+      const jsDx = 2*tsx/d - 2*vx*tsz/(d*d);
+      const jsDy = -2*tsy/d + 2*vy*tsz/(d*d);
+      const toSunAngle = atan2(jsDy, jsDx);
 
       if (obj.type === 'sun' && showPlanets) {
         const r = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
@@ -1376,10 +1456,14 @@ function skymapDraw(canvas, params) {
           const ringOuter = discR * 2.27, ringInner = discR * 1.24;
           const ringColor = darkMode ? '#d8d0c0' : '#a09880';
           drawSaturnRing(sx, sy, ringOuter, ringInner, obj.ringTilt, polePA, ringColor, false);
-          drawPhaseDisc(sx, sy, discR, obj.phaseAngle, sunSx, sunSy, pColor, obj.oblateness, polePA);
+          drawPhaseDisc(sx, sy, discR, obj.phaseAngle, toSunAngle, pColor, obj.oblateness, polePA);
+          if (showPlanetGrid && discR >= 30 && obj.subObsLat !== undefined)
+            drawPlanetGrid(sx, sy, discR, polePA, obj.oblateness, obj.subObsLat, obj.subObsLon);
           drawSaturnRing(sx, sy, ringOuter, ringInner, obj.ringTilt, polePA, ringColor, true);
         } else if (discR > starR) {
-          drawPhaseDisc(sx, sy, r, obj.phaseAngle, sunSx, sunSy, pColor, obj.oblateness, polePA);
+          drawPhaseDisc(sx, sy, r, obj.phaseAngle, toSunAngle, pColor, obj.oblateness, polePA);
+          if (showPlanetGrid && discR >= 30 && obj.subObsLat !== undefined)
+            drawPlanetGrid(sx, sy, discR, polePA, obj.oblateness, obj.subObsLat, obj.subObsLon);
         } else {
           ctx.fillStyle = pColor;
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
@@ -1399,7 +1483,7 @@ function skymapDraw(canvas, params) {
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(PLANET_SYMBOLS.Moon, sx, sy);
         } else {
-          drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, sunSx, sunSy, 'rgba(187,187,187,0.95)');
+          drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, toSunAngle, 'rgba(187,187,187,0.95)');
         }
         if (showPlanetNames) {
           ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = labelFont;
