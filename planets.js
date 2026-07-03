@@ -667,7 +667,42 @@ const PLANET_PHYS = {
   Pluto: { radius: 1195, flattening: 0.0,
     poleRA: () => 132.993,
     poleDec: () => -6.163,
-    W: (t) => 302.695 + 56.3625225*t }
+    W: (t) => 302.695 + 56.3625225*t },
+  Moon: { radius: 1737.4, flattening: 0,
+    poleRA: (T) => {
+      const d = T * 36525;
+      const E1 = (125.045 - 0.0529921*d)*DEG, E2 = (250.089 - 0.1059842*d)*DEG,
+            E3 = (260.008 + 13.0120009*d)*DEG, E4 = (176.625 + 13.3407154*d)*DEG,
+            E6 = (311.589 + 26.4057084*d)*DEG, E10 = (15.134 - 0.1589763*d)*DEG,
+            E13 = (25.053 + 12.9590088*d)*DEG;
+      return 269.9949 + 0.0031*T - 3.8787*sin(E1) - 0.1204*sin(E2)
+        + 0.0700*sin(E3) - 0.0172*sin(E4) + 0.0072*sin(E6)
+        - 0.0052*sin(E10) + 0.0043*sin(E13);
+    },
+    poleDec: (T) => {
+      const d = T * 36525;
+      const E1 = (125.045 - 0.0529921*d)*DEG, E2 = (250.089 - 0.1059842*d)*DEG,
+            E3 = (260.008 + 13.0120009*d)*DEG, E4 = (176.625 + 13.3407154*d)*DEG,
+            E6 = (311.589 + 26.4057084*d)*DEG, E7 = (134.963 + 13.0649930*d)*DEG,
+            E10 = (15.134 - 0.1589763*d)*DEG, E13 = (25.053 + 12.9590088*d)*DEG;
+      return 66.5392 + 0.0130*T + 1.5419*cos(E1) + 0.0239*cos(E2)
+        - 0.0278*cos(E3) + 0.0068*cos(E4) - 0.0029*cos(E6)
+        + 0.0009*cos(E7) + 0.0008*cos(E10) - 0.0009*cos(E13);
+    },
+    W: (t) => {
+      const E1 = (125.045 - 0.0529921*t)*DEG, E2 = (250.089 - 0.1059842*t)*DEG,
+            E3 = (260.008 + 13.0120009*t)*DEG, E4 = (176.625 + 13.3407154*t)*DEG,
+            E5 = (357.529 + 0.9856003*t)*DEG, E6 = (311.589 + 26.4057084*t)*DEG,
+            E7 = (134.963 + 13.0649930*t)*DEG, E8 = (276.617 + 0.3287146*t)*DEG,
+            E9 = (34.226 + 1.7484877*t)*DEG, E10 = (15.134 - 0.1589763*t)*DEG,
+            E11 = (119.743 + 0.0036096*t)*DEG, E12 = (239.961 + 0.1643573*t)*DEG,
+            E13 = (25.053 + 12.9590088*t)*DEG;
+      return 38.3213 + 13.17635815*t - 1.4e-12*t*t + 3.5610*sin(E1)
+        + 0.1208*sin(E2) - 0.0642*sin(E3) + 0.0158*sin(E4)
+        + 0.0252*sin(E5) - 0.0066*sin(E6) - 0.0047*sin(E7)
+        - 0.0046*sin(E8) + 0.0028*sin(E9) + 0.0052*sin(E10)
+        + 0.0040*sin(E11) + 0.0019*sin(E12) - 0.0044*sin(E13);
+    } }
 };
 
 // Compute a planet's pole orientation and sub-observer coordinates.
@@ -686,7 +721,7 @@ function planetOrientation(name, T, tDays, jx, jy, jz) {
   const ra = phys.poleRA(T) * DEG, dec = phys.poleDec(T) * DEG;
   const poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
   const subObsLat = asin(-dot(poleJ2k[0], poleJ2k[1], poleJ2k[2], jx, jy, jz));
-  const nodeRA = (phys.poleRA(T) + 90) * DEG;
+  const nodeRA = ra + PI/2;
   const eNx = cos(nodeRA), eNy = sin(nodeRA);
   const [ePx, ePy, ePz] = cross(poleJ2k[0], poleJ2k[1], poleJ2k[2], eNx, eNy, 0);
   const Wrad = phys.W(tDays) * DEG;

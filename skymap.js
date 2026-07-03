@@ -1130,9 +1130,16 @@ function skymapDraw(canvas, params) {
     const [mx, my, mz] = mvmul(mtranspose(mNP), ...sph2uxyz(topoRA, topoDec));
     const moonElong = ((moonPos.lon - sunLon) % TAU + TAU) % TAU;
     const moonFV = abs(PI - moonElong);
-    ssCache.push({ type:'moon', name:'Moon', x:mx, y:my, z:mz,
+    const moonEntry = { type:'moon', name:'Moon', x:mx, y:my, z:mz,
       mag: moonMag(sunR, moonPos.dist, moonFV * RAD),
-      angSize: moonAngArcmin, dist: topoDistER * 6378.14, phaseAngle: moonFV });
+      angSize: moonAngArcmin, dist: topoDistER * 6378.14, phaseAngle: moonFV };
+    const moonOri = planetOrientation('Moon', T, d, mx, my, mz);
+    if (moonOri) {
+      moonEntry.poleJ2k = moonOri.poleJ2k;
+      moonEntry.subObsLat = moonOri.subObsLat;
+      moonEntry.subObsLon = moonOri.subObsLon;
+    }
+    ssCache.push(moonEntry);
 
     // Comets: J2000 ecliptic elements → J2000 equatorial via Cartesian subtraction
     if (params.comets) {
@@ -1484,6 +1491,15 @@ function skymapDraw(canvas, params) {
           ctx.fillText(PLANET_SYMBOLS.Moon, sx, sy);
         } else {
           drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, toSunAngle, 'rgba(187,187,187,0.95)');
+          if (showPlanetGrid && phaseR >= 30 && obj.poleJ2k && obj.subObsLat !== undefined) {
+            const [pvx, pvy, pvz] = mvmul(M, ...obj.poleJ2k);
+            const dp = dot(vx, vy, vz, pvx, pvy, pvz);
+            const dvx = pvx - dp*vx, dvy = pvy - dp*vy, dvz = pvz - dp*vz;
+            const dd = 1 + vz;
+            const dsx = 2*dvx/dd - 2*vx*dvz/(dd*dd);
+            const dsy = -2*dvy/dd + 2*vy*dvz/(dd*dd);
+            drawPlanetGrid(sx, sy, phaseR, atan2(dsx, -dsy), 0, obj.subObsLat, obj.subObsLon);
+          }
         }
         if (showPlanetNames) {
           ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = labelFont;
