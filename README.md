@@ -24,9 +24,13 @@ python3 -m http.server 8080
 
 Then browse to http://localhost:8080/skymap.html
 
+## Documentation
+
+The docs folder contains copies of the original material from which most of the code was generated. These are essentially "white papers" from various sources like CelesTrak, JPL, Jean Meeus, the Minor Planet Center, the US Naval Observatory, and a few lesser-known sources that have proven extremely valuable over the years for computational astronomy.
+
 ## Data Generation
 
-The JavaScript data files (`stars.js`, `constellations.js`, `deepsky.js`, `cities.js`, `milkyway.js`) are pre-generated and checked in. The Python scripts in `data/` regenerate them from source catalogs:
+This project leans heavily on [SSCore](https://github.com/timmyd7777/SSCore) for its astronomical object databases. The JavaScript data files derived from these databases (`stars.js`, `constellations.js`, `deepsky.js`, `cities.js`, `milkyway.js`, etc.) are pre-generated and checked in. The Python scripts in `data/` regenerate them from source catalogs:
 
 ```
 cd data
@@ -36,6 +40,8 @@ python3 gen_constellations.py             # -> constellations.js
 python3 gen_deepsky.py                    # -> deepsky.js
 python3 gen_cities.py                     # -> cities.js
 python3 gen_milkyway.py                   # -> milkyway.js
+python3 gen_moondata.py                   # -> moons.js
+python3 gen_nebulae.py                    # -> nebulae.js
 python3 gen_vsop87.py                     # -> vsop87.js
 ```
 
