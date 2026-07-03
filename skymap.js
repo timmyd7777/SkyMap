@@ -1295,8 +1295,8 @@ function skymapDraw(canvas, params) {
     let toSun;
     if (ob > 0) {
       const sdx = cos(toSunAngle), sdy = -sin(toSunAngle);
-      const lsx = cos(pa)*sdx + sin(pa)*sdy;
-      const lsy = (-sin(pa)*sdx + cos(pa)*sdy) / yScale;
+      const lsx = cos(pa)*sdx - sin(pa)*sdy;
+      const lsy = (sin(pa)*sdx + cos(pa)*sdy) / yScale;
       toSun = atan2(-lsy, lsx);
     } else {
       toSun = toSunAngle;
