@@ -16,7 +16,7 @@ import os
 import sys
 import urllib.request
 
-BASE_URL = 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/DeepSky'
+BASE_URL = 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/DeepSky/Nebulae'
 for fname in ['Contours.csv', 'Index.csv']:
     if not os.path.exists(fname):
         url = f'{BASE_URL}/{fname}'
