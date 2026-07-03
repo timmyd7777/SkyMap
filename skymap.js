@@ -29,6 +29,11 @@ let viewJ2000 = false;
 // (sx, sy) in canvas pixels → [lat, lon] in current frame (radians), or null.
 let viewUnproject = null;
 
+// Nebula contour name → NEBULA_CONTOURS index lookup, built by skymapInit().
+const nebulaContourMap = {};
+// DEEPSKY index → array of contour indices (or null), built by skymapInit().
+const dsContours = [];
+
 // Objects drawn in the last frame, for hit-testing by pickObject().
 // Each entry: {x, y, r, type, data, ...} in canvas pixel coordinates.
 let drawnObjects = [];
@@ -174,9 +179,10 @@ function formatSelection(obj) {
     const DS_TYPES = {OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
       DN:'Dark Nebula',PN:'Planetary Nebula',GX:'Galaxy'};
     type = DS_TYPES[d[0]] || d[0];
-    name = d[10] || '';
+    name = d[11] || '';
     if (d[8]) ids.push(d[8]);
     if (d[9]) ids.push(d[9]);
+    if (d[10]) ids.push(d[10]);
     mag = d[3];
   } else if (obj.type === 'planet') {
     type = 'Planet';
@@ -248,6 +254,21 @@ function skymapInit() {
     }
     MILKYWAY[i] = xyz;
   }
+  for (let i = 0; i < NEBULA_CONTOURS.length; i++) {
+    const ring = NEBULA_CONTOURS[i];
+    const xyz = new Float32Array(ring.length * 3);
+    for (let j = 0; j < ring.length; j++) {
+      const v = sph2uxyz(ring[j][0], ring[j][1]);
+      xyz[j*3] = v[0]; xyz[j*3+1] = v[1]; xyz[j*3+2] = v[2];
+    }
+    NEBULA_CONTOURS[i] = xyz;
+  }
+  for (let i = 0; i < NEBULA_INDEX.length; i++)
+    for (const name of NEBULA_INDEX[i])
+      (nebulaContourMap[name] ??= []).push(i);
+  for (let i = 0; i < DEEPSKY.length; i++)
+    dsContours[i] = nebulaContourMap[DEEPSKY[i][8]] || nebulaContourMap[DEEPSKY[i][9]]
+      || nebulaContourMap[DEEPSKY[i][10]] || nebulaContourMap[DEEPSKY[i][11]] || null;
   // Precess constellation boundary vertices from B1875 to J2000
   const T1875 = (2405889.25 - 2451545.0) / 36525.0;
   const pp1875 = precessAngles(T1875);
@@ -824,9 +845,27 @@ function skymapDraw(canvas, params) {
     const dsColor = darkMode ? 'rgba(200,200,200,0.8)' : 'rgba(80,80,80,0.8)';
     ctx.strokeStyle = dsColor;
     ctx.lineWidth = 1;
+    function drawDSContours(cis) {
+      for (const ci of cis) {
+        const ring = NEBULA_CONTOURS[ci];
+        const nv = ring.length / 3;
+        if (nv < 3) continue;
+        ctx.beginPath();
+        for (let j = 0; j < nv; j++) {
+          const [cx, cy, cz] = mvmul(M, ring[j*3], ring[j*3+1], ring[j*3+2]);
+          const cd = max(1 + cz, 0.1);
+          const cp = toScreen(2*cx/cd, -2*cy/cd);
+          if (j === 0) ctx.moveTo(cp[0], cp[1]); else ctx.lineTo(cp[0], cp[1]);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+    }
     const dsPositions = [];
+    const dsMagLimit = starMagLimit + 4;
     for (let dsi = 0; dsi < DEEPSKY.length; dsi++) { const ds = DEEPSKY[dsi];
-      const x0 = ds[11], y0 = ds[12], z0 = ds[13];
+      if (vWidthDeg > 45 && !ds[8]) { dsPositions.push(null); continue; }
+      if (vWidthDeg >= 10 && !ds[8] && (ds[3] == null || ds[3] > dsMagLimit)) { dsPositions.push(null); continue; }
+      const x0 = ds[12], y0 = ds[13], z0 = ds[14];
       const [x1, vy, vz] = mvmul(M, x0, y0, z0);
       if (vz < -1e-10) { dsPositions.push(null); continue; }
       const d = 1 + vz;
@@ -842,12 +881,14 @@ function skymapDraw(canvas, params) {
         ctx.setLineDash([3, 3]);
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
         ctx.setLineDash([]);
+        if (dsContours[dsi]) drawDSContours(dsContours[dsi]);
       } else if (typ === 'GC') {
         ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0] - r, pt[1]); ctx.lineTo(pt[0] + r, pt[1]); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0], pt[1] + r); ctx.stroke();
       } else if (typ === 'BN') {
-        ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
+        if (dsContours[dsi]) drawDSContours(dsContours[dsi]);
+        else ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
       } else if (typ === 'DN') {
         ctx.beginPath();
         ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0] + r, pt[1]);
@@ -900,8 +941,9 @@ function skymapDraw(canvas, params) {
         if (!dsPositions[i]) continue;
         const p = dsPositions[i];
         const mcId = DEEPSKY[i][8];
-        const name = DEEPSKY[i][10];
-        if (showDeepSkyIds && mcId) placeLabel(p.x, p.y, p.r + 3, mcId);
+        const ngcic = DEEPSKY[i][9];
+        const name = DEEPSKY[i][11];
+        if (showDeepSkyIds) placeLabel(p.x, p.y, p.r + 3, mcId || ngcic || '');
         if (showDeepSkyNames && name) placeLabel(p.x, p.y, p.r + 3, name);
       }
     }

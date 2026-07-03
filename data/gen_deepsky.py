@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Generate deepsky.js from Messier.csv and Caldwell.csv."""
+"""Generate deepsky.js (full NGC/IC) and deepsky_mc.js (Messier+Caldwell only)
+from SSCore CSV catalog files.
+
+Usage:
+    cd data
+    python3 gen_deepsky.py
+
+Downloads source CSVs from SSCore if not present. Move generated .js files
+to the project root to update the app.
+"""
 
 import csv
 import os
@@ -9,7 +18,7 @@ import sys
 import urllib.request
 
 BASE_URL = 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/DeepSky'
-for fname in ['Messier.csv', 'Caldwell.csv']:
+for fname in ['Messier.csv', 'Caldwell.csv', 'MCNGCIC.csv']:
     if not os.path.exists(fname):
         url = f'{BASE_URL}/{fname}'
         print(f"Downloading {url} -> {fname}", file=sys.stderr)
@@ -31,9 +40,12 @@ def parse_dec(s):
 
 def parse_row(fields):
     obj_type = fields[0].strip()
+    if obj_type == 'NO':
+        return None
+
     ra = parse_ra(fields[1])
     dec = parse_dec(fields[2])
-    vmag = fields[5].strip()
+    vmag = fields[5].strip() or fields[6].strip()
     vmag = float(vmag) if vmag else None
     dist = fields[7].strip()
     dist = float(dist) if dist else None
@@ -53,12 +65,12 @@ def parse_row(fields):
     except ValueError:
         pa = None
 
-    # Identifiers start at field 13; common names are non-catalog strings
     catalog_pat = re.compile(
-        r'^(M \d+|C \d+|NGC \d+|IC \d+|PK |PNG |PGC |UGC |UGCA |LBN |Sh2 |Mel |Cr |Tr )'
+        r'^(M \d+|C \d+|NGC \d+\w*|IC \d+\w*|PK |PNG |PGC |UGC |UGCA |LBN |Sh2 |Mel |Cr |Tr )'
     )
-    mc_id = None  # Messier or Caldwell
-    ngc_ic = None  # NGC or IC
+    mc_id = None
+    ngc_ic = None
+    ngc_ic2 = None
     names = []
 
     for f in fields[13:]:
@@ -69,14 +81,17 @@ def parse_row(fields):
             mc_id = f
         elif re.match(r'^C \d+$', f):
             mc_id = f
-        elif re.match(r'^(NGC|IC) \d+$', f) and ngc_ic is None:
-            ngc_ic = f
+        elif re.match(r'^(NGC|IC) \d+\w*$', f):
+            if ngc_ic is None:
+                ngc_ic = f
+            elif ngc_ic2 is None:
+                ngc_ic2 = f
         elif not catalog_pat.match(f):
             names.append(f)
 
     common = names[0] if names else None
 
-    return {
+    return [{
         'type': obj_type,
         'ra': ra,
         'dec': dec,
@@ -86,9 +101,10 @@ def parse_row(fields):
         'minor': minor,
         'pa': pa,
         'mc': mc_id,
-        'ngc': ngc_ic,
+        'ngcic': ngc_ic,
+        'ngcic2': ngc_ic2,
         'name': common,
-    }
+    }]
 
 def js_val(v, fmt=None):
     if v is None:
@@ -99,43 +115,68 @@ def js_val(v, fmt=None):
         return fmt % v
     return str(v)
 
-objects = []
-for path in ['Messier.csv', 'Caldwell.csv']:
-    with open(path, newline='') as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if len(row) < 14:
-                continue
-            objects.append(parse_row(row))
-
-# Sort by catalog id (M first, then C), numerically
 def sort_key(o):
     mc = o['mc'] or ''
-    cat = mc[0] if mc else 'Z'
-    order = {'M': 0, 'C': 1}.get(cat, 2)
-    num = int(mc.split()[1]) if mc else 999
-    return (order, num)
+    ngc = o['ngcic'] or ''
+    if mc:
+        cat = mc[0]
+        order = {'M': 0, 'C': 1}.get(cat, 2)
+        num = int(mc.split()[1])
+        return (order, num, '')
+    elif ngc:
+        m = re.match(r'^(NGC|IC) (\d+)(.*)', ngc)
+        if m:
+            cat_order = 2 if m.group(1) == 'NGC' else 3
+            return (cat_order, int(m.group(2)), m.group(3))
+    return (4, 0, '')
 
-objects.sort(key=sort_key)
+def write_js(objects, path):
+    with open(path, 'w') as out:
+        out.write('// Deep sky objects: [type, ra_rad, dec_rad, mag, dist_pc, major_arcmin, minor_arcmin, pa_deg, mc_id, ngc_ic, ngc_ic2, name]\n')
+        out.write('const DEEPSKY = [\n')
+        for o in objects:
+            parts = [
+                js_val(o['type']),
+                '%.6f' % o['ra'],
+                '%.6f' % o['dec'],
+                js_val(o['mag']),
+                js_val(o['dist']),
+                js_val(o['major']),
+                js_val(o['minor']),
+                js_val(o['pa']),
+                js_val(o['mc']),
+                js_val(o['ngcic']),
+                js_val(o['ngcic2']),
+                js_val(o['name']),
+            ]
+            out.write('  [' + ','.join(parts) + '],\n')
+        out.write('];\n')
 
-with open('deepsky.js', 'w') as out:
-    out.write('// Deep sky objects: [type, ra_rad, dec_rad, mag, dist_pc, major_arcmin, minor_arcmin, pa_deg, mc_id, ngc_ic, name]\n')
-    out.write('const DEEPSKY = [\n')
-    for o in objects:
-        parts = [
-            js_val(o['type']),
-            '%.6f' % o['ra'],
-            '%.6f' % o['dec'],
-            js_val(o['mag']),
-            js_val(o['dist']),
-            js_val(o['major']),
-            js_val(o['minor']),
-            js_val(o['pa']),
-            js_val(o['mc']),
-            js_val(o['ngc']),
-            js_val(o['name']),
-        ]
-        out.write('  [' + ','.join(parts) + '],\n')
-    out.write('];\n')
+# Parse Messier + Caldwell only -> deepsky_mc.js
+mc_objects = []
+for path in ['Messier.csv', 'Caldwell.csv']:
+    with open(path, newline='') as f:
+        for row in csv.reader(f):
+            if len(row) < 14:
+                continue
+            entries = parse_row(row)
+            if entries:
+                mc_objects.extend(entries)
 
-print(f'Wrote {len(objects)} objects to deepsky.js')
+mc_objects.sort(key=sort_key)
+write_js(mc_objects, 'deepsky_mc.js')
+print(f'Wrote {len(mc_objects)} objects to deepsky_mc.js', file=sys.stderr)
+
+# Parse full MCNGCIC -> deepsky.js
+all_objects = []
+with open('MCNGCIC.csv', newline='') as f:
+    for row in csv.reader(f):
+        if len(row) < 14:
+            continue
+        entries = parse_row(row)
+        if entries:
+            all_objects.extend(entries)
+
+all_objects.sort(key=sort_key)
+write_js(all_objects, 'deepsky.js')
+print(f'Wrote {len(all_objects)} objects to deepsky.js', file=sys.stderr)
