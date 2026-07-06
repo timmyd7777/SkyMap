@@ -315,6 +315,7 @@ function skymapDraw(canvas, params) {
     showMilkyWay, showEcliptic, showCelEq, showGalEq,
     showGrid, showHeader,
   } = params;
+  const showStarColors = true;
 
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
@@ -963,15 +964,35 @@ function skymapDraw(canvas, params) {
     }
   }
 
+  // Piecewise linear B-V to RGB: cyan → white → yellow → red.
+  function bvToRGB(bv) {
+    if (bv === 0) return '#fff';
+    let R, G, B;
+    if (bv < -0.5) {
+      R = 0; G = 255; B = 255;
+    } else if (bv < 0) {
+      const t = (bv + 0.5) / 0.5;
+      R = round(255 * t); G = 255; B = round(255 * (1 - t) + 255 * t);
+    } else if (bv < 1.0) {
+      const t = bv;
+      R = 255; G = 255; B = round(255 * (1 - t));
+    } else if (bv < 2.5) {
+      const t = (bv - 1.0) / 1.5;
+      R = 255; G = round(255 * (1 - t)); B = 0;
+    } else {
+      R = 255; G = 0; B = 0;
+    }
+    return `rgb(${R},${G},${B})`;
+  }
+
   // Draw star dots and optional name/designation labels.
   // Dot radius scales with magnitude and canvas size. Adds each visible star
   // to drawnObjects for hit-testing. Labels only for stars brighter than ~mag 2.
   function drawStars(starPositions) {
-    const starC = darkMode ? '#fff' : '#000';
     for (const p of starPositions) {
       if (!p || !p.inView || p.mag > starMagLimit) continue;
       const r = max(0.5, (5.5 + magBoost - p.mag) * min(W, H) / 1000);
-      ctx.fillStyle = starC;
+      ctx.fillStyle = darkMode && showStarColors ? bvToRGB(p.bmv) : darkMode ? '#fff' : '#000';
       ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TAU); ctx.fill();
       drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', hr: p.hr, data: p, jx: p.jx, jy: p.jy, jz: p.jz});
     }
