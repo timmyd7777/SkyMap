@@ -709,8 +709,7 @@ const PLANET_PHYS = {
 // name: planet name (key into PLANET_PHYS)
 // d: days since J2000.0 in dynamical time (light-time corrected)
 // jx,jy,jz: J2000 equatorial unit vector from observer toward planet
-// Returns { poleJ2k, subObsLat, subObsLon, polePA }
-//   poleJ2k: J2000 unit vector of north pole [x,y,z]
+// Returns { subObsLat, subObsLon, polePA }
 //   subObsLat: planetographic latitude of sub-observer point (radians)
 //   subObsLon: planetographic longitude of sub-observer point (radians, 0 to 2π)
 //   polePA: J2000 position angle of pole (radians, north through east)
@@ -734,7 +733,7 @@ function planetOrientation(name, d, jx, jy, jz) {
                     dot(obsX,obsY,obsZ, pmX,pmY,pmZ));
   const subObsLon = ((lon % TAU) + TAU) % TAU;
   const polePA = posAng(jx, jy, jz, poleJ2k[0], poleJ2k[1], poleJ2k[2]);
-  return { poleJ2k, subObsLat, subObsLon, polePA };
+  return { subObsLat, subObsLon, polePA };
 }
 
 

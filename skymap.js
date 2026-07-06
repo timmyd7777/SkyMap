@@ -965,19 +965,19 @@ function skymapDraw(canvas, params) {
   }
 
   // Piecewise linear B-V to RGB: cyan → white → yellow → red.
-  function bvToRGB(bv) {
+  function bmvToRGB(bv) {
     if (bv === 0) return '#fff';
     let R, G, B;
-    if (bv < -0.5) {
+    if (bv < -0.3) {
       R = 0; G = 255; B = 255;
     } else if (bv < 0) {
-      const t = (bv + 0.5) / 0.5;
+      const t = (bv + 0.3) / 0.3;
       R = round(255 * t); G = 255; B = round(255 * (1 - t) + 255 * t);
     } else if (bv < 1.0) {
       const t = bv;
       R = 255; G = 255; B = round(255 * (1 - t));
-    } else if (bv < 2.5) {
-      const t = (bv - 1.0) / 1.5;
+    } else if (bv < 3.0) {
+      const t = (bv - 1.0) / 2.0;
       R = 255; G = round(255 * (1 - t)); B = 0;
     } else {
       R = 255; G = 0; B = 0;
@@ -992,7 +992,7 @@ function skymapDraw(canvas, params) {
     for (const p of starPositions) {
       if (!p || !p.inView || p.mag > starMagLimit) continue;
       const r = max(0.5, (5.5 + magBoost - p.mag) * min(W, H) / 1000);
-      ctx.fillStyle = darkMode && showStarColors ? bvToRGB(p.bmv) : darkMode ? '#fff' : '#000';
+      ctx.fillStyle = darkMode && showStarColors ? bmvToRGB(p.bmv) : darkMode ? '#fff' : '#000';
       ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TAU); ctx.fill();
       drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', hr: p.hr, data: p, jx: p.jx, jy: p.jy, jz: p.jz});
     }
@@ -1102,13 +1102,10 @@ function skymapDraw(canvas, params) {
         helioDist:h.R, geoDist, phaseAngle:FV };
       const ori = planetOrientation(name, d - lt, jx, jy, jz);
       if (ori) {
-        entry.poleJ2k = ori.poleJ2k;
         entry.subObsLat = ori.subObsLat;
         entry.subObsLon = ori.subObsLon;
         entry.polePA = ori.polePA;
       }
-      if (name === 'Saturn')
-        entry.ringPoleJ2k = entry.poleJ2k;
       ssCache.push(entry);
     }
 
@@ -1129,7 +1126,6 @@ function skymapDraw(canvas, params) {
       helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV };
     const plutoOri = planetOrientation('Pluto', d - plutoLt, pjx, pjy, pjz);
     if (plutoOri) {
-      plutoEntry.poleJ2k = plutoOri.poleJ2k;
       plutoEntry.subObsLat = plutoOri.subObsLat;
       plutoEntry.subObsLon = plutoOri.subObsLon;
       plutoEntry.polePA = plutoOri.polePA;
@@ -1153,7 +1149,6 @@ function skymapDraw(canvas, params) {
       angSize: moonAngArcmin, dist: topoDistER * 6378.14, phaseAngle: moonFV };
     const moonOri = planetOrientation('Moon', d, mx, my, mz);
     if (moonOri) {
-      moonEntry.poleJ2k = moonOri.poleJ2k;
       moonEntry.subObsLat = moonOri.subObsLat;
       moonEntry.subObsLon = moonOri.subObsLon;
       moonEntry.polePA = moonOri.polePA;
@@ -1474,7 +1469,7 @@ function skymapDraw(canvas, params) {
           ctx.fillStyle = pColor; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(obj.symbol, sx, sy);
-        } else if (obj.ringPoleJ2k && discR > starR) {
+        } else if (obj.name === 'Saturn' && discR > starR) {
           const ringOuter = discR * 2.27, ringInner = discR * 1.24;
           const ringColor = darkMode ? '#d8d0c0' : '#a09880';
           drawSaturnRing(sx, sy, ringOuter, ringInner, obj.subObsLat, polePA, ringColor, false);
@@ -1490,7 +1485,7 @@ function skymapDraw(canvas, params) {
           ctx.fillStyle = pColor;
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
         }
-        const hitR = obj.ringPoleJ2k && discR > starR ? discR * 2.27 : r;
+        const hitR = obj.name === 'Saturn' && discR > starR ? discR * 2.27 : r;
         drawnObjects.push({x:sx, y:sy, r:hitR, type:'planet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
           ctx.fillStyle = pColor; ctx.font = labelFont;
