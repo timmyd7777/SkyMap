@@ -957,6 +957,7 @@ function skymapDraw(canvas, params) {
           const pa = ds[7];
           const rot = pa != null ? j2kPAToScreen(pa * DEG, x1, vy, vz, pt[0], pt[1]) : 0;
           ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
+          dObj.rMinor = rMinor; dObj.rot = rot;
         } else {
           ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
         }
@@ -1950,6 +1951,13 @@ function pickObject(canvasX, canvasY) {
     if (obj.contourPts) {
       if (obj.contourPts.some(pts => pointInPolygon(canvasX, canvasY, pts)))
         hits.push(obj);
+    } else if (obj.rMinor !== undefined) {
+      // Galaxy ellipse: rotate click point into ellipse frame and test
+      const dx = canvasX - obj.x, dy = canvasY - obj.y;
+      const cs = cos(obj.rot), sn = sin(obj.rot);
+      const ex = dx * cs + dy * sn, ey = -dx * sn + dy * cs;
+      const a = obj.r + PICK_TOL, b = obj.rMinor + PICK_TOL;
+      if (ex*ex / (a*a) + ey*ey / (b*b) <= 1) hits.push(obj);
     } else {
       const dx = canvasX - obj.x, dy = canvasY - obj.y;
       const limit = obj.r + PICK_TOL;
