@@ -1153,6 +1153,23 @@ function skymapDraw(canvas, params) {
       moonEntry.subObsLon = moonOri.subObsLon;
       moonEntry.polePA = moonOri.polePA;
     }
+
+    // Earth's shadow on the Moon (only when Moon is near the antisolar point)
+    if (dot(mx, my, mz, sx, sy, sz) < -0.9) {
+      const EARTH_RAD_AU = 6378.14 / 149597870.7;
+      const moonGeoDistAU = moonPos.dist * EARTH_RAD_AU;
+      const shadow = shadowRadii(EARTH_RAD_AU, moonGeoDistAU, sunR);
+      moonEntry.umbraAngRad = shadow.umbra / moonGeoDistAU;
+      moonEntry.penumbraAngRad = shadow.penumbra / moonGeoDistAU;
+      const [sunEqRA, sunEqDec] = eclToEq(sunLon, sunLat, epsTrue);
+      const [shBx, shBy, shBz] = sph2xyz(sunEqRA + PI, -sunEqDec, moonPos.dist);
+      const [shTopoRA, shTopoDec] = topocentricCorrectionXYZ(shBx, shBy, shBz, obsX, obsY, obsZ);
+      const [shx, shy, shz] = mvmul(mtranspose(mNP), ...sph2uxyz(shTopoRA, shTopoDec));
+      moonEntry.shadowX = shx;
+      moonEntry.shadowY = shy;
+      moonEntry.shadowZ = shz;
+    }
+
     ssCache.push(moonEntry);
 
     // Comets: J2000 ecliptic elements → J2000 equatorial via Cartesian subtraction
@@ -1239,8 +1256,46 @@ function skymapDraw(canvas, params) {
       }
     }
 
-    // Sort farthest first for correct painter's algorithm occlusion.
+    // Moon shadows on planets: compute shadow center and angular radii for
+    // each moon. Shadow center = point in the same heliocentric direction as
+    // the moon, at the parent planet's heliocentric distance.
     const KM_PER_AU = 149597870.7;
+    const SHADOW_MOONS = { Jupiter: ['Io', 'Europa', 'Ganymede', 'Callisto'], Saturn: ['Tethys', 'Dione', 'Rhea', 'Titan'] };
+    for (const parentName of Object.keys(SHADOW_MOONS)) {
+      const primary = ssCache.find(o => o.type === 'planet' && o.name === parentName);
+      if (!primary) continue;
+      const filter = SHADOW_MOONS[parentName];
+      const moons = ssCache.filter(o => o.type === 'planetmoon' && o.parent === parentName
+        && (!filter || filter.includes(o.name)));
+      primary.shadows = [];
+      for (const moon of moons) {
+        const md = MOON_DATA[moon.name];
+        if (!md || !md.radius) continue;
+        const moonRadAU = md.radius / KM_PER_AU;
+        const pmx = moon.x * moon.geoDist - primary.x * primary.geoDist;
+        const pmy = moon.y * moon.geoDist - primary.y * primary.geoDist;
+        const pmz = moon.z * moon.geoDist - primary.z * primary.geoDist;
+        const D = vmag(pmx, pmy, pmz);
+        const sh = shadowRadii(moonRadAU, D, primary.helioDist);
+        const mhx = moon.x * moon.geoDist - sx * sunR;
+        const mhy = moon.y * moon.geoDist - sy * sunR;
+        const mhz = moon.z * moon.geoDist - sz * sunR;
+        const mhd = vmag(mhx, mhy, mhz);
+        if (mhd >= primary.helioDist) continue;
+        const scale = primary.helioDist / mhd;
+        const sgx = mhx * scale + sx * sunR;
+        const sgy = mhy * scale + sy * sunR;
+        const sgz = mhz * scale + sz * sunR;
+        const sgd = vmag(sgx, sgy, sgz);
+        primary.shadows.push({
+          x: sgx / sgd, y: sgy / sgd, z: sgz / sgd,
+          umbraAngRad: sh.umbra / primary.geoDist,
+          penumbraAngRad: sh.penumbra / primary.geoDist
+        });
+      }
+    }
+
+    // Sort farthest first for correct painter's algorithm occlusion.
     for (const o of ssCache) o._d = o.geoDist ?? (o.type === 'sun' ? o.dist : o.dist / KM_PER_AU);
     ssCache.sort((a, b) => b._d - a._d);
   }
@@ -1413,6 +1468,51 @@ function skymapDraw(canvas, params) {
     ctx.restore();
   }
 
+  // Draw a shadow (penumbra + umbra) on a celestial body's disc.
+  // bx, by = body screen center (pixels). bodyR = body disc radius (pixels).
+  // shx, shy = shadow center screen position (pixels). penR, umbR = shadow radii (pixels).
+  // umbraColor = CSS color string for the umbra fill (e.g. 'rgba(0,0,0,0.5)').
+  // Penumbra is always 25% opaque black. Both circles are clipped to the body disc.
+  function drawShadowDisc(bx, by, bodyR, shx, shy, penR, umbR, umbraColor) {
+    if (penR < 1) return;
+    const ddx = shx - bx, ddy = shy - by;
+    const centerDist = sqrt(ddx*ddx + ddy*ddy);
+    if (centerDist >= penR + bodyR) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(bx, by, bodyR, 0, TAU);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.arc(shx, shy, penR, 0, TAU);
+    ctx.fill();
+    if (umbR > 0 && centerDist < umbR + bodyR) {
+      ctx.fillStyle = umbraColor;
+      ctx.beginPath();
+      ctx.arc(shx, shy, umbR, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Draw all moon shadows from obj.shadows onto a planet's disc.
+  // obj = ssCache entry with .shadows array of {x, y, z, umbraAngRad, penumbraAngRad}
+  //   where x,y,z = shadow center J2000 unit vector, angular radii in radians.
+  // px, py = planet screen center (pixels). discR = planet disc radius (pixels).
+  function drawMoonShadows(obj, px, py, discR) {
+    if (!obj.shadows) return;
+    for (const sh of obj.shadows) {
+      const [svx, svy, svz] = mvmul(M, sh.x, sh.y, sh.z);
+      if (svz > -1) {
+        const sd = 1 + svz;
+        const [ssx, ssy] = toScreen(2*svx/sd, -2*svy/sd);
+        const penR = arcminToPx(ssx, ssy, sh.penumbraAngRad * RAD * 60);
+        const umbR = arcminToPx(ssx, ssy, sh.umbraAngRad * RAD * 60);
+        drawShadowDisc(px, py, discR, ssx, ssy, penR, umbR, 'rgba(0,0,0,0.5)');
+      }
+    }
+  }
+
   // Render solar system from cached positions.
   function drawSolarSystem() {
     updateSSCache();
@@ -1476,11 +1576,13 @@ function skymapDraw(canvas, params) {
           drawPhaseDisc(sx, sy, discR, obj.phaseAngle, toSunAngle, pColor, ob, polePA);
           if (showPlanetGrid && discR >= 10 && obj.subObsLat !== undefined)
             drawPlanetGrid(sx, sy, discR, polePA, ob, obj.subObsLat, obj.subObsLon);
+          drawMoonShadows(obj, sx, sy, discR);
           drawSaturnRing(sx, sy, ringOuter, ringInner, obj.subObsLat, polePA, ringColor, true);
         } else if (discR > starR) {
           drawPhaseDisc(sx, sy, r, obj.phaseAngle, toSunAngle, pColor, ob, polePA);
           if (showPlanetGrid && discR >= 10 && obj.subObsLat !== undefined)
             drawPlanetGrid(sx, sy, discR, polePA, ob, obj.subObsLat, obj.subObsLon);
+          drawMoonShadows(obj, sx, sy, discR);
         } else {
           ctx.fillStyle = pColor;
           ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
@@ -1503,6 +1605,17 @@ function skymapDraw(canvas, params) {
           drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, toSunAngle, 'rgba(187,187,187,0.95)');
           if (showPlanetGrid && phaseR >= 10 && obj.polePA !== undefined && obj.subObsLat !== undefined)
             drawPlanetGrid(sx, sy, phaseR, PI/2 - j2kPAToScreen(obj.polePA, vx, vy, vz, sx, sy), 0, obj.subObsLat, obj.subObsLon);
+          // Earth's shadow on Moon
+          if (obj.shadowX !== undefined) {
+            const [svx, svy, svz] = mvmul(M, obj.shadowX, obj.shadowY, obj.shadowZ);
+            if (svz > -1) {
+              const sd = 1 + svz;
+              const [ssx, ssy] = toScreen(2*svx/sd, -2*svy/sd);
+              const penR = arcminToPx(ssx, ssy, obj.penumbraAngRad * RAD * 60);
+              const umbR = arcminToPx(ssx, ssy, obj.umbraAngRad * RAD * 60);
+              drawShadowDisc(sx, sy, phaseR, ssx, ssy, penR, umbR, 'rgba(64,0,0,0.5)');
+            }
+          }
         }
         if (showPlanetNames) {
           ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = labelFont;

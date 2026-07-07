@@ -12,6 +12,7 @@ const PLANET_DIAM1AU = {
   Saturn: 165.6, Uranus: 65.8, Neptune: 62.2, Pluto: 2.07
 };
 const SUN_DIAM1AU = 1919.26;        // arcseconds at 1 AU
+const SUN_RADIUS_AU = 0.00465047;   // solar radius in AU (696,000 km)
 const MOON_DIAM_FACTOR = 1873.7 * 60; // arcseconds × Earth-radii (divide by dist in ER)
 
 // Orbital elements for each planet. elems(d) returns Schlyter elements in degrees:
@@ -736,4 +737,15 @@ function planetOrientation(name, d, jx, jy, jz) {
   return { subObsLat, subObsLon, polePA };
 }
 
+// Compute umbral and penumbral shadow radii of a spherical body.
+// R: radius of shadow-casting body (AU)
+// D: distance from shadow-casting body to shadow-receiving surface (AU)
+// dSun: distance from Sun to shadow-casting body (AU)
+// Returns { umbra, penumbra } in AU.
+// umbra = 0 when the umbral cone has converged (annular shadow).
+function shadowRadii(R, D, dSun) {
+  const umbra = max(0, R - D * (SUN_RADIUS_AU - R) / dSun);
+  const penumbra = R + D * (SUN_RADIUS_AU + R) / dSun;
+  return { umbra, penumbra };
+}
 
