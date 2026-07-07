@@ -1272,21 +1272,27 @@ function skymapDraw(canvas, params) {
         const md = MOON_DATA[moon.name];
         if (!md || !md.radius) continue;
         const moonRadAU = md.radius / KM_PER_AU;
+        // Planetocentric offset (AU) = moon geocentric - planet geocentric
         const pmx = moon.x * moon.geoDist - primary.x * primary.geoDist;
         const pmy = moon.y * moon.geoDist - primary.y * primary.geoDist;
         const pmz = moon.z * moon.geoDist - primary.z * primary.geoDist;
         const D = vmag(pmx, pmy, pmz);
         const sh = shadowRadii(moonRadAU, D, primary.helioDist);
+        // Moon heliocentric J2000 (AU) = geocentric - Sun geocentric
         const mhx = moon.x * moon.geoDist - sx * sunR;
         const mhy = moon.y * moon.geoDist - sy * sunR;
         const mhz = moon.z * moon.geoDist - sz * sunR;
         const mhd = vmag(mhx, mhy, mhz);
+        // Shadow only falls on planet if moon is closer to Sun than planet
         if (mhd >= primary.helioDist) continue;
+        // Shadow center heliocentric = normalize(moonHelio) * planetHelioDist;
+        // convert back to geocentric by adding Sun geocentric position
         const scale = primary.helioDist / mhd;
         const sgx = mhx * scale + sx * sunR;
         const sgy = mhy * scale + sy * sunR;
         const sgz = mhz * scale + sz * sunR;
         const sgd = vmag(sgx, sgy, sgz);
+        // Store as J2000 unit vector; angular radii = physical radius / geocentric dist
         primary.shadows.push({
           x: sgx / sgd, y: sgy / sgd, z: sgz / sgd,
           umbraAngRad: sh.umbra / primary.geoDist,
