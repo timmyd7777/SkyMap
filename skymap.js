@@ -86,6 +86,17 @@ function azToDisp(deg) {
   return viewFrame === 'horizon' ? mod360(deg) : mod360(90 - deg);
 }
 
+// Ray-casting point-in-polygon test. pts is an array of [x, y] pairs.
+function pointInPolygon(px, py, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    if ((pts[i][1] > py) !== (pts[j][1] > py) &&
+        px < (pts[j][0] - pts[i][0]) * (py - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0])
+      inside = !inside;
+  }
+  return inside;
+}
+
 // Bayer letter names → Unicode Greek, for star designation labels.
 const GREEK_MAP = {
   alpha:'α', beta:'β', gamma:'γ', delta:'δ', epsilon:'ε',
@@ -608,15 +619,23 @@ function skymapDraw(canvas, params) {
       const nv = ring.length / 3;
       if (nv < 3) return;
       const pts = [];
-      let anyVisible = false;
+      let anyVisible = false, nearAnticenter = false;
       for (let j = 0; j < nv; j++) {
         const [vx, vy, vz] = mvmul(M, ring[j*3], ring[j*3+1], ring[j*3+2]);
         const d = max(1 + vz, 0.1);
         const pt = toScreen(2*vx/d, -2*vy/d);
+        if (vz < -0.9) nearAnticenter = true;
         if (vz > -1e-10 && pt[0] >= 0 && pt[0] <= W && pt[1] >= 0 && pt[1] <= H) anyVisible = true;
         pts.push(pt);
       }
-      if (!anyVisible) return;
+      if (!anyVisible) {
+        // At high zoom, all vertices may project off-screen even though the polygon
+        // encloses the view center. Screen-space point-in-polygon is only reliable
+        // when no vertex is near the view anticenter; vertices with vz < -0.9 project
+        // to extreme screen coordinates that wrap around and cause false positives.
+        if (!nearAnticenter && pointInPolygon(cx, cy, pts)) ctx.fillRect(0, 0, W, H);
+        return;
+      }
       ctx.beginPath();
       ctx.moveTo(pts[0][0], pts[0][1]);
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
@@ -1728,6 +1747,16 @@ function skymapDraw(canvas, params) {
   // using viewProjectRaw for continuous coverage across the hemisphere boundary.
   function drawHorizon() {
     ctx.fillStyle = frameColor('horizon', 0.15);
+    // At high zoom (FOV < 5°), the 5°×5° quad patches may all project off-screen
+    // even though the view is below the horizon. Fill from the horizon line
+    // (or canvas top, if the horizon is above the canvas) down to the bottom.
+    const botAlt = viewLatPrecise - 2 * atan2(cy, 2 * scale) * RAD;
+    if (vWidthDeg < 5 && botAlt < REFRACTION_ALT * RAD) {
+      const hp = viewProjectRaw(REFRACTION_ALT, vLon);
+      const top = max(0, hp[1]);
+      ctx.fillRect(0, top, W, H - top);
+      return;
+    }
     const hStep = 5;
     const hPatch = 30;
     for (let az0 = 0; az0 < 360; az0 += hPatch) {
@@ -1904,19 +1933,8 @@ function pickObject(canvasX, canvasY) {
   const hits = [];
   for (const obj of drawnObjects) {
     if (obj.contourPts) {
-      // Ray-casting point-in-polygon: test each contour ring separately;
-      // hit if click is inside any ring.
-      let hit = false;
-      for (const pts of obj.contourPts) {
-        let inside = false;
-        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-          if ((pts[i][1] > canvasY) !== (pts[j][1] > canvasY) &&
-              canvasX < (pts[j][0] - pts[i][0]) * (canvasY - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0])
-            inside = !inside;
-        }
-        if (inside) { hit = true; break; }
-      }
-      if (hit) hits.push(obj);
+      if (obj.contourPts.some(pts => pointInPolygon(canvasX, canvasY, pts)))
+        hits.push(obj);
     } else {
       const dx = canvasX - obj.x, dy = canvasY - obj.y;
       const limit = obj.r + PICK_TOL;
