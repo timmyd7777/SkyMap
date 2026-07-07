@@ -743,7 +743,7 @@ function init() {
     const mouseAltDeg = mouseAltAz ? mouseAltAz[0] * RAD : viewLatPrecise;
     const cosAlt = cos(min(85, abs(mouseAltDeg)) * DEG);
     const degPerPx = viewFovPrecise / min(canvas.width, canvas.height);
-    viewLonPrecise = ((viewLonPrecise - dx * degPerPx / cosAlt) % 360 + 360) % 360;
+    viewLonPrecise = mod360(viewLonPrecise - dx * degPerPx / cosAlt);
     viewLatPrecise = max(-90, min(90, viewLatPrecise + dy * degPerPx));
     syncSlidersFromPrecise();
     draw();

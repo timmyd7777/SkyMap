@@ -296,7 +296,7 @@ function saturnMoons(jd) {
   const d = jd - 2411093.0;
   const y = d / 365.25;
   const T = 5.0616 * ((jd - 2433282.423) / 365.25 + 84.0);
-  const tRad = ((T % 360 + 360) % 360) * DEG;
+  const tRad = mod360(T) * DEG;
 
   // Mimas (Eq. 9.65)
   {
@@ -532,7 +532,7 @@ function uranusMoons(jd) {
     const sinHalfGamma = sqrt(zeta_re*zeta_re + zeta_im*zeta_im);
     const gamma = 2 * asin(sinHalfGamma);
     const theta = atan2(zeta_im, zeta_re);
-    const M = ((L - P + PI) % TAU + TAU) % TAU;
+    const M = mod2pi(L - P + PI);
     const E = solveKepler(M, e);
     const f = trueAnomaly(E, e);
     const r = a * (1 - e*e) / (1 + e * cos(f));
@@ -745,9 +745,9 @@ function moonPositionKepler(name, jde) {
   const dt = jde - md.epoch;
   const wRate = md.Pw > 0 ? 360.0 / md.Pw : 0;
   const nRate = md.Pnode > 0 ? 360.0 / md.Pnode : 0;
-  const M = ((md.M + md.n * dt) % 360 + 360) % 360 * DEG;
-  const w = ((md.w + wRate * dt / 365.25) % 360 + 360) % 360 * DEG;
-  const N = ((md.node + nRate * dt / 365.25) % 360 + 360) % 360 * DEG;
+  const M = mod360(md.M + md.n * dt) * DEG;
+  const w = mod360(md.w + wRate * dt / 365.25) * DEG;
+  const N = mod360(md.node + nRate * dt / 365.25) * DEG;
   const inc = md.i * DEG;
 
   const E = solveKepler(M, md.e);

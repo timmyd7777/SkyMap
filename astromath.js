@@ -5,6 +5,8 @@ const DEG = PI / 180;       // multiply degrees by this to get radians
 const RAD = 180 / PI;       // multiply radians by this to get degrees
 const REFRACTION_ALT = -34 / 60 * DEG;  // standard atmospheric refraction at horizon (radians)
 const p2 = v => String(v).padStart(2, '0');  // zero-pad a number to 2 digits
+function mod360(deg) { return ((deg % 360) + 360) % 360; }
+function mod2pi(rad) { return ((rad % TAU) + TAU) % TAU; }
 
 // 3×3 rotation matrix (row-major flat array) from J2000 equatorial to galactic coordinates.
 // Galactic north pole: RA 192.85948°, Dec +27.12825° (J2000)
@@ -119,7 +121,7 @@ function gmst(jd) {
 // Local Sidereal Time. jd = Julian Date, lonDeg = observer longitude (degrees east).
 // Returns degrees [0, 360).
 function localSiderealTime(jd, lonDeg) {
-  return ((gmst(jd) + lonDeg) % 360 + 360) % 360;
+  return mod360(gmst(jd) + lonDeg);
 }
 
 // ---- IAU 1976 Precession ----

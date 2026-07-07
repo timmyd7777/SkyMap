@@ -114,10 +114,10 @@ function trueAnomaly(E, e) {
 // el = {N, i, w, M} in degrees, {a} in AU, {e} dimensionless.
 // Returns {lon, lat, r}: ecliptic lon/lat in radians (of date), r in AU.
 function planetHelioEcl(el) {
-  const Nr = ((el.N % 360 + 360) % 360) * DEG;
+  const Nr = mod360(el.N) * DEG;
   const ir = el.i * DEG;
-  const wr = ((el.w % 360 + 360) % 360) * DEG;
-  const Mr = ((el.M % 360 + 360) % 360) * DEG;
+  const wr = mod360(el.w) * DEG;
+  const Mr = mod360(el.M) * DEG;
   const E = solveKepler(Mr, el.e);
   const xv = el.a * (cos(E) - el.e);
   const yv = el.a * sqrt(1 - el.e * el.e) * sin(E);
@@ -134,9 +134,9 @@ function planetHelioEcl(el) {
 // d = day number, lon/lat in radians (of date), r in AU.
 // Returns corrected {lon, lat, r}.
 function planetPerturbations(name, d, lon, lat, r) {
-  const Mj = ((19.8950 + 0.0830853001 * d) % 360 + 360) % 360 * DEG;
-  const Ms = ((316.9670 + 0.0334442282 * d) % 360 + 360) % 360 * DEG;
-  const Mu = ((142.5905 + 0.011725806 * d) % 360 + 360) % 360 * DEG;
+  const Mj = mod360(19.8950 + 0.0830853001 * d) * DEG;
+  const Ms = mod360(316.9670 + 0.0334442282 * d) * DEG;
+  const Mu = mod360(142.5905 + 0.011725806 * d) * DEG;
   let dlon = 0, dlat = 0;
   if (name === 'Jupiter') {
     dlon = -0.332*sin(2*Mj - 5*Ms - 67.6*DEG)
@@ -166,9 +166,9 @@ function planetPerturbations(name, d, lon, lat, r) {
 // d = day number. Returns {lon, lat, r, M, w}: lon/lat in radians, r in AU,
 // M (mean anomaly) and w (argument of perihelion) in radians — needed by moonPosition.
 function sunPosition(d) {
-  const w = ((282.9404 + 4.70935e-5 * d) % 360 + 360) % 360 * DEG;
+  const w = mod360(282.9404 + 4.70935e-5 * d) * DEG;
   const e = 0.016709 - 1.151e-9 * d;
-  const M = ((356.0470 + 0.9856002585 * d) % 360 + 360) % 360 * DEG;
+  const M = mod360(356.0470 + 0.9856002585 * d) * DEG;
   const E = solveKepler(M, e);
   const xv = cos(E) - e;
   const yv = sqrt(1 - e * e) * sin(E);
@@ -181,12 +181,12 @@ function sunPosition(d) {
 // d = day number, sunM = Sun's mean anomaly (radians), sunW = Sun's arg of perihelion (radians).
 // Returns {lon, lat, dist}: ecliptic lon/lat in radians (of date), dist in Earth radii.
 function moonPosition(d, sunM, sunW) {
-  const mN = ((125.1228 - 0.0529538083 * d) % 360 + 360) % 360 * DEG;
+  const mN = mod360(125.1228 - 0.0529538083 * d) * DEG;
   const mI = 5.1454 * DEG;
-  const mw = ((318.0634 + 0.1643573223 * d) % 360 + 360) % 360 * DEG;
+  const mw = mod360(318.0634 + 0.1643573223 * d) * DEG;
   const mA = 60.2666;
   const mE = 0.054900;
-  const mM = ((115.3654 + 13.0649929509 * d) % 360 + 360) % 360 * DEG;
+  const mM = mod360(115.3654 + 13.0649929509 * d) * DEG;
 
   const moonEcc = solveKepler(mM, mE);
   const xv = mA * (cos(moonEcc) - mE);
@@ -327,7 +327,7 @@ function orbitToEcliptic(node, inc, w, v, r) {
 // Returns {lon, lat, r} in radians.
 function asteroidPosition(ast, d, j2000) {
   const dEpoch = julianDate(ast.epoch.y, ast.epoch.m, ast.epoch.d, 0) - 2451543.5;
-  const M = ((ast.M + ast.n * (d - dEpoch)) % 360 + 360) % 360 * DEG;
+  const M = mod360(ast.M + ast.n * (d - dEpoch)) * DEG;
   const node = (ast.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG;
   const inc = ast.inc * DEG;
   const w = ast.w * DEG;
@@ -353,7 +353,7 @@ function cometPosition(comet, d, j2000) {
   if (comet.e < 0.98) {
     const a = comet.q / (1 - comet.e);
     const P = 365.2568984 * a * sqrt(a);
-    const M = ((360 * dt / P) % 360 + 360) % 360 * DEG;
+    const M = mod360(360 * dt / P) * DEG;
     const E = solveKepler(M, comet.e);
     const xv = a * (cos(E) - comet.e);
     const yv = a * sqrt(1 - comet.e * comet.e) * sin(E);
@@ -564,7 +564,7 @@ function moonPositionMeeus(d) {
   Sb += -2235*sin(Lpr) + 382*sin(A3r) + 175*sin(A1r - Fr)
       + 175*sin(A1r + Fr) + 127*sin(Lpr - Mpr) - 115*sin(Lpr + Mpr);
 
-  const lonDeg = ((Lp + Sl * 1e-6) % 360 + 360) % 360;
+  const lonDeg = mod360(Lp + Sl * 1e-6);
   const lon = lonDeg * DEG;
   const lat = Sb * 1e-6 * DEG;
   const dist = (385000.56 + Sr * 0.001) / 6378.14;

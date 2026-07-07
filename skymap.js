@@ -83,7 +83,7 @@ const FRAME_LABELS = {
 // (because RA/ecliptic-lon/galactic-lon increase leftward on the sky,
 // opposite to the internal atan2(x,y) convention).
 function azToDisp(deg) {
-  return viewFrame === 'horizon' ? ((deg % 360) + 360) % 360 : ((90 - deg) % 360 + 360) % 360;
+  return viewFrame === 'horizon' ? mod360(deg) : mod360(90 - deg);
 }
 
 // Bayer letter names → Unicode Greek, for star designation labels.
@@ -344,7 +344,7 @@ function skymapDraw(canvas, params) {
       if (fresh) { centerObject.jx = fresh.x; centerObject.jy = fresh.y; centerObject.jz = fresh.z; }
     }
     const [fx, fy, fz] = mvmul(mFrame, centerObject.jx, centerObject.jy, centerObject.jz);
-    viewLonPrecise = ((atan2(fx, fy) * RAD) % 360 + 360) % 360;
+    viewLonPrecise = mod360(atan2(fx, fy) * RAD);
     viewLatPrecise = max(-90, min(90, asin(max(-1, min(1, fz))) * RAD));
   }
 
@@ -388,10 +388,10 @@ function skymapDraw(canvas, params) {
 
   // Convert angular size in arcminutes to pixels at a given screen position.
   // Accounts for stereographic projection distortion (objects near edge appear larger).
-  function arcminToPx(sx, sy, arcmin) {
+  function radToPx(sx, sy, rad) {
     const cX = (sx - cx) / scale, cY = (cy - sy) / scale;
     const r2 = cX * cX + cY * cY;
-    return arcmin * DEG / 60 * scale * (4 + r2) / 4;
+    return rad * scale * (4 + r2) / 4;
   }
 
   // Project a point in the current frame (lat/lon in radians) to canvas pixels.
@@ -713,7 +713,7 @@ function skymapDraw(canvas, params) {
       const nextDisp = viewFrame === 'horizon'
         ? (ceil(cornerDisp / lonStep) * lonStep) % 360
         : (floor(cornerDisp / lonStep) * lonStep + 360) % 360;
-      const labelLon = viewFrame === 'horizon' ? ((90 - nextDisp) % 360 + 360) % 360 : nextDisp;
+      const labelLon = viewFrame === 'horizon' ? mod360(90 - nextDisp) : nextDisp;
       labelLonR = labelLon * DEG;
     }
     // Walk from -90° to +90° (and wrap through the far pole) to label both hemispheres
@@ -899,7 +899,7 @@ function skymapDraw(canvas, params) {
       const pt = toScreen(2 * x1 / d, -2 * vy / d);
       if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) { dsPositions.push(null); continue; }
       const dsSize = ds[5];
-      const r = dsSize ? max(5, arcminToPx(pt[0], pt[1], dsSize) / 2) : 5;
+      const r = dsSize ? max(5, radToPx(pt[0], pt[1], dsSize * DEG / 60) / 2) : 5;
       dsPositions.push({x: pt[0], y: pt[1], r});
       const dObj = {x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: x0, jy: y0, jz: z0};
       const typ = ds[0];
@@ -934,7 +934,7 @@ function skymapDraw(canvas, params) {
       } else if (typ === 'GX') {
         const minorSize = ds[6];
         if (minorSize) {
-          const rMinor = max(3, arcminToPx(pt[0], pt[1], minorSize) / 2);
+          const rMinor = max(3, radToPx(pt[0], pt[1], minorSize * DEG / 60) / 2);
           const pa = ds[7];
           const rot = pa != null ? j2kPAToScreen(pa * DEG, x1, vy, vz, pt[0], pt[1]) : 0;
           ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
@@ -1062,7 +1062,7 @@ function skymapDraw(canvas, params) {
 
     // Sun position from VSOP87 Earth
     const earth = vsop87Position('EARTH', tau);
-    const sunLon = ((earth.L + PI) % TAU + TAU) % TAU;
+    const sunLon = mod2pi(earth.L + PI);
     const sunLat = -earth.B;
     const sunR = earth.R;
     const [sx, sy, sz] = mvmul(mEcl2J2000, ...sph2uxyz(sunLon, sunLat));
@@ -1151,7 +1151,7 @@ function skymapDraw(canvas, params) {
     const [moonBx, moonBy, moonBz] = sph2xyz(moonGRA, moonGDec, moonPos.dist);
     const [topoRA, topoDec, topoDistER] = topocentricCorrectionXYZ(moonBx, moonBy, moonBz, obsX, obsY, obsZ);
     const [mx, my, mz] = mvmul(mtranspose(mNP), ...sph2uxyz(topoRA, topoDec));
-    const moonElong = ((moonPos.lon - sunLon) % TAU + TAU) % TAU;
+    const moonElong = mod2pi(moonPos.lon - sunLon);
     const moonFV = abs(PI - moonElong);
     const moonEntry = { type:'moon', name:'Moon', x:mx, y:my, z:mz,
       mag: moonMag(sunR, moonPos.dist, moonFV * RAD),
@@ -1531,8 +1531,8 @@ function skymapDraw(canvas, params) {
       if (svz > -1) {
         const sd = 1 + svz;
         const [ssx, ssy] = toScreen(2*svx/sd, -2*svy/sd);
-        const penR = arcminToPx(ssx, ssy, sh.penumbraAngRad * RAD * 60);
-        const umbR = arcminToPx(ssx, ssy, sh.umbraAngRad * RAD * 60);
+        const penR = radToPx(ssx, ssy, sh.penumbraAngRad);
+        const umbR = radToPx(ssx, ssy, sh.umbraAngRad);
         drawShadowDisc(px, py, discR, ssx, ssy, penR, umbR, 'rgba(0,0,0,0.5)');
       }
     }
@@ -1563,7 +1563,7 @@ function skymapDraw(canvas, params) {
       const toSunAngle = atan2(jsDy, jsDx);
 
       if (obj.type === 'sun' && showPlanets) {
-        const r = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
+        const r = max(4, min(W, H) / 100, radToPx(sx, sy, obj.angSize * DEG / 60) / 2);
         if (showPlanetSymbols) {
           ctx.fillStyle = '#fd0'; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1581,7 +1581,7 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'planet' && showPlanets) {
         const drawMag = max(-1.46, min(magLimit, obj.mag));
         const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-        const discR = arcminToPx(sx, sy, (PLANET_DIAM1AU[obj.name] || 0) / obj.geoDist / 60) / 2;
+        const discR = radToPx(sx, sy, (PLANET_DIAM1AU[obj.name] || 0) / obj.geoDist * DEG / 3600) / 2;
         const r = max(starR, discR);
         const pColor = PLANET_COLORS[obj.name];
         const phys = PLANET_PHYS[obj.name];
@@ -1620,7 +1620,7 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, r + 3, obj.name);
         }
       } else if (obj.type === 'moon' && showPlanets) {
-        const phaseR = max(4, min(W, H) / 100, arcminToPx(sx, sy, obj.angSize) / 2);
+        const phaseR = max(4, min(W, H) / 100, radToPx(sx, sy, obj.angSize * DEG / 60) / 2);
         drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetSymbols) {
           ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = symFontSize;
@@ -1636,8 +1636,8 @@ function skymapDraw(canvas, params) {
             if (svz > -1) {
               const sd = 1 + svz;
               const [ssx, ssy] = toScreen(2*svx/sd, -2*svy/sd);
-              const penR = arcminToPx(ssx, ssy, obj.penumbraAngRad * RAD * 60);
-              const umbR = arcminToPx(ssx, ssy, obj.umbraAngRad * RAD * 60);
+              const penR = radToPx(ssx, ssy, obj.penumbraAngRad);
+              const umbR = radToPx(ssx, ssy, obj.umbraAngRad);
               drawShadowDisc(sx, sy, phaseR, ssx, ssy, penR, umbR, 'rgba(64,0,0,0.5)');
             }
           }
@@ -1702,7 +1702,7 @@ function skymapDraw(canvas, params) {
         const drawMag = min(magLimit, obj.mag);
         const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const md = MOON_DATA[obj.name];
-        const discR = md && md.radius ? arcminToPx(sx, sy, 2 * md.radius / (obj.geoDist * 149597870.7) * RAD * 60) / 2 : 0;
+        const discR = md && md.radius ? radToPx(sx, sy, md.radius / (obj.geoDist * 149597870.7)) : 0;
         const r = max(starR, discR);
         const pmColor = darkMode ? '#bbb' : '#555';
         if (discR > starR) {
@@ -1955,7 +1955,7 @@ function changeFrame(newFrame, j2000, dt, loc) {
     const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonDeg, j2000);
     // J2000 equatorial → new frame → internal lon/lat
     const [nx, ny, nz] = mvmul(mNew, jx, jy, jz);
-    viewLonPrecise = ((atan2(nx, ny) * RAD) % 360 + 360) % 360;
+    viewLonPrecise = mod360(atan2(nx, ny) * RAD);
     viewLatPrecise = max(-90, min(90, asin(max(-1, min(1, nz))) * RAD));
   }
   viewFrame = newFrame;
