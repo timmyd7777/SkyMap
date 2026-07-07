@@ -140,7 +140,7 @@ function formatCoords(lonDeg, latDeg) {
 function formatDist(d) {
   const LY_PER_PC = 3.26156;
   if (d.type === 'star') {
-    const pc = d.data.dist;
+    const pc = d.data[4];
     if (!pc || pc <= 0) return '';
     const ly = pc * LY_PER_PC;
     return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
@@ -168,14 +168,15 @@ function formatSelection(obj) {
   let type = '', name = '', mag = null;
   if (obj.type === 'star') {
     type = 'Star';
-    name = d.name || '';
-    if (d.bayer) ids.push(d.bayer);
-    if (d.flamsteed) ids.push(d.flamsteed);
+    const bayer = d[8], flamsteed = d[9], starName = d[10], dm = d[11];
+    name = starName || '';
+    if (bayer) ids.push(bayer);
+    if (flamsteed) ids.push(flamsteed);
     if (obj.hr) ids.push(`HR ${obj.hr}`);
-    if (d.hd) ids.push(`HD ${d.hd}`);
-    if (d.hip) ids.push(`HIP ${d.hip}`);
-    if (d.dm) ids.push(d.dm);
-    mag = d.mag;
+    if (d[6]) ids.push(`HD ${d[6]}`);
+    if (d[7]) ids.push(`HIP ${d[7]}`);
+    if (dm) ids.push(dm);
+    mag = d[2];
   } else if (obj.type === 'deepsky') {
     const DS_TYPES = {OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
       DN:'Dark Nebula',PN:'Planetary Nebula',GX:'Galaxy'};
@@ -785,7 +786,7 @@ function skymapDraw(canvas, params) {
         [sx, sy] = toScreen(2 * x1 / d, -2 * vy / d);
       }
       const inView = vz > -1e-10 && sx >= 0 && sx <= W && sy >= 0 && sy <= H;
-      const p = {sx, sy, mag: s[2], bmv: s[3], dist: s[4], hr, hd: s[6], hip: s[7], bayer: s[8], flamsteed: s[9], name: s[10], dm: s[11], inView, jx: x0, jy: y0, jz: z0};
+      const p = {sx, sy, inView};
       starPositions.push(p);
       if (hr) spos[hr] = p;
     }
@@ -989,23 +990,31 @@ function skymapDraw(canvas, params) {
   // Dot radius scales with magnitude and canvas size. Adds each visible star
   // to drawnObjects for hit-testing. Labels only for stars brighter than ~mag 2.
   function drawStars(starPositions) {
-    for (const p of starPositions) {
-      if (!p || !p.inView || p.mag > starMagLimit) continue;
-      const r = max(0.5, (5.5 + magBoost - p.mag) * min(W, H) / 1000);
-      ctx.fillStyle = darkMode && showStarColors ? bmvToRGB(p.bmv) : darkMode ? '#fff' : '#000';
+    for (let i = 0; i < starPositions.length; i++) {
+      const p = starPositions[i];
+      if (!p || !p.inView) continue;
+      const s = STARS[i];
+      const mag = s[2], bmv = s[3], hr = s[5];
+      if (mag > starMagLimit) continue;
+      const r = max(0.5, (5.5 + magBoost - mag) * min(W, H) / 1000);
+      ctx.fillStyle = darkMode && showStarColors ? bmvToRGB(bmv) : darkMode ? '#fff' : '#000';
       ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TAU); ctx.fill();
-      drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', hr: p.hr, data: p, jx: p.jx, jy: p.jy, jz: p.jz});
+      drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', name: s[10], hr, data: s, jx: s[12], jy: s[13], jz: s[14]});
     }
     if (showNames || showStarIds) {
       ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
       ctx.fillStyle = darkMode ? '#fff' : '#000';
       ctx.textAlign = 'left';
-      for (const p of starPositions) {
-        if (!p || !p.inView || p.mag > 2.02 + 1.5 * magBoost) continue;
-        const r = max(0.5, (5.5 + magBoost - p.mag) * min(W, H) / 1000);
-        const desig = showStarIds ? formatDesignation(p.bayer, p.flamsteed) : '';
+      for (let i = 0; i < starPositions.length; i++) {
+        const p = starPositions[i];
+        if (!p || !p.inView) continue;
+        const s = STARS[i];
+        const mag = s[2], bayer = s[8], flamsteed = s[9], name = s[10];
+        if (mag > 2.02 + 1.5 * magBoost) continue;
+        const r = max(0.5, (5.5 + magBoost - mag) * min(W, H) / 1000);
+        const desig = showStarIds ? formatDesignation(bayer, flamsteed) : '';
         if (desig) placeLabel(p.sx, p.sy, r + 3, desig);
-        if (showNames && p.name) placeLabel(p.sx, p.sy, r + 3, p.name);
+        if (showNames && name) placeLabel(p.sx, p.sy, r + 3, name);
       }
     }
   }
@@ -1158,9 +1167,14 @@ function skymapDraw(canvas, params) {
     if (dot(mx, my, mz, sx, sy, sz) < -0.9) {
       const EARTH_RAD_AU = 6378.14 / 149597870.7;
       const moonGeoDistAU = moonPos.dist * EARTH_RAD_AU;
+      // Umbral/penumbral radii (AU) at Moon's geocentric distance
       const shadow = shadowRadii(EARTH_RAD_AU, moonGeoDistAU, sunR);
+      // Angular radii (radians) as seen from Earth
       moonEntry.umbraAngRad = shadow.umbra / moonGeoDistAU;
       moonEntry.penumbraAngRad = shadow.penumbra / moonGeoDistAU;
+      // Shadow center: antisolar direction in equatorial of-date, at Moon's
+      // geocentric distance (Earth-radii), with topocentric correction applied
+      // the same way as the Moon itself, then converted to J2000 unit vector.
       const [sunEqRA, sunEqDec] = eclToEq(sunLon, sunLat, epsTrue);
       const [shBx, shBy, shBz] = sph2xyz(sunEqRA + PI, -sunEqDec, moonPos.dist);
       const [shTopoRA, shTopoDec] = topocentricCorrectionXYZ(shBx, shBy, shBz, obsX, obsY, obsZ);
@@ -1211,7 +1225,6 @@ function skymapDraw(canvas, params) {
     // Use JD (UTC), not JDE — satellite epochs are UTC.
     if (params.satellites) {
       const [sunTx, sunTy, sunTz] = mvmul(mNP, sx, sy, sz);
-
       for (const sat of params.satellites) {
         const tsince = (jd - sat.epoch) * 1440;
         if (abs(tsince) > 40320) continue;
@@ -1401,6 +1414,12 @@ function skymapDraw(canvas, params) {
     if (ob > 0) ctx.restore();
   }
 
+  // Draw a planetographic lat/lon grid on a planet's disc via orthographic projection.
+  // sx, sy = planet screen center (pixels). r = equatorial disc radius (pixels).
+  // polePA = screen angle of the planet's north pole (radians, from j2kPAToScreen).
+  // oblateness = apparent flattening (0–1, already scaled by cos(subObsLat)).
+  // subObsLat = sub-observer planetographic latitude (radians).
+  // subObsLon = sub-observer planetographic longitude (degrees).
   function drawPlanetGrid(sx, sy, r, polePA, oblateness, subObsLat, subObsLon) {
     const ob = oblateness || 0;
     const pa = polePA || 0;

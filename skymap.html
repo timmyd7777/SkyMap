@@ -758,7 +758,7 @@ function init() {
         pickObject(rect ? x - rect.left : x, rect ? y - rect.top : y);
         if (!selectedObject || !centerObject
             || selectedObject.type !== centerObject.type
-            || selectedObject.data.name !== centerObject.name) centerObject = null;
+            || (selectedObject.name || selectedObject.data.name) !== centerObject.name) centerObject = null;
         draw();
       }
     }
@@ -772,7 +772,7 @@ function init() {
     if (selectedObject) {
       centerObject = {
         type: selectedObject.type,
-        name: selectedObject.data.name,
+        name: selectedObject.name || selectedObject.data.name,
         jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
       };
       draw();
@@ -811,7 +811,7 @@ function init() {
       if (now - lastTapTime < 350 && tdx*tdx + tdy*tdy < 400) {
         if (selectedObject) {
           centerObject = {
-            type: selectedObject.type, name: selectedObject.data.name,
+            type: selectedObject.type, name: selectedObject.name || selectedObject.data.name,
             jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
           };
           draw();
