@@ -749,3 +749,19 @@ function shadowRadii(R, D, dSun) {
   return { umbra, penumbra };
 }
 
+// Test whether a point is inside a body's umbral shadow cone.
+// px,py,pz = position relative to shadow-casting body (any consistent units).
+// sunX,sunY,sunZ = unit vector from body toward the Sun.
+// bodyR = body's radius. sunR, sunDist = Sun's radius and distance from body
+// (same units as bodyR); if omitted, uses a cylindrical approximation.
+function inUmbralShadow(px, py, pz, sunX, sunY, sunZ, bodyR, sunR, sunDist) {
+  const sDot = dot(px, py, pz, sunX, sunY, sunZ);
+  if (sDot >= 0) return false;
+  const perpSq = px*px + py*py + pz*pz - sDot*sDot;
+  if (sunR && sunDist) {
+    const rAtD = bodyR + sDot * (sunR - bodyR) / sunDist;
+    return rAtD > 0 && perpSq < rAtD * rAtD;
+  }
+  return perpSq < bodyR * bodyR;
+}
+

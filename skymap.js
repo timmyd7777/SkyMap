@@ -1278,27 +1278,18 @@ function skymapDraw(canvas, params) {
       const pgz = primary.z * primary.geoDist;
       const ltJde = jde - primary.geoDist * LIGHT_TIME_AU;
       const pmoons = moonFunc(ltJde);
-      // Planet-to-Sun unit vector for cylindrical shadow test
       const psx = sx * sunR - pgx, psy = sy * sunR - pgy, psz = sz * sunR - pgz;
       const psd = vmag(psx, psy, psz);
       const psux = psx / psd, psuy = psy / psd, psuz = psz / psd;
       const phys = PLANET_PHYS[parentName];
-      const shadowR = phys ? phys.radius / 149597870.7 : 0;
+      const planetR = phys ? phys.radius / 149597870.7 : 0;
       for (const pm of pmoons) {
         if (KEPLER_MOONS.includes(pm.name)) Object.assign(pm, moonPositionKepler(pm.name, ltJde));
         const gx = pgx + pm.x, gy = pgy + pm.y, gz = pgz + pm.z;
         const gd = vmag(gx, gy, gz);
-        // Conical umbral shadow: moon is eclipsed when on the anti-Sun side of
-        // the planet and within the umbral cone, which tapers from planet radius
-        // to zero at distance L = shadowR * psd / (SUN_RADIUS_AU - shadowR).
         let mag = planetMoonMagnitude(pm.name, primary.helioDist, gd);
-        const sDot = dot(pm.x, pm.y, pm.z, psux, psuy, psuz);
-        if (sDot < 0) {
-          const d = -sDot;
-          const rAtD = shadowR - d * (SUN_RADIUS_AU - shadowR) / psd;
-          const perpSq = pm.x*pm.x + pm.y*pm.y + pm.z*pm.z - sDot*sDot;
-          if (rAtD > 0 && perpSq < rAtD * rAtD) mag = Infinity;
-        }
+        if (inUmbralShadow(pm.x, pm.y, pm.z, psux, psuy, psuz, planetR, SUN_RADIUS_AU, psd))
+          mag = Infinity;
         ssCache.push({ type:'planetmoon', name:pm.name, parent:parentName,
           x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd, mag });
       }

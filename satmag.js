@@ -2400,9 +2400,8 @@ const SATMAG = {
 function satApparentMag(norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz) {
   const geoDist = vmag(gx, gy, gz);
 
-  // Cylindrical Earth shadow: satellite behind Earth relative to Sun
-  const sunDot = dot(gx, gy, gz, sunTx, sunTy, sunTz);
-  if (sunDot < 0 && geoDist*geoDist - sunDot*sunDot < 1) return Infinity;
+  // Earth shadow: satellite in Earth's umbral shadow cone (cylindrical approximation)
+  if (inUmbralShadow(gx, gy, gz, sunTx, sunTy, sunTz, 1)) return Infinity;
 
   // Topocentric slant range
   const dx = gx - obsX, dy = gy - obsY, dz = gz - obsZ;
