@@ -179,12 +179,17 @@ def parse_orbits(text):
 
                 moon['ref_type'] = header_cols
 
-                # Mean motion: PDF "n" is mean longitude rate, convert to mean anomaly rate
-                wrate = 360.0 / moon['Pw'] if moon['Pw'] > 0 else 0.0
-                Nrate = 360.0 / moon['Pnode'] if moon['Pnode'] > 0 else 0.0
+                # Prograde orbits (i <= 90): node regresses; retrograde (i > 90): node advances.
+                # moonPositionKepler() uses node + nRate*dt, so negate Pnode for prograde.
+                if moon['i'] <= 90.0:
+                    moon['Pnode'] = -moon['Pnode']
+
+                # Mean motion: PDF "n" is mean longitude rate, convert to mean anomaly rate.
+                # moonPositionKepler() computes L = (node + nRate*dt) + (w + wRate*dt) + M,
+                # so dL/dt = nRate + wRate + n. Solving: n = n_pdf - wRate - nRate.
+                wrate = 360.0 / moon['Pw'] if moon['Pw'] else 0.0
+                Nrate = 360.0 / moon['Pnode'] if moon['Pnode'] else 0.0
                 moon['n'] = moon['n'] - (wrate + Nrate) / 365.25
-                moon['Pw'] = moon['Pw']
-                moon['Pnode'] = moon['Pnode']
 
                 # The GUST86 analytical theory for Uranus's 5 classical moons uses
                 # a south-pole equatorial frame where the x-axis points to the
