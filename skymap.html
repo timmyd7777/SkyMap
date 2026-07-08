@@ -508,22 +508,21 @@ function sliderToFov(s) {
 }
 
 function syncSlidersFromPrecise() {
-  document.getElementById('viewAz').value = round(azToDisp(viewLonPrecise));
-  document.getElementById('viewAlt').value = round(viewLatPrecise);
-  document.getElementById('viewWidth').value = round(fovToSlider(viewFovPrecise));
+  document.getElementById('viewAz').value = round(viewLon);
+  document.getElementById('viewAlt').value = round(viewLat);
+  document.getElementById('viewWidth').value = round(fovToSlider(viewFov));
 }
 function updateSliderLabels() {
-  const vLonDisp = azToDisp(viewLonPrecise);
   if (viewFrame === 'equatorial') {
-    const raH = ((vLonDisp / 15) % 24 + 24) % 24;
+    const raH = ((viewLon / 15) % 24 + 24) % 24;
     const raHi = floor(raH), raMin = round((raH - raHi) * 60);
     document.getElementById('viewAzVal').textContent = `${raHi}h ${p2(raMin)}m`;
   } else {
-    document.getElementById('viewAzVal').textContent = round(vLonDisp) + '°';
+    document.getElementById('viewAzVal').textContent = round(viewLon) + '°';
   }
-  document.getElementById('viewAltVal').textContent = (viewLatPrecise >= 0 ? '+' : '') + round(viewLatPrecise) + '°';
-  document.getElementById('viewWidthVal').textContent = viewFovPrecise < 1
-    ? round(viewFovPrecise * 60) + "'" : round(viewFovPrecise) + '°';
+  document.getElementById('viewAltVal').textContent = (viewLat >= 0 ? '+' : '') + round(viewLat) + '°';
+  document.getElementById('viewWidthVal').textContent = viewFov < 1
+    ? round(viewFov * 60) + "'" : round(viewFov) + '°';
 }
 
 // ---- Main draw (UI wrapper around skymapDraw) ----
@@ -710,16 +709,16 @@ function init() {
   });
   document.getElementById('viewAz').addEventListener('input', () => {
     centerObject = null;
-    viewLonPrecise = azToDisp(parseFloat(document.getElementById('viewAz').value));
+    viewLon = parseFloat(document.getElementById('viewAz').value);
     draw();
   });
   document.getElementById('viewAlt').addEventListener('input', () => {
     centerObject = null;
-    viewLatPrecise = parseFloat(document.getElementById('viewAlt').value);
+    viewLat = parseFloat(document.getElementById('viewAlt').value);
     draw();
   });
   document.getElementById('viewWidth').addEventListener('input', () => {
-    viewFovPrecise = sliderToFov(parseFloat(document.getElementById('viewWidth').value));
+    viewFov = sliderToFov(parseFloat(document.getElementById('viewWidth').value));
     draw();
   });
 
@@ -740,11 +739,12 @@ function init() {
     const rect = canvas.getBoundingClientRect();
     const canvasX = x - rect.left, canvasY = y - rect.top;
     const mouseAltAz = viewUnproject(canvasX, canvasY);
-    const mouseAltDeg = mouseAltAz ? mouseAltAz[0] * RAD : viewLatPrecise;
+    const mouseAltDeg = mouseAltAz ? mouseAltAz[0] * RAD : viewLat;
     const cosAlt = cos(min(85, abs(mouseAltDeg)) * DEG);
-    const degPerPx = viewFovPrecise / min(canvas.width, canvas.height);
-    viewLonPrecise = mod360(viewLonPrecise - dx * degPerPx / cosAlt);
-    viewLatPrecise = max(-90, min(90, viewLatPrecise + dy * degPerPx));
+    const degPerPx = viewFov / min(canvas.width, canvas.height);
+    const lonSign = viewFrame === 'horizon' ? -1 : 1;
+    viewLon = mod360(viewLon + lonSign * dx * degPerPx / cosAlt);
+    viewLat = max(-90, min(90, viewLat + dy * degPerPx));
     syncSlidersFromPrecise();
     draw();
   }
@@ -794,7 +794,7 @@ function init() {
     if (e.touches.length === 2) {
       const d = touchDist(e);
       if (pinchDist > 0) {
-        viewFovPrecise = max(minFovDeg, min(180, viewFovPrecise * pinchDist / d));
+        viewFov = max(minFovDeg, min(180, viewFov * pinchDist / d));
         syncSlidersFromPrecise();
         draw();
       }
@@ -830,8 +830,8 @@ function init() {
     e.preventDefault();
     const sensitivity = e.ctrlKey ? 0.005 : 0.00025;
     const zoomFactor = 1 + sensitivity * abs(e.deltaY);
-    viewFovPrecise = e.deltaY > 0 ? viewFovPrecise * zoomFactor : viewFovPrecise / zoomFactor;
-    viewFovPrecise = max(minFovDeg, min(180, viewFovPrecise));
+    viewFov = e.deltaY > 0 ? viewFov * zoomFactor : viewFov / zoomFactor;
+    viewFov = max(minFovDeg, min(180, viewFov));
     syncSlidersFromPrecise();
     draw();
   }, {passive: false});

@@ -1,12 +1,13 @@
 // ---- Sky map rendering engine ----
 // Pure rendering module with no DOM dependencies. All display state comes via
-// the params object passed to skymapDraw(). View state (viewLonPrecise, etc.)
+// the params object passed to skymapDraw(). View state (viewLon, etc.)
 // is global so that the HTML wrapper and drag/zoom handlers can read/write it.
 //
-// Coordinate convention: internally, longitude is the atan2(x,y) angle in the
-// current frame. For non-horizon frames, display_lon = 90° - internal_lon
-// (because RA increases leftward on the sky). For horizon, display_az = internal_lon.
-// The azToDisp() function handles this conversion.
+// Coordinate convention: viewLon is always the display longitude —
+// azimuth for Horizon, RA/ecliptic-lon/galactic-lon for the other frames
+// (atan2(y,x) of the frame's raw Cartesian axes, same as everywhere else in
+// the codebase). skymapDraw() converts it once, near the top, into vLon: the
+// azimuth-style atan2(x,y) angle the projection math below is written in.
 //
 // Projection: stereographic from the antipode of the view center. Points on the
 // front hemisphere (within 90° of center) project to r < 2 in normalized coords.
@@ -15,13 +16,14 @@
 
 // ---- View state (mutable, shared with HTML wrapper) ----
 
-// View center in current frame's internal coordinates (degrees).
-// viewLonPrecise: internal longitude (see azToDisp for display conversion).
-// viewLatPrecise: latitude, -90 to +90.
-// viewFovPrecise: horizontal field of view width, 10 to 180.
-let viewLonPrecise = 180, viewLatPrecise = 90, viewFovPrecise = 180;
+// View center in current frame's display coordinates (degrees).
+// viewLon: azimuth/RA/longitude, 0 to 360.
+// viewLat: altitude/Dec/latitude, -90 to +90.
+// viewFov: field of view across the shorter canvas dimension, 1/60 to 180.
+let viewLon = 180, viewLat = 90, viewFov = 180;
 
 // Current coordinate frame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
+// Equinox for equatorial and ecliptic frames is either mean J2000 or true JNow. 
 let viewFrame = 'horizon';
 let viewJ2000 = false;
 
@@ -78,14 +80,6 @@ const FRAME_LABELS = {
   galactic:   ['Galactic Longitude', 'Galactic Latitude'],
 };
 
-// Convert internal longitude (degrees) to display value (degrees).
-// Horizon: display = internal (azimuth). Others: display = 90 - internal
-// (because RA/ecliptic-lon/galactic-lon increase leftward on the sky,
-// opposite to the internal atan2(x,y) convention).
-function azToDisp(deg) {
-  return viewFrame === 'horizon' ? mod360(deg) : mod360(90 - deg);
-}
-
 // Ray-casting point-in-polygon test. pts is an array of [x, y] pairs.
 function pointInPolygon(px, py, pts) {
   let inside = false;
@@ -126,10 +120,7 @@ function formatDesignation(bayer, flamsteed) {
   return '';
 }
 
-// Format a picked object into a one-line description string for display.
-// obj: an entry from drawnObjects (has .type, .data, optionally .hr).
 // Format (lonDeg, latDeg) in the current frame's display convention.
-// lonDeg is already display-converted (via azToDisp). Returns a string.
 function formatCoords(lonDeg, latDeg) {
   if (viewFrame === 'equatorial') {
     const raH = ((lonDeg / 15) % 24 + 24) % 24;
@@ -148,31 +139,38 @@ function formatCoords(lonDeg, latDeg) {
   }
 }
 
-function formatDist(d) {
+// Format an object's distance for display, with type-appropriate units.
+// obj: an entry from drawnObjects (has .type, .data, ...). Reads the relevant
+// distance field out of obj.data per type: parsecs (star/deepsky, → ly/kly/Mly),
+// km (moon/satellite), or AU (sun/planet/comet/asteroid/planetmoon).
+// Returns '' if the distance is unknown or non-positive.
+function formatDist(obj) {
   const LY_PER_PC = 3.26156;
-  if (d.type === 'star') {
-    const pc = d.data[4];
+  if (obj.type === 'star') {
+    const pc = obj.data[4];
     if (!pc || pc <= 0) return '';
     const ly = pc * LY_PER_PC;
     return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
-  } else if (d.type === 'deepsky') {
-    const pc = d.data[4];
+  } else if (obj.type === 'deepsky') {
+    const pc = obj.data[4];
     if (!pc || pc <= 0) return '';
     const ly = pc * LY_PER_PC;
-    if (d.data[0] === 'GX') return `${(ly/1e6).toFixed(1)} Mly`;
+    if (obj.data[0] === 'GX') return `${(ly/1e6).toFixed(1)} Mly`;
     return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
-  } else if (d.type === 'moon' || d.type === 'satellite') {
-    const km = d.data.dist;
+  } else if (obj.type === 'moon' || obj.type === 'satellite') {
+    const km = obj.data.dist;
     if (!km || km <= 0) return '';
     return `${round(km).toLocaleString()} km`;
-  } else if (d.type === 'sun' || d.type === 'planet' || d.type === 'comet' || d.type === 'asteroid' || d.type === 'planetmoon') {
-    const au = d.data.geoDist || d.data.dist;
+  } else if (obj.type === 'sun' || obj.type === 'planet' || obj.type === 'comet' || obj.type === 'asteroid' || obj.type === 'planetmoon') {
+    const au = obj.data.geoDist || obj.data.dist;
     if (!au || au <= 0) return '';
     return `${au.toFixed(3)} AU`;
   }
   return '';
 }
 
+// Format a picked object into a one-line description string for display.
+// obj: an entry from drawnObjects (has .type, .data, optionally .hr).
 function formatSelection(obj) {
   const d = obj.data;
   const ids = [];
@@ -355,31 +353,31 @@ function skymapDraw(canvas, params) {
       if (fresh) { centerObject.jx = fresh.x; centerObject.jy = fresh.y; centerObject.jz = fresh.z; }
     }
     const [fx, fy, fz] = mvmul(mFrame, centerObject.jx, centerObject.jy, centerObject.jz);
-    viewLonPrecise = mod360(atan2(fx, fy) * RAD);
-    viewLatPrecise = max(-90, min(90, asin(max(-1, min(1, fz))) * RAD));
+    viewLon = mod360((viewFrame === 'horizon' ? atan2(fx, fy) : atan2(fy, fx)) * RAD);
+    viewLat = max(-90, min(90, asin(max(-1, min(1, fz))) * RAD));
   }
 
   // ---- View projection parameters ----
-  const cx = W / 2, cy = H / 2;                     // canvas center (pixels)
-  const chartR = (min(W, H) / 2) - 1;               // radius of chart area (pixels)
-  const vLonDeg = viewLonPrecise;                    // view center longitude (degrees, internal)
-  const vLatDeg = viewLatPrecise;                    // view center latitude (degrees)
-  const vWidthDeg = viewFovPrecise;                  // horizontal FOV (degrees)
-  const vLonDisp = azToDisp(vLonDeg);                // view center longitude (degrees, display)
-  const vLon = vLonDeg * DEG, vLat = vLatDeg * DEG, vWidth = vWidthDeg * DEG;
+  const cx = W / 2, cy = H / 2;                      // canvas center (pixels)
+  const chartR = (min(W, H) / 2) - 1;                // radius of chart area (pixels)
+  // vLon: azimuth-style atan2(x,y) angle (north-referenced) used by the
+  // projection math below. Horizon's viewLon already is azimuth; the
+  // other frames store RA/ecliptic-lon/galactic-lon, which is 90° off from that.
+  const vLon = (viewFrame === 'horizon' ? viewLon : mod360(90 - viewLon)) * DEG;
+  const vLat = viewLat * DEG, vWidth = viewFov * DEG;
   const vCosL = cos(vLon), vSinL = sin(vLon);
-  const vTheta = PI / 2 - vLat;                     // co-latitude of view center
+  const vTheta = PI / 2 - vLat;                      // co-latitude of view center
   const vCosT = cos(vTheta), vSinT = sin(vTheta);
-  const rEdge = 2 * tan(vWidth / 4);                // stereographic radius at FOV edge
+  const rEdge = 2 * tan(vWidth / 4);                 // stereographic radius at FOV edge
   const scale = chartR / rEdge;                      // pixels per unit stereographic radius
-  const magBoost = min(5, Math.log2(180 / vWidthDeg));
+  const magBoost = min(5, Math.log2(180 / viewFov));
   const minFontSize = 12;                            // minimum label font size (pixels)
   const starMagLimit = 5.05 + magBoost;              // faintest star magnitude to draw
   const clipR = 2 * scale;                           // clip circle radius (180° hemisphere, pixels)
 
   // ---- Rotation matrices (continued) ----
-  const mView = mmul(rx(vTheta), rz(vLon));                             // frame coords → view coords
-  const M = mmul(mView, mFrame);       // combined: J2000 equatorial → view
+  const mView = mmul(rx(vTheta), rz(vLon));          // frame coords → view coords
+  const M = mmul(mView, mFrame);                     // combined: J2000 equatorial → view
 
   // ---- Projection helpers ----
   // All projection functions operate in the view coordinate system where
@@ -515,7 +513,8 @@ function skymapDraw(canvas, params) {
     return atan2(np[1] - sy, np[0] - sx) - j2kPA;
   }
 
-  // Inverse stereographic projection: canvas pixels → current frame coordinates.
+  // Inverse stereographic projection: canvas pixels → current frame's display
+  // coordinates (azimuth for Horizon, RA/ecliptic-lon/galactic-lon otherwise).
   // Returns [lat, lon] in radians, or null if the point is outside the hemisphere (r² > 4).
   viewUnproject = function(sx, sy) {
     const cX = (sx - cx) / scale, cY = (cy - sy) / scale;
@@ -529,7 +528,8 @@ function skymapDraw(canvas, params) {
     const pz = -vSinT * vy + vCosT * vz;
     const px = vCosL * x1 + vSinL * y1;
     const py = -vSinL * x1 + vCosL * y1;
-    return [asin(max(-1, min(1, pz))), ((atan2(px, py) + TAU) % TAU)];
+    const lon = viewFrame === 'horizon' ? atan2(px, py) : atan2(py, px);
+    return [asin(max(-1, min(1, pz))), mod2pi(lon)];
   };
 
   // ---- Label collision avoidance ----
@@ -659,8 +659,8 @@ function skymapDraw(canvas, params) {
     ctx.strokeStyle = frameColor(viewFrame, 0.5);
     ctx.lineWidth = 1;
     const gridPoleX = mView[2], gridPoleY = mView[5], gridPoleZ = mView[8];
-    const latStep = vWidthDeg < 20 ? 5 : vWidthDeg < 60 ? 10 : 30;
-    const lonStep = vWidthDeg < 20 ? 5 : vWidthDeg < 60 ? 15 : 45;
+    const latStep = viewFov < 20 ? 5 : viewFov < 60 ? 10 : 30;
+    const lonStep = viewFov < 20 ? 5 : viewFov < 60 ? 15 : 45;
     // Latitude parallels
     for (let lat = -90 + latStep; lat <= 90 - latStep; lat += latStep) {
       drawGreatCircle(gridPoleX, gridPoleY, gridPoleZ, PI/2 - lat * DEG);
@@ -676,7 +676,7 @@ function skymapDraw(canvas, params) {
     ctx.fillStyle = frameColor(viewFrame, 0.5);
     const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
     const halfFovV = (atan2(rTop, 2) + atan2(rBot, 2)) / DEG;
-    const lat = vLatDeg;
+    const lat = viewLat;
     let lonLabelLat;
     if ((lat > 0 && lat - halfFovV < 0) || (lat < 0 && lat + halfFovV > 0) || lat === 0) {
       lonLabelLat = 0;
@@ -696,7 +696,7 @@ function skymapDraw(canvas, params) {
         const d = 1 + qz;
         const pt = toScreen(2 * qx / d, -2 * qy / d);
         if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) continue;
-        const dispLon = viewFrame === 'horizon' ? (90 - lon + 360) % 360 : lon;
+        const dispLon = viewFrame === 'horizon' ? mod360(90 - lon) : lon;
         let label;
         if (viewFrame === 'equatorial') {
           const totalMin = dispLon * 4;
@@ -728,7 +728,7 @@ function skymapDraw(canvas, params) {
       labelLonR = primeLon * DEG;
     } else {
       const corner = viewUnproject(0, lat >= 0 ? H : 0);
-      const cornerDisp = corner ? azToDisp(corner[1] * RAD) : azToDisp(vLonDeg);
+      const cornerDisp = corner ? corner[1] * RAD : viewLon;
       const nextDisp = viewFrame === 'horizon'
         ? (ceil(cornerDisp / lonStep) * lonStep) % 360
         : (floor(cornerDisp / lonStep) * lonStep + 360) % 360;
@@ -909,8 +909,8 @@ function skymapDraw(canvas, params) {
     const dsPositions = [];
     const dsMagLimit = starMagLimit + 4;
     for (let dsi = 0; dsi < DEEPSKY.length; dsi++) { const ds = DEEPSKY[dsi];
-      if (vWidthDeg > 45 && !ds[8]) { dsPositions.push(null); continue; }
-      if (vWidthDeg >= 10 && !ds[8] && (ds[3] == null || ds[3] > dsMagLimit)) { dsPositions.push(null); continue; }
+      if (viewFov > 45 && !ds[8]) { dsPositions.push(null); continue; }
+      if (viewFov >= 10 && !ds[8] && (ds[3] == null || ds[3] > dsMagLimit)) { dsPositions.push(null); continue; }
       const x0 = ds[12], y0 = ds[13], z0 = ds[14];
       const [x1, vy, vz] = mvmul(M, x0, y0, z0);
       if (vz < -1e-10) { dsPositions.push(null); continue; }
@@ -980,7 +980,7 @@ function skymapDraw(canvas, params) {
         const ngcic = DEEPSKY[i][9];
         const name = DEEPSKY[i][11];
         const isMC = !!mcId;
-        const labelOk = isMC || dsContours[i] || vWidthDeg < 3 || (DEEPSKY[i][3] != null && DEEPSKY[i][3] <= dsLabelMagLimit);
+        const labelOk = isMC || dsContours[i] || viewFov < 3 || (DEEPSKY[i][3] != null && DEEPSKY[i][3] <= dsLabelMagLimit);
         if (showDeepSkyIds && labelOk) placeLabel(p.x, p.y, p.r + 3, mcId || ngcic || '');
         if (showDeepSkyNames && labelOk && name) placeLabel(p.x, p.y, p.r + 3, name);
       }
@@ -1400,11 +1400,16 @@ function skymapDraw(canvas, params) {
   // Draw a phase-shaded disc: dark side first, then lit crescent/gibbous.
   // FVrad = phase angle in radians (0 = full, PI = new). litColor = color for lit side.
   // toSunAngle = screen-space angle from planet toward Sun (radians, math convention).
-  // Optional oblateness (0–1) and polePA (radians) for oblate planets.
+  // Optional oblateness and polePA (radians) for oblate planets. oblateness is the
+  // APPARENT flattening (0–1) — already scaled by cos(subObsLat) by the caller, so
+  // it goes to 0 when the pole is pointed at the observer (disc looks circular).
   function drawPhaseDisc(sx, sy, r, FVrad, toSunAngle, litColor, oblateness, polePA) {
     const ob = oblateness || 0;
     const pa = polePA || 0;
     const yScale = 1 - ob;
+    // Oblate planets: squash the canvas vertically by yScale and rotate so the
+    // pole axis is vertical, so a plain circle of radius r renders as the
+    // correctly-oriented flattened ellipse for everything drawn below.
     if (ob > 0) {
       ctx.save();
       ctx.translate(sx, sy);
@@ -1414,6 +1419,9 @@ function skymapDraw(canvas, params) {
     const cx0 = ob > 0 ? 0 : sx, cy0 = ob > 0 ? 0 : sy;
     let toSun;
     if (ob > 0) {
+      // Re-express the sun direction in the squashed/rotated local frame set up
+      // above, so the terminator below still points the correct physical way
+      // even though the canvas's y-axis no longer has its original scale.
       const sdx = cos(toSunAngle), sdy = -sin(toSunAngle);
       const lsx = cos(pa)*sdx - sin(pa)*sdy;
       const lsy = (sin(pa)*sdx + cos(pa)*sdy) / yScale;
@@ -1421,9 +1429,17 @@ function skymapDraw(canvas, params) {
     } else {
       toSun = toSunAngle;
     }
+    // Dark (unlit) side: fill the whole disc first. If the phase is near new
+    // (below), nothing is painted over it and the disc stays fully dark.
     ctx.fillStyle = darkMode ? '#333' : '#555';
     ctx.beginPath(); ctx.arc(cx0, cy0, r, 0, TAU); ctx.fill();
     if (FVrad < PI - 0.05) {
+      // Lit side: build the crescent/gibbous outline as two half-ellipse arcs —
+      // the near limb (a half-circle, the sunlit edge of the disc) and the
+      // terminator (a half-ellipse with semi-axis k*r, k = -cos(FVrad) ranging
+      // from -1 at full phase, through 0 at quarter phase (a straight-line
+      // terminator), to +1 near new phase (a sliver coincident with the limb).
+      // Both arcs are rotated by toSun so the lit side faces the Sun.
       const cs = cos(toSun), sn = sin(toSun), k = -cos(FVrad);
       ctx.fillStyle = litColor;
       ctx.beginPath();
@@ -1686,7 +1702,7 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, phaseR + 4, 'Moon');
         }
       } else if (obj.type === 'comet') {
-        if (!showComets || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
+        if (!showComets || (viewFov > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         ctx.fillStyle = '#4de';
@@ -1698,7 +1714,7 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, r + 3, obj.name);
         }
       } else if (obj.type === 'asteroid') {
-        if (!showAsteroids || (vWidthDeg > 10 && obj.mag > starMagLimit + 5)) continue;
+        if (!showAsteroids || (viewFov > 10 && obj.mag > starMagLimit + 5)) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const astColor = darkMode ? '#ff0' : '#996600';
@@ -1724,7 +1740,7 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, r + 3, obj.name);
         }
       } else if (obj.type === 'planetmoon') {
-        if (!showPlanets || vWidthDeg >= 10) continue;
+        if (!showPlanets || viewFov >= 10) continue;
         if (obj.mag === Infinity) continue;
         // Skip moons occluded behind their parent planet's disc. Some browsers
         // don't reliably paint over earlier arc fills, so we can't rely on the
@@ -1776,8 +1792,8 @@ function skymapDraw(canvas, params) {
     // At high zoom (FOV < 5°), the 5°×5° quad patches may all project off-screen
     // even though the view is below the horizon. Fill from the horizon line
     // (or canvas top, if the horizon is above the canvas) down to the bottom.
-    const botAlt = viewLatPrecise - 2 * atan2(cy, 2 * scale) * RAD;
-    if (vWidthDeg < 5 && botAlt < REFRACTION_ALT * RAD) {
+    const botAlt = viewLat - 2 * atan2(cy, 2 * scale) * RAD;
+    if (viewFov < 5 && botAlt < REFRACTION_ALT * RAD) {
       const hp = viewProjectRaw(REFRACTION_ALT, vLon);
       const top = max(0, hp[1]);
       ctx.fillRect(0, top, W, H - top);
@@ -1835,7 +1851,7 @@ function skymapDraw(canvas, params) {
     ctx.fillStyle = frameColor('horizon');
     ctx.font = `bold ${dirFont}px sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const dirAltOffset = dirFont * 0.8 * vWidthDeg / min(W, H) * DEG;
+    const dirAltOffset = dirFont * 0.8 * viewFov / min(W, H) * DEG;
     for (const [azDeg, label] of dirs) {
       const azR = azDeg * DEG;
       const labelAlt = REFRACTION_ALT + dirAltOffset;
@@ -1879,7 +1895,7 @@ function skymapDraw(canvas, params) {
         : (v >= 100 ? round(v) + '°' : v.toFixed(1) + '°');
       ctx.textAlign = 'right';
       const hdrR = W - 16;
-      ctx.fillText(formatCoords(vLonDisp, vLatDeg), hdrR, sfs * 1.4);
+      ctx.fillText(formatCoords(viewLon, viewLat), hdrR, sfs * 1.4);
       ctx.fillText(`Size ${fmtFov(fovW)} × ${fmtFov(fovH)}`, hdrR, sfs * 2.8);
       ctx.textAlign = 'left';
     }
@@ -1887,7 +1903,8 @@ function skymapDraw(canvas, params) {
       if (selectedObject.jx !== undefined) {
         const [fx, fy, fz] = mvmul(mFrame, selectedObject.jx, selectedObject.jy, selectedObject.jz);
         const latDeg = asin(max(-1, min(1, fz))) * RAD;
-        const lonDeg = azToDisp(((atan2(fx, fy) + TAU) % TAU) * RAD);
+        const lon = viewFrame === 'horizon' ? atan2(fx, fy) : atan2(fy, fx);
+        const lonDeg = mod2pi(lon) * RAD;
         selectedObject.coords = formatCoords(lonDeg, latDeg);
       }
       ctx.font = `${sfs}px sans-serif`;
@@ -1988,26 +2005,26 @@ function pickObject(canvasX, canvasY) {
 // ---- Frame switching ----
 
 // Convert the view center from the current frame to a new frame, preserving
-// the direction the user is looking at. Recomputes viewLonPrecise/viewLatPrecise
+// the direction the user is looking at. Recomputes viewLon/viewLat
 // by round-tripping through J2000 equatorial coordinates.
 // newFrame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
 // dt: {y,m,d,h,mi,s} in UTC. loc: {latRad, lonRad, latDeg, lonDeg}.
-// Updates viewLonPrecise, viewLatPrecise, viewFrame globals. Does NOT redraw.
+// Updates viewLon, viewLat, viewFrame globals. Does NOT redraw.
 function changeFrame(newFrame, j2000, dt, loc) {
   if (newFrame === viewFrame && j2000 === viewJ2000) return;
   if (curMFrame) {
     // Current view center → J2000 equatorial unit vector
-    const lon = viewLonPrecise * DEG, lat = viewLatPrecise * DEG;
-    const cd = cos(lat), x = cd * sin(lon), y = cd * cos(lon), z = sin(lat);
+    const lon = viewLon * DEG, lat = viewLat * DEG;
+    const [x, y, z] = sph2uxyz(viewFrame === 'horizon' ? PI/2 - lon : lon, lat);
     const [jx, jy, jz] = mvmul(mtranspose(curMFrame), x, y, z);
     // Build new frame's rotation matrix
     const utH = dt.h + dt.mi / 60 + dt.s / 3600;
     const jd = julianDate(dt.y, dt.m, dt.d, utH);
     const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonDeg, j2000);
-    // J2000 equatorial → new frame → internal lon/lat
+    // J2000 equatorial → new frame → display lon/lat
     const [nx, ny, nz] = mvmul(mNew, jx, jy, jz);
-    viewLonPrecise = mod360(atan2(nx, ny) * RAD);
-    viewLatPrecise = max(-90, min(90, asin(max(-1, min(1, nz))) * RAD));
+    viewLon = mod360((newFrame === 'horizon' ? atan2(nx, ny) : atan2(ny, nx)) * RAD);
+    viewLat = max(-90, min(90, asin(max(-1, min(1, nz))) * RAD));
   }
   viewFrame = newFrame;
   viewJ2000 = j2000;
