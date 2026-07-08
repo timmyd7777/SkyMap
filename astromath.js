@@ -4,6 +4,7 @@ const TAU = 2 * PI;
 const DEG = PI / 180;       // multiply degrees by this to get radians
 const RAD = 180 / PI;       // multiply radians by this to get degrees
 const REFRACTION_ALT = -34 / 60 * DEG;  // standard atmospheric refraction at horizon (radians)
+const KM_PER_AU = 149597870.7;
 const p2 = v => String(v).padStart(2, '0');  // zero-pad a number to 2 digits
 function mod360(deg) { return ((deg % 360) + 360) % 360; }
 function mod2pi(rad) { return ((rad % TAU) + TAU) % TAU; }

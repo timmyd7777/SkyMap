@@ -916,9 +916,11 @@ function skymapDraw(canvas, params) {
       if (vz < -1e-10) { dsPositions.push(null); continue; }
       const d = 1 + vz;
       const pt = toScreen(2 * x1 / d, -2 * vy / d);
-      if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) { dsPositions.push(null); continue; }
       const dsSize = ds[5];
       const r = dsSize ? max(5, radToPx(pt[0], pt[1], dsSize * DEG / 60) / 2) : 5;
+      // Enlarge the cull rectangle by the object's radius (major axis) so
+      // extended objects aren't culled just because their center is off-canvas.
+      if (pt[0] < -r || pt[0] > W + r || pt[1] < -r || pt[1] > H + r) { dsPositions.push(null); continue; }
       dsPositions.push({x: pt[0], y: pt[1], r});
       const dObj = {x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: x0, jy: y0, jz: z0};
       const typ = ds[0];
@@ -1087,7 +1089,7 @@ function skymapDraw(canvas, params) {
     const sunR = earth.R;
     const [sx, sy, sz] = mvmul(mEcl2J2000, ...sph2uxyz(sunLon, sunLat));
     ssCache.push({ type:'sun', name:'Sun', x:sx, y:sy, z:sz,
-      mag:-26.74, angSize:(SUN_DIAM1AU / sunR) / 60, dist:sunR });
+      mag:-26.74, angRad:(SUN_DIAM1AU / sunR) / 3600 * DEG / 2, dist:sunR });
 
     // Earth heliocentric Cartesian (ecliptic of-date) for planet geocentric conversion
     const earthX = earth.R * cos(earth.B) * cos(earth.L);
@@ -1128,7 +1130,8 @@ function skymapDraw(canvas, params) {
       const entry = { type:'planet', name, x:jx, y:jy, z:jz,
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
         symbol: PLANET_SYMBOLS[name],
-        helioDist:h.R, geoDist, phaseAngle:FV };
+        helioDist:h.R, geoDist, phaseAngle:FV,
+        angRad: (PLANET_DIAM1AU[name] || 0) / geoDist / 3600 * DEG / 2 };
       const ori = planetOrientation(name, d - lt, jx, jy, jz);
       if (ori) {
         entry.subObsLat = ori.subObsLat;
@@ -1152,7 +1155,8 @@ function skymapDraw(canvas, params) {
     const plutoEntry = { type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
       mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
       symbol: PLANET_SYMBOLS['Pluto'],
-      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV };
+      helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV,
+      angRad: (PLANET_DIAM1AU['Pluto'] || 0) / plutoDist / 3600 * DEG / 2 };
     const plutoOri = planetOrientation('Pluto', d - plutoLt, pjx, pjy, pjz);
     if (plutoOri) {
       plutoEntry.subObsLat = plutoOri.subObsLat;
@@ -1175,7 +1179,7 @@ function skymapDraw(canvas, params) {
     const moonFV = abs(PI - moonElong);
     const moonEntry = { type:'moon', name:'Moon', x:mx, y:my, z:mz,
       mag: moonMag(sunR, moonPos.dist, moonFV * RAD),
-      angSize: moonAngArcmin, dist: topoDistER * 6378.14, phaseAngle: moonFV };
+      angRad: moonAngArcmin / 60 * DEG / 2, dist: topoDistER * 6378.14, phaseAngle: moonFV };
     const moonOri = planetOrientation('Moon', d, mx, my, mz);
     if (moonOri) {
       moonEntry.subObsLat = moonOri.subObsLat;
@@ -1185,7 +1189,7 @@ function skymapDraw(canvas, params) {
 
     // Earth's shadow on the Moon (only when Moon is near the antisolar point)
     if (dot(mx, my, mz, sx, sy, sz) < -0.9) {
-      const EARTH_RAD_AU = 6378.14 / 149597870.7;
+      const EARTH_RAD_AU = 6378.14 / KM_PER_AU;
       const moonGeoDistAU = moonPos.dist * EARTH_RAD_AU;
       // Umbral/penumbral radii (AU) at Moon's geocentric distance
       const shadow = shadowRadii(EARTH_RAD_AU, moonGeoDistAU, sunR);
@@ -1283,7 +1287,7 @@ function skymapDraw(canvas, params) {
       const psd = vmag(psx, psy, psz);
       const psux = psx / psd, psuy = psy / psd, psuz = psz / psd;
       const phys = PLANET_PHYS[parentName];
-      const planetR = phys ? phys.radius / 149597870.7 : 0;
+      const planetR = phys ? phys.radius / KM_PER_AU : 0;
       for (const pm of pmoons) {
         if (KEPLER_MOONS.includes(pm.name)) Object.assign(pm, moonPositionKepler(pm.name, ltJde));
         const gx = pgx + pm.x, gy = pgy + pm.y, gz = pgz + pm.z;
@@ -1291,15 +1295,16 @@ function skymapDraw(canvas, params) {
         let mag = planetMoonMagnitude(pm.name, primary.helioDist, gd);
         if (inUmbralShadow(pm.x, pm.y, pm.z, psux, psuy, psuz, planetR, SUN_RADIUS_AU, psd))
           mag = Infinity;
+        const pmd = MOON_DATA[pm.name];
         ssCache.push({ type:'planetmoon', name:pm.name, parent:parentName,
-          x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd, mag });
+          x:gx/gd, y:gy/gd, z:gz/gd, geoDist:gd, mag,
+          angRad: pmd && pmd.radius ? pmd.radius / (gd * KM_PER_AU) : 0 });
       }
     }
 
     // Moon shadows on planets: compute shadow center and angular radii for
     // each moon. Shadow center = point in the same heliocentric direction as
     // the moon, at the parent planet's heliocentric distance.
-    const KM_PER_AU = 149597870.7;
     const SHADOW_MOONS = { Jupiter: ['Io', 'Europa', 'Ganymede', 'Callisto'], Saturn: ['Tethys', 'Dione', 'Rhea', 'Titan'] };
     for (const parentName of Object.keys(SHADOW_MOONS)) {
       const primary = ssCache.find(o => o.type === 'planet' && o.name === parentName);
@@ -1581,7 +1586,13 @@ function skymapDraw(canvas, params) {
       if (vz < -1e-10) continue;
       const d = 1 + vz;
       const [sx, sy] = toScreen(2 * vx / d, -2 * vy / d);
-      if (sx < -50 || sx > W + 50 || sy < -50 || sy > H + 50) continue;
+      // Enlarge the cull rectangle by the object's angular radius (converted to
+      // pixels here, since the stereographic distortion factor depends on screen
+      // position) so extended discs aren't culled just because their center is
+      // off-canvas. Saturn's ring extends well beyond its disc.
+      const angRad = obj.angRad ? (obj.name === 'Saturn' ? obj.angRad * 2.27 : obj.angRad) : 0;
+      const margin = radToPx(sx, sy, angRad);
+      if (sx < -margin || sx > W + margin || sy < -margin || sy > H + margin) continue;
       // Sun direction at this object's position via stereographic Jacobian
       const dpS = dot(vx, vy, vz, sunVx, sunVy, sunVz);
       const tsx = sunVx - dpS*vx, tsy = sunVy - dpS*vy, tsz = sunVz - dpS*vz;
@@ -1590,7 +1601,7 @@ function skymapDraw(canvas, params) {
       const toSunAngle = atan2(jsDy, jsDx);
 
       if (obj.type === 'sun' && showPlanets) {
-        const r = max(4, min(W, H) / 100, radToPx(sx, sy, obj.angSize * DEG / 60) / 2);
+        const r = max(4, min(W, H) / 100, radToPx(sx, sy, obj.angRad));
         if (showPlanetSymbols) {
           ctx.fillStyle = '#fd0'; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1608,7 +1619,7 @@ function skymapDraw(canvas, params) {
       } else if (obj.type === 'planet' && showPlanets) {
         const drawMag = max(-1.46, min(magLimit, obj.mag));
         const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-        const discR = radToPx(sx, sy, (PLANET_DIAM1AU[obj.name] || 0) / obj.geoDist * DEG / 3600) / 2;
+        const discR = radToPx(sx, sy, obj.angRad);
         const r = max(starR, discR);
         const pColor = PLANET_COLORS[obj.name];
         const phys = PLANET_PHYS[obj.name];
@@ -1647,7 +1658,7 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, r + 3, obj.name);
         }
       } else if (obj.type === 'moon' && showPlanets) {
-        const phaseR = max(4, min(W, H) / 100, radToPx(sx, sy, obj.angSize * DEG / 60) / 2);
+        const phaseR = max(4, min(W, H) / 100, radToPx(sx, sy, obj.angRad));
         drawnObjects.push({x:sx, y:sy, r:phaseR, type:'moon', data:{name:'Moon', mag:obj.mag, dist:obj.dist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetSymbols) {
           ctx.fillStyle = darkMode ? '#bbb' : '#555'; ctx.font = symFontSize;
@@ -1720,7 +1731,7 @@ function skymapDraw(canvas, params) {
         // painter's algorithm alone for correct occlusion.
         const primary = ssCache.find(o => o.type === 'planet' && o.name === obj.parent);
         if (primary && obj._d > primary._d) {
-          const eqR = (PLANET_DIAM1AU[obj.parent] / primary.geoDist / 2) * DEG / 3600;
+          const eqR = primary.angRad;
           const sep = angSep(obj.x, obj.y, obj.z, primary.x, primary.y, primary.z);
           const phys = PLANET_PHYS[obj.parent];
           if (phys && phys.flattening && primary.polePA !== undefined && primary.subObsLat !== undefined) {
@@ -1736,8 +1747,7 @@ function skymapDraw(canvas, params) {
         }
         const drawMag = min(magLimit, obj.mag);
         const starR = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
-        const md = MOON_DATA[obj.name];
-        const discR = md && md.radius ? radToPx(sx, sy, md.radius / (obj.geoDist * 149597870.7)) : 0;
+        const discR = radToPx(sx, sy, obj.angRad);
         const r = max(starR, discR);
         const pmColor = darkMode ? '#bbb' : '#555';
         if (discR > starR) {

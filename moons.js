@@ -769,7 +769,6 @@ function moonPositionKepler(name, jde) {
   // z-axis = pole = (cos(Dec)cos(RA), cos(Dec)sin(RA), sin(Dec))
   const ra = md.RA * DEG, dec = md.Dec * DEG;
   const cosRA = cos(ra), sinRA = sin(ra), cosDec = cos(dec), sinDec = sin(dec);
-  const KM_PER_AU = 149597870.7;
   return {
     x: (-sinRA * xr - sinDec * cosRA * yr + cosDec * cosRA * zr) / KM_PER_AU,
     y: ( cosRA * xr - sinDec * sinRA * yr + cosDec * sinRA * zr) / KM_PER_AU,
