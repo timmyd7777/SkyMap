@@ -15,6 +15,15 @@ function _formatJDLocal(jd) {
   } catch (e) { return '—'; }
 }
 
+// Format a riseTransitSetIterative() result for display.
+function _rtsText(r) {
+  if (!r) return '—';
+  if (r.status === 'never-rises') return 'Never rises';
+  if (r.status === 'never-sets') return 'Never sets';
+  if (r.status === 'normal' && r.jd != null) return _formatJDLocal(r.jd);
+  return '—';
+}
+
 // ---- RA/Dec formatting ----
 
 function formatRA(raDeg) {
@@ -148,13 +157,6 @@ class SkyObject {
     if (ss.type !== 'planet' && ss.type !== 'moon') return '';
     var illum = (1 + cos(ss.phaseAngle)) / 2 * 100;
     return illum.toFixed(1) + '%';
-  }
-
-  subObsStr() {
-    var ss = this.ssData;
-    if (!ss || ss.subObsLon == null || ss.subObsLat == null) return '';
-    return 'Lon ' + ss.subObsLon.toFixed(1) + '° Lat ' +
-      (ss.subObsLat >= 0 ? '+' : '') + ss.subObsLat.toFixed(1) + '°';
   }
 
   static fromStar(s) {
@@ -639,55 +641,70 @@ function refreshInfoPanel() {
     document.getElementById('info-sublat').textContent = (ss.subObsLat >= 0 ? '+' : '') + ss.subObsLat.toFixed(1) + '°';
   }
 
-  // Rise / Transit / Set
-  var jd0 = floor(jd - dt.tzOffMin / 1440 + 0.5) + dt.tzOffMin / 1440 - 0.5;
-  var h0 = REFRACTION_ALT;
-  if (obj.type === 'sun') h0 = (-50 / 60) * DEG;
-  else if (obj.type === 'moon') h0 = (0.125 - 34 / 60) * DEG;
+  // Rise / Transit / Set. Not shown for satellites: a LEO satellite crosses
+  // the sky in minutes and completes many passes per day, so "rises at X /
+  // sets at Y" computed from a single instantaneous position (as if it were
+  // a fixed star for the day) would be meaningless rather than merely imprecise.
+  var showRTS = obj.type !== 'satellite';
+  document.getElementById('info-rise-row').style.display = showRTS ? '' : 'none';
+  document.getElementById('info-transit-row').style.display = showRTS ? '' : 'none';
+  document.getElementById('info-set-row').style.display = showRTS ? '' : 'none';
 
-  var ssName = null;
-  if (obj.type === 'sun') ssName = 'Sun';
-  else if (obj.type === 'moon') ssName = 'Moon';
-  else if (obj.type === 'planet') ssName = obj.name;
-  else if (obj.type === 'planetmoon') { var ss = obj.ssData; if (ss && ss.parent) ssName = ss.parent; }
-  else if (obj.type === 'asteroid' || obj.type === 'comet') ssName = obj.name;
-  var lonRad = loc.lonRad;
-  var rts;
-  if (ssName && ssOfDateRaDec(ssName, jd, loc.latRad, lonRad)) {
-    var pos0 = ssOfDateRaDec(ssName, jd0 + 0.5, loc.latRad, lonRad);
-    rts = riseTransitSet(pos0.ra, pos0.dec, jd0, loc.latRad, lonRad, h0);
-    if (rts.status === 'normal') {
-      var events = ['rise', 'transit', 'set'];
-      for (var iter = 0; iter < 3; iter++) {
-        for (var ei = 0; ei < events.length; ei++) {
-          if (rts[events[ei]] == null) continue;
-          var pos1 = ssOfDateRaDec(ssName, rts[events[ei]], loc.latRad, lonRad);
-          var rts1 = riseTransitSet(pos1.ra, pos1.dec, jd0, loc.latRad, lonRad, h0);
-          if (rts1.status === 'normal' && rts1[events[ei]] >= jd0 && rts1[events[ei]] < jd0 + 1)
-            rts[events[ei]] = rts1[events[ei]];
-          else
-            rts[events[ei]] = null;
-        }
-      }
+  if (showRTS) {
+    var jd0 = floor(jd - dt.tzOffMin / 1440 + 0.5) + dt.tzOffMin / 1440 - 0.5;
+    // h0 = altitude of the body's CENTER at rise/set of its upper limb:
+    // -(refraction + semidiameter). solSysObjPosition() already applies full
+    // topocentric correction to the Moon's RA/Dec, so — unlike Meeus's textbook
+    // shortcut 0.7275*parallax - 34', which substitutes for that correction —
+    // we just need refraction plus the Moon's actual current semidiameter here,
+    // the same logic as the Sun's -50' (34' refraction + 16' semidiameter).
+    var h0 = REFRACTION_ALT;
+    if (obj.type === 'sun') h0 = (-50 / 60) * DEG;
+    else if (obj.type === 'moon') {
+      var moonSS = obj.ssData;
+      var moonSemiDiam = (moonSS && moonSS.angRad) ? moonSS.angRad : (15.5 / 60) * DEG;
+      h0 = REFRACTION_ALT - moonSemiDiam;
     }
-  } else {
-    var mEq = frameMatrix('equatorial', jd, loc.latRad, loc.lonRad, false);
-    var eq = mvmul(mEq, obj.jx, obj.jy, obj.jz);
-    var eqSph = uxyz2sph(eq[0], eq[1], eq[2]);
-    rts = riseTransitSet(eqSph[0], eqSph[1], jd0, loc.latRad, lonRad, h0);
-  }
 
-  var riseText = '—', transitText = '—', setText = '—';
-  if (rts.status === 'never-rises') { riseText = 'Never rises'; setText = 'Never rises'; }
-  else if (rts.status === 'never-sets') { riseText = 'Never sets'; setText = 'Never sets'; }
-  else if (rts.status === 'normal') {
-    riseText = rts.rise != null ? _formatJDLocal(rts.rise) : '—';
-    transitText = rts.transit != null ? _formatJDLocal(rts.transit) : '—';
-    setText = rts.set != null ? _formatJDLocal(rts.set) : '—';
+    // ssTarget is either a name string (Sun/Moon/planet) or an already-resolved
+    // element object (asteroid/comet), looked up here once rather than having
+    // solSysObjPosition() search loadedAsteroids/loadedComets on every call.
+    var ssTarget = null;
+    if (obj.type === 'sun') ssTarget = 'Sun';
+    else if (obj.type === 'moon') ssTarget = 'Moon';
+    else if (obj.type === 'planet') ssTarget = obj.name;
+    else if (obj.type === 'planetmoon') { var ss = obj.ssData; if (ss && ss.parent) ssTarget = ss.parent; }
+    else if (obj.type === 'comet') ssTarget = loadedComets && loadedComets.find(function(c) { return c.name === obj.name; });
+    else if (obj.type === 'asteroid') ssTarget = loadedAsteroids && loadedAsteroids.find(function(a) { return a.name === obj.name; });
+    var lonRad = loc.lonRad;
+
+    var getRaDec, iterations;
+    if (ssTarget && solSysObjPosition(ssTarget, jd, loc.latRad, lonRad)) {
+      // Solar system objects move measurably during a day (the Moon especially),
+      // so getRaDec()'s result changes pass to pass and needs more than one
+      // iteration to converge — unlike the fixed-position case below.
+      getRaDec = function(t) { return solSysObjPosition(ssTarget, t, loc.latRad, lonRad); };
+      iterations = 2;
+    } else {
+      // Fixed-position objects (stars, deep sky): RA/Dec barely moves in a day,
+      // so one pass already converges.
+      getRaDec = function(t) {
+        var mEq = frameMatrix('equatorial', t, loc.latRad, lonRad, false);
+        var eq = mvmul(mEq, obj.jx, obj.jy, obj.jz);
+        var eqSph = uxyz2sph(eq[0], eq[1], eq[2]);
+        return { ra: eqSph[0], dec: eqSph[1] };
+      };
+      iterations = 1;
+    }
+
+    var rRise = riseTransitSetIterative(getRaDec, jd0, loc.latRad, lonRad, h0, -1, iterations);
+    var rTransit = riseTransitSetIterative(getRaDec, jd0, loc.latRad, lonRad, h0, 0, iterations);
+    var rSet = riseTransitSetIterative(getRaDec, jd0, loc.latRad, lonRad, h0, 1, iterations);
+
+    document.getElementById('info-rise').textContent = _rtsText(rRise);
+    document.getElementById('info-transit').textContent = _rtsText(rTransit);
+    document.getElementById('info-set').textContent = _rtsText(rSet);
   }
-  document.getElementById('info-rise').textContent = riseText;
-  document.getElementById('info-transit').textContent = transitText;
-  document.getElementById('info-set').textContent = setText;
 }
 
 function clearInfoPanel() {
@@ -699,6 +716,9 @@ function clearInfoPanel() {
   document.getElementById('info-sublon-row').style.display = 'none';
   document.getElementById('info-sublat-row').style.display = 'none';
   document.getElementById('info-bmv-row').style.display = 'none';
+  document.getElementById('info-rise-row').style.display = '';
+  document.getElementById('info-transit-row').style.display = '';
+  document.getElementById('info-set-row').style.display = '';
   document.getElementById('centerBtn').disabled = true;
 }
 

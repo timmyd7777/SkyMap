@@ -219,61 +219,6 @@ function moonPosition(d, sunM, sunW) {
   return { lon, lat, dist };
 }
 
-// Of-date equatorial RA/Dec for Sun, Moon, or planet at arbitrary JD (Schlyter formulae).
-// name = 'Sun','Moon','Mercury'..'Pluto'. Returns {ra, dec} in radians.
-// Moon includes topocentric correction; latRad/lonRad required for Moon, ignored otherwise.
-function ssOfDateRaDec(name, jd, latRad, lonRad) {
-  const d = jd - 2451543.5;
-  const T = (jd - 2451545.0) / 36525;
-  const eps = obliquity(T);
-  const sun = sunPosition(d);
-
-  if (name === 'Sun') {
-    const eq = eclToEq(sun.lon, 0, eps);
-    return { ra: mod2pi(eq[0]), dec: eq[1] };
-  }
-
-  if (name === 'Moon') {
-    const moon = moonPosition(d, sun.M, sun.w);
-    const eq = eclToEq(moon.lon, moon.lat, eps);
-    const lstR = gmst(jd) + lonRad;
-    const topo = topocentricCorrection(eq[0], eq[1], moon.dist, lstR, latRad);
-    return { ra: mod2pi(topo[0]), dec: topo[1] };
-  }
-
-  const pi = PLANETS.find(p => p.name === name);
-  if (pi) {
-    let h = planetHelioEcl(pi.elems(d));
-    if (name === 'Jupiter' || name === 'Saturn' || name === 'Uranus')
-      h = planetPerturbations(name, d, h.lon, h.lat, h.r);
-    const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
-    const eq = eclToEq(geo.lon, geo.lat, eps);
-    return { ra: mod2pi(eq[0]), dec: eq[1] };
-  }
-
-  // Asteroids and comets: look up MPC elements by name from global arrays
-  if (typeof loadedComets !== 'undefined' && loadedComets) {
-    const c = loadedComets.find(c => c.name === name);
-    if (c) {
-      const h = cometPosition(c, d, false);
-      const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
-      const eq = eclToEq(geo.lon, geo.lat, eps);
-      return { ra: mod2pi(eq[0]), dec: eq[1] };
-    }
-  }
-  if (typeof loadedAsteroids !== 'undefined' && loadedAsteroids) {
-    const a = loadedAsteroids.find(a => a.name === name);
-    if (a) {
-      const h = asteroidPosition(a, d, false);
-      const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
-      const eq = eclToEq(geo.lon, geo.lat, eps);
-      return { ra: mod2pi(eq[0]), dec: eq[1] };
-    }
-  }
-
-  return null;
-}
-
 // Geocentric → topocentric equatorial coordinates.
 // Geocentric → topocentric equatorial coordinates using WGS84 ellipsoid.
 // ra/dec in radians, distER in Earth equatorial radii.
@@ -449,6 +394,58 @@ function asteroidMagnitude(H, G, r, R, phaseAngle) {
 // H = absolute magnitude, k = activity slope, r = helio dist (AU), R = geocentric dist (AU).
 function cometMagnitude(H, k, r, R) {
   return H + 5 * Math.log10(R) + 2.5 * k * Math.log10(r);
+}
+
+// Fast method for computing any solar system object's of-date equatorial RA/Dec,
+// using Schlyter formulae accurate to about 1-2 arcminutes. Used for
+// rise/transit/set computations (search.js), where that accuracy is plenty and
+// speed matters since each event requires several position evaluations.
+// target = 'Sun', 'Moon', 'Mercury'..'Pluto', or an already-resolved element
+// object from loadedAsteroids/loadedComets (the caller looks it up once, rather
+// than this function searching the whole array on every call — asteroid
+// elements have an `a` (semi-major axis) field, comet elements a `q`
+// (perihelion distance) field, and that's how the two are told apart here).
+// Returns {ra, dec} in radians. Moon includes topocentric correction;
+// latRad/lonRad required for Moon, ignored otherwise.
+function solSysObjPosition(target, jd, latRad, lonRad) {
+  // Position formulae need JDE (dynamical time); sidereal time (below, for the
+  // Moon's topocentric correction) uses JD (UT) instead, per codebase convention.
+  const decYear = 2000 + (jd - 2451545.0) / 365.25;
+  const jde = jd + deltaT(decYear) / 86400;
+  const d = jde - 2451543.5;
+  const T = (jde - 2451545.0) / 36525;
+  const eps = obliquity(T);
+  const sun = sunPosition(d);
+
+  if (target === 'Sun') {
+    const eq = eclToEq(sun.lon, 0, eps);
+    return { ra: mod2pi(eq[0]), dec: eq[1] };
+  }
+
+  if (target === 'Moon') {
+    const moon = moonPosition(d, sun.M, sun.w);
+    const eq = eclToEq(moon.lon, moon.lat, eps);
+    const lstR = gmst(jd) + lonRad;
+    const topo = topocentricCorrection(eq[0], eq[1], moon.dist, lstR, latRad);
+    return { ra: mod2pi(topo[0]), dec: topo[1] };
+  }
+
+  if (typeof target === 'string') {
+    const pi = PLANETS.find(p => p.name === target);
+    if (!pi) return null;
+    let h = planetHelioEcl(pi.elems(d));
+    if (target === 'Jupiter' || target === 'Saturn' || target === 'Uranus')
+      h = planetPerturbations(target, d, h.lon, h.lat, h.r);
+    const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
+    const eq = eclToEq(geo.lon, geo.lat, eps);
+    return { ra: mod2pi(eq[0]), dec: eq[1] };
+  }
+
+  // target is an already-resolved asteroid or comet element object.
+  const h = 'a' in target ? asteroidPosition(target, d, false) : cometPosition(target, d, false);
+  const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
+  const eq = eclToEq(geo.lon, geo.lat, eps);
+  return { ra: mod2pi(eq[0]), dec: eq[1] };
 }
 
 // Meeus "Astronomical Algorithms" ch.47 — truncated ELP2000 lunar theory (~10" accuracy).

@@ -127,40 +127,80 @@ function localSiderealTime(jd, lonRad) {
 
 // ---- Rise / Transit / Set ----
 
-// Compute rise, transit, and set times for an object on a given day.
-// Meeus "Astronomical Algorithms" Ch.15.
-//   raRad, decRad: apparent (of-date) equatorial coordinates in radians
-//   jd0: Julian Date of 0h UT on the day of interest
+// Compute a single rise, transit, or set time, anchored near a given time.
+// Meeus "Astronomical Algorithms" Ch.15, adapted so the anchor time doubles as
+// the point the returned event is chosen nearest to (Newton-style): calling
+// this repeatedly, each time re-evaluating raRad/decRad and re-anchoring at the
+// previous result, converges on the true event time even for fast movers like
+// the Moon. See riseTransitSetIterative() below, which does exactly that.
+//   raRad, decRad: apparent (of-date) equatorial coordinates (radians), evaluated
+//     at (or near) `jd`
+//   jd: anchor time (Julian Date, UT) — both the sidereal-time reference and the
+//     point the returned event time is chosen nearest to
 //   latRad: observer geodetic latitude in radians
 //   lonRad: observer longitude in radians (east positive)
-//   h0Rad: altitude of the geometric center at rise/set (radians),
-//          default REFRACTION_ALT (-34'/60 = standard refraction at horizon)
-// Returns { status, rise, transit, set } where rise/transit/set are JD values.
-// status: 'normal', 'never-rises', or 'never-sets' (circumpolar).
-function riseTransitSet(raRad, decRad, jd0, latRad, lonRad, h0Rad) {
-  if (h0Rad === undefined) h0Rad = REFRACTION_ALT;
+//   h0Rad: altitude of the geometric center at rise/set (radians); ignored for
+//     transit (rtsFlag === 0)
+//   rtsFlag: -1 = rise, 0 = transit, +1 = set
+// Returns { status, jd }: jd is the event's JD (UT) when status is 'normal',
+// else null. status: 'normal', 'never-rises', or 'never-sets' (circumpolar).
+function riseTransitSet(raRad, decRad, jd, latRad, lonRad, h0Rad, rtsFlag) {
   const cosPhi = cos(latRad), sinPhi = sin(latRad);
   const cosDec = cos(decRad), sinDec = sin(decRad);
   const denom = cosPhi * cosDec;
   if (abs(denom) < 1e-15)
-    return { status: decRad * sinPhi >= 0 ? 'never-sets' : 'never-rises' };
-  const cosHA = (sin(h0Rad) - sinPhi * sinDec) / denom;
-  if (cosHA <= -1) return { status: 'never-sets' };
-  if (cosHA >= 1) return { status: 'never-rises' };
-  const HA = Math.acos(cosHA);
+    return { status: decRad * sinPhi >= 0 ? 'never-sets' : 'never-rises', jd: null };
 
-  const theta0 = gmst(jd0);
+  // Hour angle magnitude at rise/set (the object crosses h0Rad at ±HA from
+  // transit). Only needed for rise/set — transit is always at HA = 0 regardless
+  // of h0Rad, so it's skipped (and computed even when the object is circumpolar,
+  // since a circumpolar object still transits once per sidereal day).
+  let HA = 0;
+  if (rtsFlag !== 0) {
+    const cosHA = (sin(h0Rad) - sinPhi * sinDec) / denom;
+    if (cosHA <= -1) return { status: 'never-sets', jd: null };
+    if (cosHA >= 1) return { status: 'never-rises', jd: null };
+    HA = Math.acos(cosHA);
+  }
+
   const SRATE = TAU * 1.00273790935;
   const SID_DAY = TAU / SRATE;
+  let m0 = (raRad - lonRad - gmst(jd)) / SRATE;
+  // Wrap to the transit nearest `jd` (within half a sidereal day) rather than to
+  // some fixed reference, so repeated calls converge on the occurrence closest
+  // to the current guess instead of snapping to an arbitrary cycle.
+  m0 = ((m0 + SID_DAY / 2) % SID_DAY + SID_DAY) % SID_DAY - SID_DAY / 2;
 
-  let m0 = (raRad - lonRad - theta0) / SRATE;
-  m0 = ((m0 % SID_DAY) + SID_DAY) % SID_DAY;
-  let m1 = m0 - HA / SRATE;
-  let m2 = m0 + HA / SRATE;
-  m1 = ((m1 % SID_DAY) + SID_DAY) % SID_DAY;
-  m2 = ((m2 % SID_DAY) + SID_DAY) % SID_DAY;
+  return { status: 'normal', jd: jd + m0 + rtsFlag * HA / SRATE };
+}
 
-  return { status: 'normal', rise: jd0 + m1, transit: jd0 + m0, set: jd0 + m2 };
+// Iteratively refine a rise/transit/set time by re-evaluating the object's
+// position at each pass's current best guess — needed because a fast mover's
+// (the Moon especially) RA/Dec can't be treated as fixed for the whole day the
+// way a star's can. Starts from local noon; each pass feeds the previous
+// result's time back into getRaDec() and riseTransitSet(). The final time is
+// checked against the local calendar day's bounds, since a fast mover
+// occasionally has no rise/transit/set at all on a given day (or two, on the
+// day it happens twice) — a real consequence of the sidereal/solar day mismatch.
+//   getRaDec(jd): callback returning {ra, dec} (radians, of-date apparent) for
+//     the body at the given JD
+//   jd0: JD (UT) of local midnight (start of the local calendar day queried)
+//   iterations: refinement passes (default 3; use 1 for near-fixed objects like
+//     stars/deep-sky, where a single pass already converges)
+// Returns { status, jd }: status adds 'none' to riseTransitSet()'s statuses,
+// for "does not occur within this local calendar day".
+function riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, iterations) {
+  if (iterations === undefined) iterations = 3;
+  let t = jd0 + 0.5;
+  let result;
+  for (let i = 0; i < iterations; i++) {
+    const pos = getRaDec(t);
+    result = riseTransitSet(pos.ra, pos.dec, t, latRad, lonRad, h0Rad, rtsFlag);
+    if (result.status !== 'normal') return result;
+    if (result.jd < jd0 || result.jd >= jd0 + 1) return { status: 'none', jd: null };
+    t = result.jd;
+  }
+  return result;
 }
 
 // ---- IAU 1976 Precession ----

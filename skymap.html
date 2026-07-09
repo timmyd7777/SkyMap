@@ -280,9 +280,9 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
       <tr id="info-phase-row" style="display:none"><td>Illumination</td><td id="info-phase">—</td></tr>
       <tr id="info-sublon-row" style="display:none"><td>Central Longitude</td><td id="info-sublon">—</td></tr>
       <tr id="info-sublat-row" style="display:none"><td>Central Latitude</td><td id="info-sublat">—</td></tr>
-      <tr><td>Rises</td><td id="info-rise">—</td></tr>
-      <tr><td>Transits</td><td id="info-transit">—</td></tr>
-      <tr><td>Sets</td><td id="info-set">—</td></tr>
+      <tr id="info-rise-row"><td>Rises</td><td id="info-rise">—</td></tr>
+      <tr id="info-transit-row"><td>Transits</td><td id="info-transit">—</td></tr>
+      <tr id="info-set-row"><td>Sets</td><td id="info-set">—</td></tr>
     </table>
     <button id="centerBtn" onclick="centerOnSelected()" disabled style="margin-top:8px;width:100%">Center Object in Sky Map</button>
   </div>
@@ -290,16 +290,16 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=12"></script>
+<script src="astromath.js?v=15"></script>
 <script src="vsop87.js?v=1"></script>
-<script src="planets.js?v=11"></script>
+<script src="planets.js?v=15"></script>
 <script src="mpc.js?v=1"></script>
 <script src="sgp4.js?v=2"></script>
 <script src="satmag.js?v=3"></script>
 <script src="moons.js?v=2"></script>
 <script src="nebulae.js?v=1"></script>
 <script src="skymap.js?v=27"></script>
-<script src="search.js?v=6"></script>
+<script src="search.js?v=13"></script>
 <script>
 
 const minFovDeg = 1/60;
