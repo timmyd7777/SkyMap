@@ -112,17 +112,55 @@ function deltaT(y) {
   return dt;
 }
 
-// Greenwich Mean Sidereal Time from Julian Date. Returns degrees [0, 360).
+// Greenwich Mean Sidereal Time from Julian Date. Returns radians [0, 2π).
 function gmst(jd) {
   const T = (jd - 2451545.0) / 36525.0;
   let g = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
-  return ((g % 360) + 360) % 360;
+  return mod360(g) * DEG;
 }
 
-// Local Sidereal Time. jd = Julian Date, lonDeg = observer longitude (degrees east).
-// Returns degrees [0, 360).
-function localSiderealTime(jd, lonDeg) {
-  return mod360(gmst(jd) + lonDeg);
+// Local Sidereal Time. jd = Julian Date, lonRad = observer longitude (radians east).
+// Returns radians [0, 2π).
+function localSiderealTime(jd, lonRad) {
+  return mod2pi(gmst(jd) + lonRad);
+}
+
+// ---- Rise / Transit / Set ----
+
+// Compute rise, transit, and set times for an object on a given day.
+// Meeus "Astronomical Algorithms" Ch.15.
+//   raRad, decRad: apparent (of-date) equatorial coordinates in radians
+//   jd0: Julian Date of 0h UT on the day of interest
+//   latRad: observer geodetic latitude in radians
+//   lonRad: observer longitude in radians (east positive)
+//   h0Rad: altitude of the geometric center at rise/set (radians),
+//          default REFRACTION_ALT (-34'/60 = standard refraction at horizon)
+// Returns { status, rise, transit, set } where rise/transit/set are JD values.
+// status: 'normal', 'never-rises', or 'never-sets' (circumpolar).
+function riseTransitSet(raRad, decRad, jd0, latRad, lonRad, h0Rad) {
+  if (h0Rad === undefined) h0Rad = REFRACTION_ALT;
+  const cosPhi = cos(latRad), sinPhi = sin(latRad);
+  const cosDec = cos(decRad), sinDec = sin(decRad);
+  const denom = cosPhi * cosDec;
+  if (abs(denom) < 1e-15)
+    return { status: decRad * sinPhi >= 0 ? 'never-sets' : 'never-rises' };
+  const cosHA = (sin(h0Rad) - sinPhi * sinDec) / denom;
+  if (cosHA <= -1) return { status: 'never-sets' };
+  if (cosHA >= 1) return { status: 'never-rises' };
+  const HA = Math.acos(cosHA);
+
+  const theta0 = gmst(jd0);
+  const SRATE = TAU * 1.00273790935;
+  const SID_DAY = TAU / SRATE;
+
+  let m0 = (raRad - lonRad - theta0) / SRATE;
+  m0 = ((m0 % SID_DAY) + SID_DAY) % SID_DAY;
+  let m1 = m0 - HA / SRATE;
+  let m2 = m0 + HA / SRATE;
+  m1 = ((m1 % SID_DAY) + SID_DAY) % SID_DAY;
+  m2 = ((m2 % SID_DAY) + SID_DAY) % SID_DAY;
+
+  return { status: 'normal', rise: jd0 + m1, transit: jd0 + m0, set: jd0 + m2 };
 }
 
 // ---- IAU 1976 Precession ----
@@ -305,10 +343,10 @@ function mmul(a, b) {
 
 // Build the J2000 equatorial → target frame rotation matrix.
 // frame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
-// jd: Julian Date. latRad: observer latitude (radians). lonDeg: observer longitude (degrees east).
+// jd: Julian Date. latRad: observer latitude (radians). lonRad: observer longitude (radians east).
 // j2000: if true, return J2000 mean frame (no precession/nutation) for equatorial/ecliptic.
 // Returns a 3×3 rotation matrix (9-element row-major array).
-function frameMatrix(frame, jd, latRad, lonDeg, j2000) {
+function frameMatrix(frame, jd, latRad, lonRad, j2000) {
   if (j2000 && frame === 'equatorial') return [1,0,0, 0,1,0, 0,0,1];
   if (j2000 && frame === 'ecliptic')   return rx(-obliquity(0));
   const T = (jd - 2451545.0) / 36525.0;
@@ -317,7 +355,7 @@ function frameMatrix(frame, jd, latRad, lonDeg, j2000) {
   const epsMean = obliquity(T);
   const epsTrue = epsMean + nut.dEps;
   const eqEq = nut.dPsi * cos(epsTrue);
-  const lstR = (localSiderealTime(jd, lonDeg) + eqEq * RAD) * DEG;
+  const lstR = localSiderealTime(jd, lonRad) + eqEq;
   const cosT = cos(pp.thetaA), sinT = sin(pp.thetaA);
   const mPrecY = [cosT,0,-sinT, 0,1,0, sinT,0,cosT];
   const mPrecOnly = mmul(rz(pp.zA), mmul(mPrecY, rz(pp.zetaA)));

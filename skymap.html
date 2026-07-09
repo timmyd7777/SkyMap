@@ -234,7 +234,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
   </button>
   <canvas id="cv"></canvas>
 </div>
-<div id="searchPanel" style="display:none">
+<div id="searchPanel">
   <div>
     <div class="row">
       <input type="text" id="searchInput" placeholder="Enter object name..." style="width:0; flex:1; min-width:0">
@@ -270,16 +270,19 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
     <table id="infoTable">
       <tr><td>Type</td><td id="info-type">—</td></tr>
       <tr><td>Name</td><td id="info-name">—</td></tr>
-      <tr><td>Catalog</td><td id="info-catalog">—</td></tr>
-      <tr><td>RA (J2000)</td><td id="info-ra">—</td></tr>
-      <tr><td>Dec (J2000)</td><td id="info-dec">—</td></tr>
-      <tr><td>Azimuth</td><td id="info-azm">—</td></tr>
-      <tr><td>Altitude</td><td id="info-alt">—</td></tr>
+      <tr><td>Catalog IDs</td><td id="info-catalog">—</td></tr>
+      <tr><td id="info-lon-label">Azimuth</td><td id="info-lon">—</td></tr>
+      <tr><td id="info-lat-label">Altitude</td><td id="info-lat">—</td></tr>
       <tr><td>Magnitude</td><td id="info-mag">—</td></tr>
+      <tr id="info-bmv-row" style="display:none"><td>Color Index</td><td id="info-bmv">—</td></tr>
       <tr><td>Distance</td><td id="info-dist">—</td></tr>
       <tr><td>Size</td><td id="info-size">—</td></tr>
-      <tr id="info-phase-row" style="display:none"><td>Phase</td><td id="info-phase">—</td></tr>
-      <tr id="info-subobs-row" style="display:none"><td>Sub-obs</td><td id="info-subobs">—</td></tr>
+      <tr id="info-phase-row" style="display:none"><td>Illumination</td><td id="info-phase">—</td></tr>
+      <tr id="info-sublon-row" style="display:none"><td>Central Longitude</td><td id="info-sublon">—</td></tr>
+      <tr id="info-sublat-row" style="display:none"><td>Central Latitude</td><td id="info-sublat">—</td></tr>
+      <tr><td>Rises</td><td id="info-rise">—</td></tr>
+      <tr><td>Transits</td><td id="info-transit">—</td></tr>
+      <tr><td>Sets</td><td id="info-set">—</td></tr>
     </table>
     <button id="centerBtn" onclick="centerOnSelected()" disabled style="margin-top:8px;width:100%">Center Object in Sky Map</button>
   </div>
@@ -287,16 +290,16 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=10"></script>
+<script src="astromath.js?v=12"></script>
 <script src="vsop87.js?v=1"></script>
-<script src="planets.js?v=10"></script>
+<script src="planets.js?v=11"></script>
 <script src="mpc.js?v=1"></script>
 <script src="sgp4.js?v=2"></script>
 <script src="satmag.js?v=3"></script>
 <script src="moons.js?v=2"></script>
 <script src="nebulae.js?v=1"></script>
 <script src="skymap.js?v=27"></script>
-<script src="search.js?v=1"></script>
+<script src="search.js?v=6"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -498,7 +501,7 @@ function getLocation() {
   const lonSign = document.querySelector('input[name="lonEW"]:checked').value === 'W' ? -1 : 1;
   const latRad = latSign * (latD + latM / 60 + latS / 3600) * DEG;
   const lonRad = lonSign * (lonD + lonM / 60 + lonS / 3600) * DEG;
-  return {latRad, lonRad, latDeg: latRad * RAD, lonDeg: lonRad * RAD};
+  return {latRad, lonRad};
 }
 
 function setLocation(latDeg, lonDeg) {

@@ -225,15 +225,10 @@ function formatSelection(obj) {
     mag = d.mag;
   }
   if (centerObject) type = 'Tracking ' + type;
-  let s = type + ': ';
-  const parts = [];
-  if (name) parts.push(name);
-  parts.push(...ids);
-  s += parts.join(', ');
-  if (obj.coords) s += ` - ${obj.coords}`;
-  if (mag != null) s += `  Mag ${mag >= 0 ? '+' : ''}${mag.toFixed(2)}`;
-  const dist = formatDist(obj);
-  if (dist) s += `  Dist ${dist}`;
+  let s = type;
+  if (name && ids.length) s += ': ' + name + ' - ' + ids[0];
+  else if (name) s += ': ' + name;
+  else if (ids.length) s += ': ' + ids[0];
   return s;
 }
 
@@ -337,11 +332,11 @@ function skymapDraw(canvas, params) {
   const daysSinceJ2000 = jd - 2451545.0;
   const nut = nutation(T);
   const epsTrue = obliquity(T) + nut.dEps;
-  const lstR = (localSiderealTime(jd, loc.lonDeg) + nut.dPsi * cos(epsTrue) * RAD) * DEG;
+  const lstR = localSiderealTime(jd, loc.lonRad) + nut.dPsi * cos(epsTrue);
 
   // ---- Frame matrix (computed before view params for object centering) ----
-  const mFrame = frameMatrix(viewFrame, jd, loc.latRad, loc.lonDeg, j2000);
-  const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonDeg, j2000);
+  const mFrame = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, j2000);
+  const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonRad, j2000);
   curMFrame = mFrame;
   const mPT = mtranspose(mPrecess);
 
@@ -1044,10 +1039,10 @@ function skymapDraw(canvas, params) {
   // Update the solar system position cache. Called when JD or observer location changes.
   // Computes J2000 equatorial unit vectors for all solar system bodies.
   function updateSSCache() {
-    if (jd === ssCacheJD && loc.latRad === ssCacheLat && loc.lonDeg === ssCacheLon) return;
+    if (jd === ssCacheJD && loc.latRad === ssCacheLat && loc.lonRad === ssCacheLon) return;
     ssCacheJD = jd;
     ssCacheLat = loc.latRad;
-    ssCacheLon = loc.lonDeg;
+    ssCacheLon = loc.lonRad;
     ssCache = [];
 
     // JDE = Julian Ephemeris Date (dynamical time). VSOP87 and Meeus lunar theory
@@ -1871,10 +1866,9 @@ function skymapDraw(canvas, params) {
     if (showHeader) {
       const dateStr = `${dt.localY}-${p2(dt.localM)}-${p2(dt.localD)}`;
       const timeStr = `${p2(dt.localH)}:${p2(dt.localMi)}:${p2(dt.localS)} ${dt.tzAbbr}`;
-      const latAbs = abs(loc.latDeg);
-      const lonAbs = abs(loc.lonDeg);
-      const latStr = `${latAbs.toFixed(1)}° ${loc.latDeg >= 0 ? 'N' : 'S'}`;
-      const lonStr = `${lonAbs.toFixed(1)}° ${loc.lonDeg >= 0 ? 'E' : 'W'}`;
+      const latDeg = loc.latRad * RAD, lonDeg = loc.lonRad * RAD;
+      const latStr = `${abs(latDeg).toFixed(1)}° ${latDeg >= 0 ? 'N' : 'S'}`;
+      const lonStr = `${abs(lonDeg).toFixed(1)}° ${lonDeg >= 0 ? 'E' : 'W'}`;
       const hfs = max(minFontSize, round(min(W, H) / 38));
       ctx.textAlign = 'left';
       ctx.font = `bold ${hfs}px sans-serif`;
@@ -2020,7 +2014,7 @@ function changeFrame(newFrame, j2000, dt, loc) {
     // Build new frame's rotation matrix
     const utH = dt.h + dt.mi / 60 + dt.s / 3600;
     const jd = julianDate(dt.y, dt.m, dt.d, utH);
-    const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonDeg, j2000);
+    const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonRad, j2000);
     // J2000 equatorial → new frame → display lon/lat
     const [nx, ny, nz] = mvmul(mNew, jx, jy, jz);
     viewLon = mod360((newFrame === 'horizon' ? atan2(nx, ny) : atan2(ny, nx)) * RAD);

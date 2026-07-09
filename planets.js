@@ -219,6 +219,61 @@ function moonPosition(d, sunM, sunW) {
   return { lon, lat, dist };
 }
 
+// Of-date equatorial RA/Dec for Sun, Moon, or planet at arbitrary JD (Schlyter formulae).
+// name = 'Sun','Moon','Mercury'..'Pluto'. Returns {ra, dec} in radians.
+// Moon includes topocentric correction; latRad/lonRad required for Moon, ignored otherwise.
+function ssOfDateRaDec(name, jd, latRad, lonRad) {
+  const d = jd - 2451543.5;
+  const T = (jd - 2451545.0) / 36525;
+  const eps = obliquity(T);
+  const sun = sunPosition(d);
+
+  if (name === 'Sun') {
+    const eq = eclToEq(sun.lon, 0, eps);
+    return { ra: mod2pi(eq[0]), dec: eq[1] };
+  }
+
+  if (name === 'Moon') {
+    const moon = moonPosition(d, sun.M, sun.w);
+    const eq = eclToEq(moon.lon, moon.lat, eps);
+    const lstR = gmst(jd) + lonRad;
+    const topo = topocentricCorrection(eq[0], eq[1], moon.dist, lstR, latRad);
+    return { ra: mod2pi(topo[0]), dec: topo[1] };
+  }
+
+  const pi = PLANETS.find(p => p.name === name);
+  if (pi) {
+    let h = planetHelioEcl(pi.elems(d));
+    if (name === 'Jupiter' || name === 'Saturn' || name === 'Uranus')
+      h = planetPerturbations(name, d, h.lon, h.lat, h.r);
+    const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
+    const eq = eclToEq(geo.lon, geo.lat, eps);
+    return { ra: mod2pi(eq[0]), dec: eq[1] };
+  }
+
+  // Asteroids and comets: look up MPC elements by name from global arrays
+  if (typeof loadedComets !== 'undefined' && loadedComets) {
+    const c = loadedComets.find(c => c.name === name);
+    if (c) {
+      const h = cometPosition(c, d, false);
+      const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
+      const eq = eclToEq(geo.lon, geo.lat, eps);
+      return { ra: mod2pi(eq[0]), dec: eq[1] };
+    }
+  }
+  if (typeof loadedAsteroids !== 'undefined' && loadedAsteroids) {
+    const a = loadedAsteroids.find(a => a.name === name);
+    if (a) {
+      const h = asteroidPosition(a, d, false);
+      const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
+      const eq = eclToEq(geo.lon, geo.lat, eps);
+      return { ra: mod2pi(eq[0]), dec: eq[1] };
+    }
+  }
+
+  return null;
+}
+
 // Geocentric → topocentric equatorial coordinates.
 // Geocentric → topocentric equatorial coordinates using WGS84 ellipsoid.
 // ra/dec in radians, distER in Earth equatorial radii.

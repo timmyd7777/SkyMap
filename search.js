@@ -3,6 +3,18 @@
 // References at runtime (defined in skymap.html inline script):
 //   getDateTimeFromFields(), getLocation(), sizeCanvas(), draw()
 
+// ---- Time formatting ----
+
+function _formatJDLocal(jd) {
+  var c = calendarDate(jd);
+  var utcMs = Date.UTC(c.y, c.m - 1, c.d, floor(c.ut), round((c.ut % 1) * 60));
+  try {
+    return new Date(utcMs).toLocaleString('en-US', {
+      timeZone: selectedTZ, hour: 'numeric', minute: '2-digit', hour12: true
+    });
+  } catch (e) { return '—'; }
+}
+
 // ---- RA/Dec formatting ----
 
 function formatRA(raDeg) {
@@ -56,13 +68,13 @@ class SkyObject {
       case 'star': return 'Star';
       case 'sun': return 'Star (Sun)';
       case 'planet': return 'Planet';
-      case 'moon': return 'Moon (Earth)';
+      case 'moon': return 'Moon of Earth';
       case 'asteroid': return 'Asteroid';
       case 'comet': return 'Comet';
       case 'satellite': return 'Satellite';
       case 'planetmoon':
         var ss = this.ssData;
-        return ss ? ss.parent + ' Moon' : 'Moon';
+        return ss ? 'Moon of ' + ss.parent : 'Moon';
       case 'deepsky':
         return DS_TYPE_NAMES[this.data[0]] || this.data[0];
       default: return this.type;
@@ -117,13 +129,13 @@ class SkyObject {
     if (ss && ss.angRad) {
       var diamArcsec = ss.angRad * 2 * RAD * 3600;
       if (diamArcsec >= 60) return (diamArcsec / 60).toFixed(1) + '′';
-      if (diamArcsec >= 0.1) return diamArcsec.toFixed(1) + '″';
+      return diamArcsec.toFixed(1) + '″';
     }
     return '';
   }
 
-  altAz(jd, latRad, lonDeg) {
-    var m = frameMatrix('horizon', jd, latRad, lonDeg, false);
+  altAz(jd, latRad, lonRad) {
+    var m = frameMatrix('horizon', jd, latRad, lonRad, false);
     var h = mvmul(m, this.jx, this.jy, this.jz);
     var alt = asin(max(-1, min(1, h[2]))) * RAD;
     var az = mod360(atan2(h[0], h[1]) * RAD);
@@ -308,10 +320,10 @@ function getObjectList(category) {
       if (ssCache) {
         for (var i = 0; i < ssCache.length; i++) {
           var e = ssCache[i];
-          if (e.type === 'sun' || e.type === 'planet' || e.type === 'moon')
+          if (e.type === 'sun' || e.type === 'planet')
             items.push({ src: 'ss', ssName: e.name, ssType: e.type, label: e.name, mag: e.mag });
         }
-        var order = { Sun: 0, Moon: 1, Mercury: 2, Venus: 3, Mars: 4, Jupiter: 5, Saturn: 6, Uranus: 7, Neptune: 8, Pluto: 9 };
+        var order = { Sun: 0, Mercury: 1, Venus: 2, Mars: 3, Jupiter: 4, Saturn: 5, Uranus: 6, Neptune: 7, Pluto: 8 };
         items.sort(function(a, b) {
           return (order[a.label] != null ? order[a.label] : 99) - (order[b.label] != null ? order[b.label] : 99);
         });
@@ -322,7 +334,7 @@ function getObjectList(category) {
       if (ssCache) {
         for (var i = 0; i < ssCache.length; i++) {
           var e = ssCache[i];
-          if (e.type === 'planetmoon')
+          if (e.type === 'moon' || e.type === 'planetmoon')
             items.push({ src: 'ss', ssName: e.name, ssType: e.type,
               label: e.name, mag: e.mag });
         }
@@ -558,24 +570,57 @@ function refreshInfoPanel() {
 
   document.getElementById('centerBtn').disabled = false;
   document.getElementById('info-type').textContent = obj.typeLabel;
-  document.getElementById('info-name').textContent = obj.displayName || '—';
+  document.getElementById('info-name').textContent = obj.name || '—';
 
   var catalogs = obj.names.filter(function(n) { return n !== obj.name; });
-  document.getElementById('info-catalog').textContent = catalogs.length ? catalogs.join(', ') : '—';
+  document.getElementById('info-catalog').innerHTML = catalogs.length
+    ? catalogs.map(function(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }).join('<br>') : '—';
 
-  document.getElementById('info-ra').textContent = obj.raStr;
-  document.getElementById('info-dec').textContent = obj.decStr;
-
-  // Az/Alt
+  // Coordinates in current frame
   var dt = getDateTimeFromFields();
   var loc = getLocation();
   var jd = julianDate(dt.y, dt.m, dt.d, dt.h + dt.mi / 60 + dt.s / 3600);
-  var altaz = obj.altAz(jd, loc.latRad, loc.lonDeg);
-  document.getElementById('info-azm').textContent = altaz.az.toFixed(1) + '°';
-  document.getElementById('info-alt').textContent = (altaz.alt >= 0 ? '+' : '') + altaz.alt.toFixed(1) + '°';
+  var m = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, viewJ2000);
+  var fv = mvmul(m, obj.jx, obj.jy, obj.jz);
+  var latDeg = asin(max(-1, min(1, fv[2]))) * RAD;
+  var lon = viewFrame === 'horizon' ? atan2(fv[0], fv[1]) : atan2(fv[1], fv[0]);
+  var lonDeg = mod360(lon * RAD);
+  var lonLabel, latLabel, lonStr, latStr;
+  if (viewFrame === 'equatorial') {
+    lonLabel = viewJ2000 ? 'RA (J2000)' : 'RA';
+    latLabel = viewJ2000 ? 'Dec (J2000)' : 'Dec';
+    lonStr = formatRA(lonDeg);
+    latStr = formatDec(latDeg);
+  } else if (viewFrame === 'ecliptic') {
+    lonLabel = viewJ2000 ? 'Ecl Lon (J2000)' : 'Ecliptic Lon';
+    latLabel = viewJ2000 ? 'Ecl Lat (J2000)' : 'Ecliptic Lat';
+    lonStr = lonDeg.toFixed(3) + '°';
+    latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
+  } else if (viewFrame === 'galactic') {
+    lonLabel = 'Galactic Lon';
+    latLabel = 'Galactic Lat';
+    lonStr = lonDeg.toFixed(3) + '°';
+    latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
+  } else {
+    lonLabel = 'Azimuth';
+    latLabel = 'Altitude';
+    lonStr = lonDeg.toFixed(3) + '°';
+    latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
+  }
+  document.getElementById('info-lon-label').textContent = lonLabel;
+  document.getElementById('info-lat-label').textContent = latLabel;
+  document.getElementById('info-lon').textContent = lonStr;
+  document.getElementById('info-lat').textContent = latStr;
 
   document.getElementById('info-mag').textContent =
     obj.mag != null ? (obj.mag >= 0 ? '+' : '') + obj.mag.toFixed(2) : '—';
+  var bmvRow = document.getElementById('info-bmv-row');
+  if (obj.type === 'star' && obj.data[3]) {
+    bmvRow.style.display = '';
+    document.getElementById('info-bmv').textContent = (obj.data[3] >= 0 ? '+' : '') + obj.data[3].toFixed(2);
+  } else {
+    bmvRow.style.display = 'none';
+  }
   document.getElementById('info-dist').textContent = obj.distStr() || '—';
   document.getElementById('info-size').textContent = obj.sizeStr() || '—';
 
@@ -585,18 +630,75 @@ function refreshInfoPanel() {
   if (phase) document.getElementById('info-phase').textContent = phase;
 
   // Sub-observer (planets and Moon with orientation data)
-  var subObs = obj.subObsStr();
-  document.getElementById('info-subobs-row').style.display = subObs ? '' : 'none';
-  if (subObs) document.getElementById('info-subobs').textContent = subObs;
+  var ss = obj.ssData;
+  var hasSub = ss && ss.subObsLon != null && ss.subObsLat != null;
+  document.getElementById('info-sublon-row').style.display = hasSub ? '' : 'none';
+  document.getElementById('info-sublat-row').style.display = hasSub ? '' : 'none';
+  if (hasSub) {
+    document.getElementById('info-sublon').textContent = ss.subObsLon.toFixed(1) + '°';
+    document.getElementById('info-sublat').textContent = (ss.subObsLat >= 0 ? '+' : '') + ss.subObsLat.toFixed(1) + '°';
+  }
+
+  // Rise / Transit / Set
+  var jd0 = floor(jd - dt.tzOffMin / 1440 + 0.5) + dt.tzOffMin / 1440 - 0.5;
+  var h0 = REFRACTION_ALT;
+  if (obj.type === 'sun') h0 = (-50 / 60) * DEG;
+  else if (obj.type === 'moon') h0 = (0.125 - 34 / 60) * DEG;
+
+  var ssName = null;
+  if (obj.type === 'sun') ssName = 'Sun';
+  else if (obj.type === 'moon') ssName = 'Moon';
+  else if (obj.type === 'planet') ssName = obj.name;
+  else if (obj.type === 'planetmoon') { var ss = obj.ssData; if (ss && ss.parent) ssName = ss.parent; }
+  else if (obj.type === 'asteroid' || obj.type === 'comet') ssName = obj.name;
+  var lonRad = loc.lonRad;
+  var rts;
+  if (ssName && ssOfDateRaDec(ssName, jd, loc.latRad, lonRad)) {
+    var pos0 = ssOfDateRaDec(ssName, jd0 + 0.5, loc.latRad, lonRad);
+    rts = riseTransitSet(pos0.ra, pos0.dec, jd0, loc.latRad, lonRad, h0);
+    if (rts.status === 'normal') {
+      var events = ['rise', 'transit', 'set'];
+      for (var iter = 0; iter < 3; iter++) {
+        for (var ei = 0; ei < events.length; ei++) {
+          if (rts[events[ei]] == null) continue;
+          var pos1 = ssOfDateRaDec(ssName, rts[events[ei]], loc.latRad, lonRad);
+          var rts1 = riseTransitSet(pos1.ra, pos1.dec, jd0, loc.latRad, lonRad, h0);
+          if (rts1.status === 'normal' && rts1[events[ei]] >= jd0 && rts1[events[ei]] < jd0 + 1)
+            rts[events[ei]] = rts1[events[ei]];
+          else
+            rts[events[ei]] = null;
+        }
+      }
+    }
+  } else {
+    var mEq = frameMatrix('equatorial', jd, loc.latRad, loc.lonRad, false);
+    var eq = mvmul(mEq, obj.jx, obj.jy, obj.jz);
+    var eqSph = uxyz2sph(eq[0], eq[1], eq[2]);
+    rts = riseTransitSet(eqSph[0], eqSph[1], jd0, loc.latRad, lonRad, h0);
+  }
+
+  var riseText = '—', transitText = '—', setText = '—';
+  if (rts.status === 'never-rises') { riseText = 'Never rises'; setText = 'Never rises'; }
+  else if (rts.status === 'never-sets') { riseText = 'Never sets'; setText = 'Never sets'; }
+  else if (rts.status === 'normal') {
+    riseText = rts.rise != null ? _formatJDLocal(rts.rise) : '—';
+    transitText = rts.transit != null ? _formatJDLocal(rts.transit) : '—';
+    setText = rts.set != null ? _formatJDLocal(rts.set) : '—';
+  }
+  document.getElementById('info-rise').textContent = riseText;
+  document.getElementById('info-transit').textContent = transitText;
+  document.getElementById('info-set').textContent = setText;
 }
 
 function clearInfoPanel() {
-  var ids = ['info-type', 'info-name', 'info-catalog', 'info-ra', 'info-dec',
-    'info-azm', 'info-alt', 'info-mag', 'info-dist', 'info-size'];
+  var ids = ['info-type', 'info-name', 'info-catalog', 'info-lon', 'info-lat',
+    'info-mag', 'info-dist', 'info-size', 'info-rise', 'info-transit', 'info-set'];
   for (var i = 0; i < ids.length; i++)
     document.getElementById(ids[i]).textContent = '—';
   document.getElementById('info-phase-row').style.display = 'none';
-  document.getElementById('info-subobs-row').style.display = 'none';
+  document.getElementById('info-sublon-row').style.display = 'none';
+  document.getElementById('info-sublat-row').style.display = 'none';
+  document.getElementById('info-bmv-row').style.display = 'none';
   document.getElementById('centerBtn').disabled = true;
 }
 
