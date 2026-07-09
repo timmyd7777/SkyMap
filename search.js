@@ -64,6 +64,10 @@ class SkyObject {
     this.jz = opts.jz;
     this.mag = opts.mag != null ? opts.mag : null;
     this.data = opts.data || null;
+    // Real unique id for satellites — many rocket-body/debris objects share
+    // the same generic name across different launches, so name+type alone is
+    // ambiguous. undefined for every other type (those names are unique).
+    this.norad = opts.norad;
   }
 
   get ra() { return mod360(atan2(this.jy, this.jx) * RAD); }
@@ -93,7 +97,8 @@ class SkyObject {
   get ssData() {
     if (!ssCache || !ssCache.length) return null;
     for (var i = 0; i < ssCache.length; i++) {
-      if (ssCache[i].name === this.name && ssCache[i].type === this.type) return ssCache[i];
+      if (ssCache[i].type !== this.type) continue;
+      if (this.norad != null ? ssCache[i].norad === this.norad : ssCache[i].name === this.name) return ssCache[i];
     }
     return null;
   }
@@ -188,7 +193,7 @@ class SkyObject {
 
   static fromSSEntry(entry) {
     return new SkyObject({
-      type: entry.type, name: entry.name, names: [entry.name],
+      type: entry.type, name: entry.name, names: [entry.name], norad: entry.norad,
       jx: entry.x, jy: entry.y, jz: entry.z, mag: entry.mag, data: entry
     });
   }
@@ -218,7 +223,7 @@ class SkyObject {
     }
     var mag = obj.type === 'star' ? obj.data[2] : (obj.data.mag != null ? obj.data.mag : null);
     return new SkyObject({
-      type: obj.type, name: name, names: names,
+      type: obj.type, name: name, names: names, norad: obj.data ? obj.data.norad : undefined,
       jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: obj.data
     });
   }
@@ -292,7 +297,8 @@ function searchObjects(query) {
       if (e.name && e.name.toLowerCase().includes(q)) {
         var label = e.name;
         if (e.type === 'planetmoon' && e.parent) label += ' (' + e.parent + ')';
-        results.push({ src: 'ss', ssName: e.name, ssType: e.type, label: label, mag: e.mag, text: e.name.toLowerCase() });
+        else if (e.type === 'satellite') label += ' - ' + e.norad;
+        results.push({ src: 'ss', ssName: e.name, ssType: e.type, ssNorad: e.norad, label: label, mag: e.mag, text: e.name.toLowerCase() });
       }
     }
   }
@@ -377,7 +383,12 @@ function getObjectList(category) {
         for (var i = 0; i < ssCache.length; i++) {
           var e = ssCache[i];
           if (e.type === 'satellite')
-            items.push({ src: 'ss', ssName: e.name, ssType: e.type, label: e.name, mag: e.mag });
+            // Rocket-body/debris names are often reused across launches (e.g.
+            // several "SL-16 R/B"); norad disambiguates both the lookup and
+            // the label, since otherwise identical-looking entries would be
+            // indistinguishable in the list.
+            items.push({ src: 'ss', ssName: e.name, ssType: e.type, ssNorad: e.norad,
+              label: e.name + ' - ' + e.norad, mag: e.mag });
         }
         items.sort(function(a, b) { return a.label.localeCompare(b.label); });
       }
@@ -453,7 +464,10 @@ function skyObjectFromItem(item) {
   if (item.src === 'star') return SkyObject.fromStar(STARS[item.idx]);
   if (item.src === 'deepsky') return SkyObject.fromDeepSky(DEEPSKY[item.idx]);
   if (item.src === 'ss') {
-    var entry = ssCache.find(function(e) { return e.name === item.ssName && e.type === item.ssType; });
+    var entry = ssCache.find(function(e) {
+      if (e.type !== item.ssType) return false;
+      return item.ssNorad != null ? e.norad === item.ssNorad : e.name === item.ssName;
+    });
     if (entry) return SkyObject.fromSSEntry(entry);
   }
   return null;
@@ -496,8 +510,14 @@ function loadObjectList() {
   } else {
     var items = getObjectList(category);
     var sortRadio = document.querySelector('input[name="listSort"]:checked');
-    if (sortRadio && sortRadio.value === 'mag')
-      items.sort(function(a, b) { return (a.mag != null ? a.mag : 99) - (b.mag != null ? b.mag : 99); });
+    if (sortRadio && sortRadio.value === 'mag') {
+      // NaN would compare false against everything (even other NaNs) and
+      // silently scramble the sort order wherever it landed — treat it like
+      // "no data" (99) rather than let it through. Infinity (genuinely
+      // eclipsed) is a normal, well-behaved sort value and sorts last as-is.
+      var magKey = function(v) { return (v != null && !Number.isNaN(v)) ? v : 99; };
+      items.sort(function(a, b) { return magKey(a.mag) - magKey(b.mag); });
+    }
     _currentListItems = items;
     populateListBox(items);
   }
@@ -561,53 +581,72 @@ function refreshInfoPanel() {
     return;
   }
 
-  // For SS objects, refresh position and data from ssCache
-  if (obj.type !== 'star' && obj.type !== 'deepsky') {
-    var ss = obj.ssData;
-    if (ss) {
-      obj.jx = ss.x; obj.jy = ss.y; obj.jz = ss.z;
-      if (ss.mag != null) obj.mag = ss.mag;
-    }
+  // For SS objects, refresh position and data from ssCache. Star/deep-sky
+  // positions are fixed catalog values (never refreshed, always valid).
+  // ssValid is false when a SS object isn't in ssCache this frame — a
+  // satellite eclipsed/backlit/TLE-stale (see updateSSCache() in skymap.js;
+  // every other SS type is pushed unconditionally so can't go missing today,
+  // but a reloaded catalog dropping a comet/asteroid would hit this too).
+  // Either way there's no current data for it, so we show placeholders below
+  // instead of stale magnitude/position from before it disappeared.
+  var ss = (obj.type !== 'star' && obj.type !== 'deepsky') ? obj.ssData : null;
+  var ssValid = obj.type === 'star' || obj.type === 'deepsky' || !!ss;
+  if (ss) {
+    obj.jx = ss.x; obj.jy = ss.y; obj.jz = ss.z;
+    if (ss.mag != null) obj.mag = ss.mag;
+  } else if (!ssValid) {
+    obj.mag = null;
   }
 
   document.getElementById('centerBtn').disabled = false;
   document.getElementById('info-type').textContent = obj.typeLabel;
   document.getElementById('info-name').textContent = obj.name || '—';
 
-  var catalogs = obj.names.filter(function(n) { return n !== obj.name; });
-  document.getElementById('info-catalog').innerHTML = catalogs.length
-    ? catalogs.map(function(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }).join('<br>') : '—';
+  var catalogLabel = document.getElementById('info-catalog-label');
+  if (obj.type === 'satellite') {
+    catalogLabel.textContent = 'NORAD ID';
+    document.getElementById('info-catalog').textContent = obj.norad != null ? String(obj.norad) : '—';
+  } else {
+    catalogLabel.textContent = 'Catalog IDs';
+    var catalogs = obj.names.filter(function(n) { return n !== obj.name; });
+    document.getElementById('info-catalog').innerHTML = catalogs.length
+      ? catalogs.map(function(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }).join('<br>') : '—';
+  }
 
-  // Coordinates in current frame
-  var dt = getDateTimeFromFields();
-  var loc = getLocation();
-  var jd = julianDate(dt.y, dt.m, dt.d, dt.h + dt.mi / 60 + dt.s / 3600);
-  var m = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, viewJ2000);
-  var fv = mvmul(m, obj.jx, obj.jy, obj.jz);
-  var latDeg = asin(max(-1, min(1, fv[2]))) * RAD;
-  var lon = viewFrame === 'horizon' ? atan2(fv[0], fv[1]) : atan2(fv[1], fv[0]);
-  var lonDeg = mod360(lon * RAD);
+  // Coordinates in current frame. Label depends only on the frame, so it's
+  // always shown; the value depends on a current position, so it's '—' when !ssValid.
   var lonLabel, latLabel, lonStr, latStr;
   if (viewFrame === 'equatorial') {
     lonLabel = viewJ2000 ? 'RA (J2000)' : 'RA';
     latLabel = viewJ2000 ? 'Dec (J2000)' : 'Dec';
-    lonStr = formatRA(lonDeg);
-    latStr = formatDec(latDeg);
   } else if (viewFrame === 'ecliptic') {
     lonLabel = viewJ2000 ? 'Ecl Lon (J2000)' : 'Ecliptic Lon';
     latLabel = viewJ2000 ? 'Ecl Lat (J2000)' : 'Ecliptic Lat';
-    lonStr = lonDeg.toFixed(3) + '°';
-    latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
   } else if (viewFrame === 'galactic') {
     lonLabel = 'Galactic Lon';
     latLabel = 'Galactic Lat';
-    lonStr = lonDeg.toFixed(3) + '°';
-    latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
   } else {
     lonLabel = 'Azimuth';
     latLabel = 'Altitude';
-    lonStr = lonDeg.toFixed(3) + '°';
-    latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
+  }
+  if (!ssValid) {
+    lonStr = '—'; latStr = '—';
+  } else {
+    var dt = getDateTimeFromFields();
+    var loc = getLocation();
+    var jd = julianDate(dt.y, dt.m, dt.d, dt.h + dt.mi / 60 + dt.s / 3600);
+    var m = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, viewJ2000);
+    var fv = mvmul(m, obj.jx, obj.jy, obj.jz);
+    var latDeg = asin(max(-1, min(1, fv[2]))) * RAD;
+    var lon = viewFrame === 'horizon' ? atan2(fv[0], fv[1]) : atan2(fv[1], fv[0]);
+    var lonDeg = mod360(lon * RAD);
+    if (viewFrame === 'equatorial') {
+      lonStr = formatRA(lonDeg);
+      latStr = formatDec(latDeg);
+    } else {
+      lonStr = lonDeg.toFixed(3) + '°';
+      latStr = (latDeg >= 0 ? '+' : '') + latDeg.toFixed(3) + '°';
+    }
   }
   document.getElementById('info-lon-label').textContent = lonLabel;
   document.getElementById('info-lat-label').textContent = latLabel;
@@ -615,7 +654,7 @@ function refreshInfoPanel() {
   document.getElementById('info-lat').textContent = latStr;
 
   document.getElementById('info-mag').textContent =
-    obj.mag != null ? (obj.mag >= 0 ? '+' : '') + obj.mag.toFixed(2) : '—';
+    obj.mag == null ? '—' : !isFinite(obj.mag) ? 'Eclipsed' : (obj.mag >= 0 ? '+' : '') + obj.mag.toFixed(2);
   var bmvRow = document.getElementById('info-bmv-row');
   if (obj.type === 'star' && obj.data[3]) {
     bmvRow.style.display = '';
@@ -623,16 +662,15 @@ function refreshInfoPanel() {
   } else {
     bmvRow.style.display = 'none';
   }
-  document.getElementById('info-dist').textContent = obj.distStr() || '—';
-  document.getElementById('info-size').textContent = obj.sizeStr() || '—';
+  document.getElementById('info-dist').textContent = ssValid ? (obj.distStr() || '—') : '—';
+  document.getElementById('info-size').textContent = ssValid ? (obj.sizeStr() || '—') : '—';
 
   // Phase (planets and Moon only)
-  var phase = obj.phaseStr();
+  var phase = ssValid ? obj.phaseStr() : '';
   document.getElementById('info-phase-row').style.display = phase ? '' : 'none';
   if (phase) document.getElementById('info-phase').textContent = phase;
 
   // Sub-observer (planets and Moon with orientation data)
-  var ss = obj.ssData;
   var hasSub = ss && ss.subObsLon != null && ss.subObsLat != null;
   document.getElementById('info-sublon-row').style.display = hasSub ? '' : 'none';
   document.getElementById('info-sublat-row').style.display = hasSub ? '' : 'none';
@@ -712,6 +750,7 @@ function clearInfoPanel() {
     'info-mag', 'info-dist', 'info-size', 'info-rise', 'info-transit', 'info-set'];
   for (var i = 0; i < ids.length; i++)
     document.getElementById(ids[i]).textContent = '—';
+  document.getElementById('info-catalog-label').textContent = 'Catalog IDs';
   document.getElementById('info-phase-row').style.display = 'none';
   document.getElementById('info-sublon-row').style.display = 'none';
   document.getElementById('info-sublat-row').style.display = 'none';
@@ -740,6 +779,7 @@ function centerOnSelected() {
   centerObject = {
     type: obj.type,
     name: obj.type === 'star' ? objName : (obj.data.name || obj.name),
+    norad: obj.norad,
     jx: obj.jx, jy: obj.jy, jz: obj.jz
   };
 

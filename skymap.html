@@ -270,7 +270,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
     <table id="infoTable">
       <tr><td>Type</td><td id="info-type">—</td></tr>
       <tr><td>Name</td><td id="info-name">—</td></tr>
-      <tr><td>Catalog IDs</td><td id="info-catalog">—</td></tr>
+      <tr><td id="info-catalog-label">Catalog IDs</td><td id="info-catalog">—</td></tr>
       <tr><td id="info-lon-label">Azimuth</td><td id="info-lon">—</td></tr>
       <tr><td id="info-lat-label">Altitude</td><td id="info-lat">—</td></tr>
       <tr><td>Magnitude</td><td id="info-mag">—</td></tr>
@@ -295,11 +295,11 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="planets.js?v=15"></script>
 <script src="mpc.js?v=1"></script>
 <script src="sgp4.js?v=2"></script>
-<script src="satmag.js?v=3"></script>
+<script src="satmag.js?v=5"></script>
 <script src="moons.js?v=2"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=27"></script>
-<script src="search.js?v=13"></script>
+<script src="skymap.js?v=30"></script>
+<script src="search.js?v=20"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -838,9 +838,13 @@ function init() {
       if (dx*dx + dy*dy <= 1) {
         const rect = canvas.getBoundingClientRect();
         pickObject(rect ? x - rect.left : x, rect ? y - rect.top : y);
+        // Satellites: compare by norad (the real unique id) when available —
+        // many rocket-body/debris objects share the same generic name.
         if (!selectedObject || !centerObject
             || selectedObject.type !== centerObject.type
-            || (selectedObject.name || selectedObject.data.name) !== centerObject.name) centerObject = null;
+            || (centerObject.norad != null
+                ? selectedObject.data.norad !== centerObject.norad
+                : (selectedObject.name || selectedObject.data.name) !== centerObject.name)) centerObject = null;
         draw();
       }
     }
@@ -855,6 +859,7 @@ function init() {
       centerObject = {
         type: selectedObject.type,
         name: selectedObject.name || selectedObject.data.name,
+        norad: selectedObject.data ? selectedObject.data.norad : undefined,
         jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
       };
       draw();
@@ -894,6 +899,7 @@ function init() {
         if (selectedObject) {
           centerObject = {
             type: selectedObject.type, name: selectedObject.name || selectedObject.data.name,
+            norad: selectedObject.data ? selectedObject.data.norad : undefined,
             jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
           };
           draw();

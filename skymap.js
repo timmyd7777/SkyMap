@@ -344,7 +344,10 @@ function skymapDraw(canvas, params) {
   if (centerObject) {
     if (centerObject.type !== 'star' && centerObject.type !== 'deepsky') {
       updateSSCache();
-      const fresh = ssCache.find(o => o.type === centerObject.type && o.name === centerObject.name);
+      // Satellites: match by norad, the real unique id — many rocket-body/debris
+      // objects share the same generic name across different launches.
+      const fresh = ssCache.find(o => o.type === centerObject.type &&
+        (centerObject.norad != null ? o.norad === centerObject.norad : o.name === centerObject.name));
       if (fresh) { centerObject.jx = fresh.x; centerObject.jy = fresh.y; centerObject.jz = fresh.z; }
     }
     const [fx, fy, fz] = mvmul(mFrame, centerObject.jx, centerObject.jy, centerObject.jz);
@@ -1250,12 +1253,26 @@ function skymapDraw(canvas, params) {
         try {
           const rv = sgp4Propagate(sat, tsince);
           const [gx, gy, gz] = rv.pos;
+          // mag may be Infinity (eclipsed by Earth's shadow, or backlit) — still
+          // pushed to ssCache (matching planetmoons' shadow handling) so the
+          // search panel can show it exists rather than silently vanishing;
+          // drawSolarSystem()'s existing obj.mag > magLimit + 3 check already
+          // keeps it off the map.
           const mag = satApparentMag(sat.norad, gx, gy, gz,
             obsX, obsY, obsZ, sunTx, sunTy, sunTz);
-          if (!isFinite(mag)) continue;
+          // NaN (not Infinity) means the magnitude computation itself failed —
+          // sgp4.js has no guards against degenerate elements (e.g. a decayed
+          // orbit), so garbage in, garbage out. Distinct from a real eclipse:
+          // skip it rather than pushing NaN, which — unlike Infinity — compares
+          // false against everything (including other NaNs) and silently
+          // corrupts magnitude-sorted ordering wherever it lands.
+          if (Number.isNaN(mag)) continue;
           const [satTopoRA, satTopoDec, satTopoER] = topocentricCorrectionXYZ(gx, gy, gz, obsX, obsY, obsZ);
           const [jx, jy, jz] = mvmul(mtranspose(mNP), ...sph2uxyz(satTopoRA, satTopoDec));
-          ssCache.push({ type:'satellite', name:sat.name, mag,
+          // norad is the real unique identity — many rocket-body/debris objects
+          // share the same generic name (e.g. multiple "SL-16 R/B" from
+          // different launches), so name+type alone is ambiguous for satellites.
+          ssCache.push({ type:'satellite', name:sat.name, norad:sat.norad, mag,
             // WGS72 radius (6378.135 km), not WGS84 — SGP4 assumes WGS72; using WGS84 shifts positions by tens of meters at GEO range.
             x:jx, y:jy, z:jz, dist:satTopoER * 6378.135 });
         } catch(e) {}
@@ -1728,7 +1745,7 @@ function skymapDraw(canvas, params) {
         const satColor = darkMode ? '#0f0' : '#060';
         ctx.fillStyle = satColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
-        drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
+        drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, norad:obj.norad, mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showSatelliteNames) {
           ctx.fillStyle = satColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -1945,7 +1962,10 @@ function skymapDraw(canvas, params) {
   if (viewFrame === 'horizon') drawCardinals();
   if (selectedObject && selectedObject.data.name) {
     const sel = selectedObject;
-    const fresh = ssCache.find(o => o.type === sel.type && o.name === sel.data.name);
+    // Satellites: match by norad, the real unique id — many rocket-body/debris
+    // objects share the same generic name across different launches.
+    const fresh = ssCache.find(o => o.type === sel.type &&
+      (sel.data.norad != null ? o.norad === sel.data.norad : o.name === sel.data.name));
     if (fresh) {
       sel.jx = fresh.x; sel.jy = fresh.y; sel.jz = fresh.z;
       sel.data.mag = fresh.mag;
