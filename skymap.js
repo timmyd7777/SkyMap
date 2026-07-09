@@ -1239,7 +1239,7 @@ function skymapDraw(canvas, params) {
         const geoDist = vmag(gx, gy, gz);
         const { FV } = phaseElongation(sunR, geoDist, h.r);
         const amag = asteroidMagnitude(a.H, a.G, h.r, geoDist, FV);
-        ssCache.push({ type:'asteroid', name:a.name,
+        ssCache.push({ type:'asteroid', name:a.name, num:a.num,
           x:gx/geoDist, y:gy/geoDist, z:gz/geoDist,
           mag:amag, helioDist:h.r, geoDist, phaseAngle:FV });
       }
@@ -1894,7 +1894,7 @@ function skymapDraw(canvas, params) {
         ? (v * 60 >= 100 ? round(v * 60) + "'" : (v * 60).toFixed(1) + "'")
         : (v >= 100 ? round(v) + '°' : v.toFixed(1) + '°');
       ctx.textAlign = 'right';
-      const hdrR = W - 16;
+      const hdrR = W - hdrX;
       ctx.fillText(formatCoords(viewLon, viewLat), hdrR, sfs * 1.4);
       ctx.fillText(`Size ${fmtFov(fovW)} × ${fmtFov(fovH)}`, hdrR, sfs * 2.8);
       ctx.textAlign = 'left';

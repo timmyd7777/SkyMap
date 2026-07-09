@@ -59,6 +59,7 @@ function parseMPCAsteroids(text) {
     if (isNaN(H)) continue;
     const epochStr = line.substring(20, 25).trim();
     asteroids.push({
+      num:   parseInt(line.substring(0, 7)) || 0,
       name:  line.substring(166, 194).trim(),
       epoch: mpcUnpackEpoch(epochStr),
       M:     parseFloat(line.substring(26, 35)),

@@ -51,6 +51,25 @@ canvas { display: block; }
 .loc-row .unit { font-size: 12px; margin: 0 1px; }
 .loc-row .radio-group { display: flex; gap: 2px; margin-left: 4px; }
 .loc-row .radio-group label { font-size: 12px; margin-bottom: 0; display: inline-flex; align-items: center; gap: 1px; }
+#searchPanel { width: 260px; min-width: 260px; padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+body.dark #searchPanel { border-left: 1px solid #333; }
+body.light #searchPanel { border-left: 1px solid #ccc; }
+#searchPanel label { font-size: 13px; display: block; margin-bottom: 2px; }
+#searchPanel input[type="text"] { font-size: 13px; padding: 4px 6px; }
+body.dark #searchPanel input[type="text"] { background: #222; color: #ccc; border: 1px solid #555; }
+body.light #searchPanel input[type="text"] { background: #fff; color: #222; border: 1px solid #aaa; }
+#searchPanel select { font-size: 12px; padding: 3px 4px; width: 100%; }
+body.dark #searchPanel select { background: #222; color: #ccc; border: 1px solid #555; }
+body.light #searchPanel select { background: #fff; color: #222; border: 1px solid #aaa; }
+#searchPanel .row { display: flex; gap: 6px; align-items: center; }
+#searchPanel .row button { flex: none; }
+#objectListBox { height: 180px; }
+#searchToggle { position: absolute; top: 8px; right: 8px; z-index: 1; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; opacity: 0.6; }
+#searchToggle:hover { opacity: 1; }
+#searchToggle svg { pointer-events: none; }
+#infoTable { font-size: 12px; width: 100%; border-collapse: collapse; }
+#infoTable td:first-child { white-space: nowrap; padding-right: 8px; }
+#infoTable td { padding: 2px 0; vertical-align: top; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -210,7 +229,60 @@ canvas { display: block; }
 </div>
 <div id="display">
   <button id="panelToggle" onclick="togglePanel()" title="Toggle control panel">&#9776;</button>
+  <button id="searchToggle" onclick="toggleSearchPanel()" title="Search objects">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="20" y2="20"/></svg>
+  </button>
   <canvas id="cv"></canvas>
+</div>
+<div id="searchPanel" style="display:none">
+  <div>
+    <div class="row">
+      <input type="text" id="searchInput" placeholder="Enter object name..." style="width:0; flex:1; min-width:0">
+      <button onclick="doSearch()">Search</button>
+    </div>
+  </div>
+  <div>
+    <label style="text-align:center;display:block">or choose an object from a list:</label>
+    <select id="objectListSelect" onchange="loadObjectList()">
+      <option value="search">Search Results</option>
+      <option value="planets">Planets</option>
+      <option value="moons">Moons</option>
+      <option value="asteroids">Asteroids</option>
+      <option value="comets">Comets</option>
+      <option value="satellites">Satellites</option>
+      <option value="namedStars">Named Stars</option>
+      <option value="brightStars">Bright Stars</option>
+      <option value="namedDSO">Named Deep Sky Objects</option>
+      <option value="messier">Messier Objects</option>
+      <option value="caldwell">Caldwell Objects</option>
+    </select>
+  </div>
+  <div>
+    <select id="objectListBox" size="8" onchange="onObjectListSelect()"></select>
+  </div>
+  <div style="margin:2px 0;display:flex;align-items:center;gap:4px;flex-wrap:nowrap">
+    <span style="font-size:0.85em">Sort by:</span>
+    <span style="flex:1"></span>
+    <label style="font-size:0.85em;white-space:nowrap"><input type="radio" name="listSort" value="name" checked onchange="loadObjectList()"> Name</label>
+    <label style="font-size:0.85em;white-space:nowrap"><input type="radio" name="listSort" value="mag" onchange="loadObjectList()"> Magnitude</label>
+  </div>
+  <div>
+    <table id="infoTable">
+      <tr><td>Type</td><td id="info-type">—</td></tr>
+      <tr><td>Name</td><td id="info-name">—</td></tr>
+      <tr><td>Catalog</td><td id="info-catalog">—</td></tr>
+      <tr><td>RA (J2000)</td><td id="info-ra">—</td></tr>
+      <tr><td>Dec (J2000)</td><td id="info-dec">—</td></tr>
+      <tr><td>Azimuth</td><td id="info-azm">—</td></tr>
+      <tr><td>Altitude</td><td id="info-alt">—</td></tr>
+      <tr><td>Magnitude</td><td id="info-mag">—</td></tr>
+      <tr><td>Distance</td><td id="info-dist">—</td></tr>
+      <tr><td>Size</td><td id="info-size">—</td></tr>
+      <tr id="info-phase-row" style="display:none"><td>Phase</td><td id="info-phase">—</td></tr>
+      <tr id="info-subobs-row" style="display:none"><td>Sub-obs</td><td id="info-subobs">—</td></tr>
+    </table>
+    <button id="centerBtn" onclick="centerOnSelected()" disabled style="margin-top:8px;width:100%">Center Object in Sky Map</button>
+  </div>
 </div>
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
@@ -224,6 +296,7 @@ canvas { display: block; }
 <script src="moons.js?v=2"></script>
 <script src="nebulae.js?v=1"></script>
 <script src="skymap.js?v=27"></script>
+<script src="search.js?v=1"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -580,6 +653,7 @@ function draw() {
     satellites: loadedSatellites,
   });
   if (centerObject) { syncSlidersFromPrecise(); updateSliderLabels(); }
+  searchPanelDraw();
 }
 
 // ---- Init ----
@@ -683,6 +757,11 @@ function init() {
   });
 
   setLocation(0.0, 0.0);
+
+  // Search panel
+  document.getElementById('searchInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+  });
 
   // Event listeners
   const redrawIds = ['dpYear','dpMonth','dpDay','tpHour','tpMin','tpSec',
