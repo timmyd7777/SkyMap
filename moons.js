@@ -9,7 +9,7 @@ const mB1950J2000 = [
   0.0048590037723143, -0.0000271702937440,  0.9999881946023742
 ];
 
-const epsB1950 = 23.4457889 * DEG;
+const epsB1950 = 23.4457889 * DEG_TO_RAD;
 
 // Standard orbit→reference-frame position from argument of latitude u,
 // ascending node Omega (from ref frame x-axis), and inclination inc.
@@ -32,14 +32,14 @@ function marsMoons(jd) {
 
   // Phobos
   {
-    const na = (47.39 - 0.0014 * yr) * DEG;
-    const ja = (37.27 + 0.0008 * yr) * DEG;
+    const na = (47.39 - 0.0014 * yr) * DEG_TO_RAD;
+    const ja = (37.27 + 0.0008 * yr) * DEG_TO_RAD;
     const a = 6.26974e-5;
     const e = 0.0150;
-    const gamma = 1.10 * DEG;
-    const theta = ((327.90 - 0.43533 * d) % 360) * DEG;
-    const P = ((278.96 + 0.43526 * d) % 360) * DEG;
-    const l = ((232.41 + 1128.844556 * d + 0.00124 * yr * yr) % 360) * DEG;
+    const gamma = 1.10 * DEG_TO_RAD;
+    const theta = ((327.90 - 0.43533 * d) % 360) * DEG_TO_RAD;
+    const P = ((278.96 + 0.43526 * d) % 360) * DEG_TO_RAD;
+    const l = ((232.41 + 1128.844556 * d + 0.00124 * yr * yr) % 360) * DEG_TO_RAD;
     const M = l - P;
     const E = solveKepler(((M % TAU) + TAU) % TAU, e);
     const f = trueAnomaly(E, e);
@@ -55,15 +55,15 @@ function marsMoons(jd) {
 
   // Deimos
   {
-    const na = (46.37 - 0.0014 * yr) * DEG;
-    const ja = (36.62 + 0.0008 * yr) * DEG;
+    const na = (46.37 - 0.0014 * yr) * DEG_TO_RAD;
+    const ja = (36.62 + 0.0008 * yr) * DEG_TO_RAD;
     const a = 1.56828e-4;
     const e = 0.0004;
-    const gamma = 1.79 * DEG;
-    const h = ((196.55 - 0.01801 * d) % 360) * DEG;
-    const theta = ((240.38 - 0.01801 * d) % 360) * DEG;
-    const P = ((111.7 + 0.01798 * d) % 360) * DEG;
-    const l = ((28.96 + 285.161888 * d - 0.27 * sin(h)) % 360) * DEG;
+    const gamma = 1.79 * DEG_TO_RAD;
+    const h = ((196.55 - 0.01801 * d) % 360) * DEG_TO_RAD;
+    const theta = ((240.38 - 0.01801 * d) % 360) * DEG_TO_RAD;
+    const P = ((111.7 + 0.01798 * d) % 360) * DEG_TO_RAD;
+    const l = ((28.96 + 285.161888 * d - 0.27 * sin(h)) % 360) * DEG_TO_RAD;
     const M = l - P;
     const E = solveKepler(((M % TAU) + TAU) % TAU, e);
     const f = trueAnomaly(E, e);
@@ -85,31 +85,31 @@ function jupiterMoons(jd) {
   const t = jd - 2443000.5;
   const fmod360 = (v) => ((v % 360) + 360) % 360;
 
-  const l1 = fmod360(106.078590 + 203.488955363064 * t) * DEG;
-  const l2 = fmod360(175.733787 + 101.374724556624 * t) * DEG;
-  const l3 = fmod360(120.561386 +  50.317609153405 * t) * DEG;
-  const l4 = fmod360( 84.455823 +  21.571070875180 * t) * DEG;
-  const pl = fmod360(184.415351 +   0.17356902 * t) * DEG;
-  const p1 = fmod360( 82.380231 +   0.16102275 * t) * DEG;
-  const p2 = fmod360(128.960393 +   0.04645644 * t) * DEG;
-  const p3 = fmod360(187.550171 +   0.00712408 * t) * DEG;
-  const p4 = fmod360(335.309254 +   0.00183939 * t) * DEG;
-  const pj = 13.470395 * DEG;
-  const t1 = fmod360(308.365749 -   0.13280610 * t) * DEG;
-  const t2 = fmod360(100.438938 -   0.03261535 * t) * DEG;
-  const t3 = fmod360(118.908928 -   0.00717678 * t) * DEG;
-  const t4 = fmod360(322.746564 -   0.00176018 * t) * DEG;
-  const ps = fmod360(316.500101 -   0.00000248 * t) * DEG;
-  const gp = fmod360( 31.978528 +   0.03345973 * t) * DEG;
-  const G  = fmod360( 30.238021 +   0.08309256178969 * t) * DEG;
-  const p2a = 52.14459693 * DEG;
+  const l1 = fmod360(106.078590 + 203.488955363064 * t) * DEG_TO_RAD;
+  const l2 = fmod360(175.733787 + 101.374724556624 * t) * DEG_TO_RAD;
+  const l3 = fmod360(120.561386 +  50.317609153405 * t) * DEG_TO_RAD;
+  const l4 = fmod360( 84.455823 +  21.571070875180 * t) * DEG_TO_RAD;
+  const pl = fmod360(184.415351 +   0.17356902 * t) * DEG_TO_RAD;
+  const p1 = fmod360( 82.380231 +   0.16102275 * t) * DEG_TO_RAD;
+  const p2 = fmod360(128.960393 +   0.04645644 * t) * DEG_TO_RAD;
+  const p3 = fmod360(187.550171 +   0.00712408 * t) * DEG_TO_RAD;
+  const p4 = fmod360(335.309254 +   0.00183939 * t) * DEG_TO_RAD;
+  const pj = 13.470395 * DEG_TO_RAD;
+  const t1 = fmod360(308.365749 -   0.13280610 * t) * DEG_TO_RAD;
+  const t2 = fmod360(100.438938 -   0.03261535 * t) * DEG_TO_RAD;
+  const t3 = fmod360(118.908928 -   0.00717678 * t) * DEG_TO_RAD;
+  const t4 = fmod360(322.746564 -   0.00176018 * t) * DEG_TO_RAD;
+  const ps = fmod360(316.500101 -   0.00000248 * t) * DEG_TO_RAD;
+  const gp = fmod360( 31.978528 +   0.03345973 * t) * DEG_TO_RAD;
+  const G  = fmod360( 30.238021 +   0.08309256178969 * t) * DEG_TO_RAD;
+  const p2a = 52.14459693 * DEG_TO_RAD;
 
   // Rotation matrix: Jupiter equatorial → B1950 equatorial (Eq. 9.54)
-  const eps = 23.4457889 * DEG;
-  const omega = 99.99754 * DEG;
-  const j = 1.30691 * DEG;
-  const phi = 316.500101 * DEG - omega;
-  const I = 3.10401 * DEG;
+  const eps = 23.4457889 * DEG_TO_RAD;
+  const omega = 99.99754 * DEG_TO_RAD;
+  const j = 1.30691 * DEG_TO_RAD;
+  const phi = 316.500101 * DEG_TO_RAD - omega;
+  const I = 3.10401 * DEG_TO_RAD;
   const mJupEq = mmul(rx(eps), mmul(rz(omega), mmul(rx(j), mmul(rz(phi), rx(I)))));
   const mJupJ2000 = mmul(mB1950J2000, mJupEq);
 
@@ -265,17 +265,17 @@ function saturnMoons(jd) {
   const moons = [];
 
   // Saturn equator → B1950 equatorial (fixed pole)
-  const je = (90.0 - 83.33) * DEG;
-  const neq = (90.0 + 38.40) * DEG;
+  const je = (90.0 - 83.33) * DEG_TO_RAD;
+  const neq = (90.0 + 38.40) * DEG_TO_RAD;
   const mSatJ2000 = mmul(mB1950J2000, mmul(rz(neq), rx(je)));
 
   // B1950 ecliptic → J2000 equatorial
   const mEclJ2000 = mmul(mB1950J2000, rx(epsB1950));
 
   // Saturn's equator on B1950 ecliptic
-  const ie = 28.06 * DEG;
-  const neEcl = 168.83 * DEG;
-  const ab = 41.53 * DEG;
+  const ie = 28.06 * DEG_TO_RAD;
+  const neEcl = 168.83 * DEG_TO_RAD;
+  const ab = 41.53 * DEG_TO_RAD;
 
   // ecliptic elements → J2000 equatorial XYZ (full spherical trig)
   function eclipticMoon(a, e, inc, w, node, M) {
@@ -296,42 +296,42 @@ function saturnMoons(jd) {
   const d = jd - 2411093.0;
   const y = d / 365.25;
   const T = 5.0616 * ((jd - 2433282.423) / 365.25 + 84.0);
-  const tRad = mod360(T) * DEG;
+  const tRad = mod360(T) * DEG_TO_RAD;
 
   // Mimas (Eq. 9.65)
   {
-    const l1 = ((128.839 + 381.994516 * d - 43.415 * sin(tRad) - 0.714 * sin(3*tRad)) % 360) * DEG;
-    const P1 = ((107.0 + 365.560 * y) % 360) * DEG;
+    const l1 = ((128.839 + 381.994516 * d - 43.415 * sin(tRad) - 0.714 * sin(3*tRad)) % 360) * DEG_TO_RAD;
+    const P1 = ((107.0 + 365.560 * y) % 360) * DEG_TO_RAD;
     const Padj = P1 - neEcl + ab;
     const M = l1 - P1;
     const E2 = solveKepler(((M % TAU) + TAU) % TAU, 0.01986);
     const f = trueAnomaly(E2, 0.01986);
     const r = 0.00124171 * (1 - 0.01986*0.01986) / (1 + 0.01986 * cos(f));
     const u = f + Padj;
-    const xp = r * cos(u), yp = r * sin(u) * cos(1.570*DEG), zp = r * sin(u) * sin(1.570*DEG);
+    const xp = r * cos(u), yp = r * sin(u) * cos(1.570*DEG_TO_RAD), zp = r * sin(u) * sin(1.570*DEG_TO_RAD);
     const [x, y2, z] = mvmul(mSatJ2000, xp, yp, zp);
     moons.push({name: 'Mimas', x, y: y2, z});
   }
 
   // Enceladus (Eq. 9.66)
   {
-    const l1 = ((200.155 + 262.7319052 * d) % 360) * DEG;
-    const P1 = ((312.7 + 123.42 * y) % 360) * DEG;
+    const l1 = ((200.155 + 262.7319052 * d) % 360) * DEG_TO_RAD;
+    const P1 = ((312.7 + 123.42 * y) % 360) * DEG_TO_RAD;
     const Padj = P1 - neEcl + ab;
     const M = l1 - P1;
     const E2 = solveKepler(((M % TAU) + TAU) % TAU, 0.00532);
     const f = trueAnomaly(E2, 0.00532);
     const r = 0.00158935 * (1 - 0.00532*0.00532) / (1 + 0.00532 * cos(f));
     const u = f + Padj;
-    const xp = r * cos(u), yp = r * sin(u) * cos(0.036*DEG), zp = r * sin(u) * sin(0.036*DEG);
+    const xp = r * cos(u), yp = r * sin(u) * cos(0.036*DEG_TO_RAD), zp = r * sin(u) * sin(0.036*DEG_TO_RAD);
     const [x, y2, z] = mvmul(mSatJ2000, xp, yp, zp);
     moons.push({name: 'Enceladus', x, y: y2, z});
   }
 
   // Tethys (Eq. 9.67)
   {
-    const l1 = ((284.9982 + 190.697920278 * d + 2.0751 * sin(tRad) + 0.0341 * sin(3*tRad)) % 360) * DEG;
-    const P1 = ((97 + 72.29 * y) % 360) * DEG;
+    const l1 = ((284.9982 + 190.697920278 * d + 2.0751 * sin(tRad) + 0.0341 * sin(3*tRad)) % 360) * DEG_TO_RAD;
+    const P1 = ((97 + 72.29 * y) % 360) * DEG_TO_RAD;
     const Padj = P1 - neEcl + ab;
     const ec = 0.000212;
     const M = l1 - P1;
@@ -339,7 +339,7 @@ function saturnMoons(jd) {
     const f = trueAnomaly(E2, ec);
     const r = 0.00197069 * (1 - ec*ec) / (1 + ec * cos(f));
     const u = f + Padj;
-    const xp = r * cos(u), yp = r * sin(u) * cos(1.1121*DEG), zp = r * sin(u) * sin(1.1121*DEG);
+    const xp = r * cos(u), yp = r * sin(u) * cos(1.1121*DEG_TO_RAD), zp = r * sin(u) * sin(1.1121*DEG_TO_RAD);
     const [x, y2, z] = mvmul(mSatJ2000, xp, yp, zp);
     moons.push({name: 'Tethys', x, y: y2, z});
   }
@@ -347,9 +347,9 @@ function saturnMoons(jd) {
   // Dione (Eq. 9.68)
   {
     const l1 = ((255.1183 + 131.534920026 * d
-      - 0.88 * sin((59.4 + 32.73 * y) * DEG)
-      - 0.75 * sin((119.2 + 93.18 * y) * DEG)) % 360) * DEG;
-    const P1 = ((173.6 + 30.8381 * y) % 360) * DEG;
+      - 0.88 * sin((59.4 + 32.73 * y) * DEG_TO_RAD)
+      - 0.75 * sin((119.2 + 93.18 * y) * DEG_TO_RAD)) % 360) * DEG_TO_RAD;
+    const P1 = ((173.6 + 30.8381 * y) % 360) * DEG_TO_RAD;
     const Padj = P1 - neEcl + ab;
     const ec = 0.001715;
     const M = l1 - P1;
@@ -357,7 +357,7 @@ function saturnMoons(jd) {
     const f = trueAnomaly(E2, ec);
     const r = 0.00252413 * (1 - ec*ec) / (1 + ec * cos(f));
     const u = f + Padj;
-    const xp = r * cos(u), yp = r * sin(u) * cos(0.0289*DEG), zp = r * sin(u) * sin(0.0289*DEG);
+    const xp = r * cos(u), yp = r * sin(u) * cos(0.0289*DEG_TO_RAD), zp = r * sin(u) * sin(0.0289*DEG_TO_RAD);
     const [x, y2, z] = mvmul(mSatJ2000, xp, yp, zp);
     moons.push({name: 'Dione', x, y: y2, z});
   }
@@ -368,19 +368,19 @@ function saturnMoons(jd) {
   {
     const dr = jd - 2411093.0;
     const yr = dr / 365.25;
-    const p = ((305.0 + 10.2077 * yr) % 360) * DEG;
-    const wt = ((276.49 + 0.5219 * (jd - 2411368.0) / 365.25) % 360) * DEG;
-    const gamma0 = 0.3305 * DEG;
-    const theta0 = ((356.87 - 10.2077 * yr) % 360) * DEG;
+    const p = ((305.0 + 10.2077 * yr) % 360) * DEG_TO_RAD;
+    const wt = ((276.49 + 0.5219 * (jd - 2411368.0) / 365.25) % 360) * DEG_TO_RAD;
+    const gamma0 = 0.3305 * DEG_TO_RAD;
+    const theta0 = ((356.87 - 10.2077 * yr) % 360) * DEG_TO_RAD;
     const esinw = 0.000210 * sin(p) + 0.00100 * sin(wt);
     const ecosw = 0.000210 * cos(p) + 0.00100 * cos(wt);
-    const lambda = ((359.4727 + 79.6900400700 * dr) % 360) * DEG
+    const lambda = ((359.4727 + 79.6900400700 * dr) % 360) * DEG_TO_RAD
                  + sin(gamma0) * sin(theta0) * tan(ie / 2);
     const a = 0.00352400;
     const e = sqrt(esinw*esinw + ecosw*ecosw);
     const w = atan2(esinw, ecosw);
-    const inc = ie - 0.0455*DEG + sin(gamma0)*cos(theta0);
-    const node = neEcl - 0.0078*DEG + sin(gamma0)*sin(theta0)/sin(ie);
+    const inc = ie - 0.0455*DEG_TO_RAD + sin(gamma0)*cos(theta0);
+    const node = neEcl - 0.0078*DEG_TO_RAD + sin(gamma0)*sin(theta0)/sin(ie);
     const M = lambda - w;
     const [x, y2, z] = eclipticMoon(a, e, inc, w, node, M);
     moons.push({name: 'Rhea', x, y: y2, z});
@@ -391,22 +391,22 @@ function saturnMoons(jd) {
     const Tc = (jd - 2415020.0) / 36525.0;
     const dt = jd - 2411368.0;
     const yt = dt / 365.25;
-    const is = (2.4891 + 0.002435 * Tc) * DEG;
-    const ns = ((113.350 - 0.2597 * Tc) % 360) * DEG;
-    const ms = ((175.4762 + 1221.5515 * Tc) % 360) * DEG;
-    const ls = ((267.2635 + 1222.1136 * Tc) % 360) * DEG;
-    const gamma0 = 0.2990 * DEG;
-    const theta0 = ((41.28 - 0.5219 * yt) % 360) * DEG;
-    const ia = ie - 0.6204*DEG + sin(gamma0)*cos(theta0);
-    const na = neEcl - 0.1418*DEG + sin(gamma0)*sin(theta0)/sin(ie);
-    const wa = ((275.837 + 0.5219 * yt) % 360) * DEG;
+    const is = (2.4891 + 0.002435 * Tc) * DEG_TO_RAD;
+    const ns = ((113.350 - 0.2597 * Tc) % 360) * DEG_TO_RAD;
+    const ms = ((175.4762 + 1221.5515 * Tc) % 360) * DEG_TO_RAD;
+    const ls = ((267.2635 + 1222.1136 * Tc) % 360) * DEG_TO_RAD;
+    const gamma0 = 0.2990 * DEG_TO_RAD;
+    const theta0 = ((41.28 - 0.5219 * yt) % 360) * DEG_TO_RAD;
+    const ia = ie - 0.6204*DEG_TO_RAD + sin(gamma0)*cos(theta0);
+    const na = neEcl - 0.1418*DEG_TO_RAD + sin(gamma0)*sin(theta0)/sin(ie);
+    const wa = ((275.837 + 0.5219 * yt) % 360) * DEG_TO_RAD;
     const Psi = atan2(sin(is)*sin(na-ns),
                 cos(is)*sin(ia) - sin(is)*cos(ia)*cos(na-ns));
     const theta = ns + atan2(sin(ia)*sin(na-ns),
                   cos(is)*sin(ia)*cos(na-ns) - sin(is)*cos(ia));
     const Ls = ls - theta;
     const g = wa - na - Psi;
-    let lambda = ((261.3121 + 22.57697385 * dt) % 360) * DEG
+    let lambda = ((261.3121 + 22.57697385 * dt) % 360) * DEG_TO_RAD
                + sin(gamma0)*tan(ie/2)*sin(theta0)
                - 0.000176*sin(ms) - 0.000215*sin(2*Ls)
                + 0.000057*sin(2*Ls+Psi);
@@ -424,26 +424,26 @@ function saturnMoons(jd) {
   {
     const dh = jd - 2415020.0;
     const th = (jd - 2433282.42345905) / 365.2422 + 50.0;
-    const tau = ((93.13 + 0.562039 * dh) % 360) * DEG;
-    const zeta = ((148.72 - 19.184 * th) % 360) * DEG;
-    const th0 = ((105.31 - 2.392 * th) % 360) * DEG;
-    const th1 = ((38.73 - 0.5353 * th) % 360) * DEG;
-    const th2 = ((13.0 + 24.44 * th) % 360) * DEG;
-    const th3 = ((31.9 + 61.7524 * th) % 360) * DEG;
-    const th5 = ((176.0 + 12.22 * th) % 360) * DEG;
-    const th4 = ((8.0 + 24.44 * th) % 360) * DEG;
+    const tau = ((93.13 + 0.562039 * dh) % 360) * DEG_TO_RAD;
+    const zeta = ((148.72 - 19.184 * th) % 360) * DEG_TO_RAD;
+    const th0 = ((105.31 - 2.392 * th) % 360) * DEG_TO_RAD;
+    const th1 = ((38.73 - 0.5353 * th) % 360) * DEG_TO_RAD;
+    const th2 = ((13.0 + 24.44 * th) % 360) * DEG_TO_RAD;
+    const th3 = ((31.9 + 61.7524 * th) % 360) * DEG_TO_RAD;
+    const th5 = ((176.0 + 12.22 * th) % 360) * DEG_TO_RAD;
+    const th4 = ((8.0 + 24.44 * th) % 360) * DEG_TO_RAD;
     const a = 0.0099040 - 0.00003422 * cos(tau);
     const e = 0.10441 + 0.02321*cos(zeta) - 0.00401*cos(tau)
             - 0.00110*cos(2*zeta) + 0.00013*cos(th3) + 0.00009*cos(zeta-tau);
-    const inc = ie + (-0.747 + 0.6200*cos(th0) + 0.315*cos(th1) - 0.018*cos(th2))*DEG;
+    const inc = ie + (-0.747 + 0.6200*cos(th0) + 0.315*cos(th1) - 0.018*cos(th2))*DEG_TO_RAD;
     const node = neEcl + (-0.061 + 0.6200*sin(th0) + 0.315*sin(th1)
-               - 0.018*sin(th2))*DEG / sin(ie - 0.747*DEG);
+               - 0.018*sin(th2))*DEG_TO_RAD / sin(ie - 0.747*DEG_TO_RAD);
     const w = ((69.993 - 18.6702*th - 13.36*sin(zeta) + 2.16*sin(2*zeta)
-             - 0.47*sin(tau) + 0.1507*sin(th0) + 0.07*sin(th3)) % 360) * DEG;
+             - 0.47*sin(tau) + 0.1507*sin(th0) + 0.07*sin(th3)) % 360) * DEG_TO_RAD;
     const lambda = ((176.7481 + 16.9199514*dh + 9.089*sin(tau) + 0.211*sin(zeta+tau)
                    + 0.192*sin(zeta-tau) + 0.1507*sin(th0) - 0.091*sin(zeta)
                    + 0.017*sin(th4) - 0.014*sin(3*tau) - 0.013*sin(th5)
-                   + 0.007*sin(2*tau)) % 360) * DEG;
+                   + 0.007*sin(2*tau)) % 360) * DEG_TO_RAD;
     const M = lambda - w;
     const [x, y2, z] = eclipticMoon(a, e, inc, w, node, M);
     moons.push({name: 'Hyperion', x, y: y2, z});
@@ -457,39 +457,39 @@ function saturnMoons(jd) {
     const Ti = (jd - 2415020.0) / 36525.0;
     const a0 = 0.02380984;
     let e = 0.0288184 + 0.000575*ci;
-    let inc = (18.45959 - 0.9555*ci - 0.0720*ci2 + 0.0054*ci3) * DEG;
-    let node = ((143.1294 - 3.797*ci + 0.116*ci2 + 0.008*ci3) % 360) * DEG;
-    let w = ((352.905 + 11.65*ci) % 360) * DEG;
-    let lambda = ((76.19854 + 4.53795711*di) % 360) * DEG;
-    const theta = ((4.367 - 0.195*Ti) % 360) * DEG;
-    const lsI = ((267.263 + 1222.114*Ti) % 360) * DEG;
-    const wsI = ((91.796 + 0.562*Ti) % 360) * DEG;
-    const ltI = ((261.319 + 22.576974*(jd-2411368.0)) % 360) * DEG;
-    const wtI = ((277.102 + 0.001389*(jd-2411368.0)) % 360) * DEG;
-    const phiI = ((60.470 + 1.521*Ti) % 360) * DEG;
+    let inc = (18.45959 - 0.9555*ci - 0.0720*ci2 + 0.0054*ci3) * DEG_TO_RAD;
+    let node = ((143.1294 - 3.797*ci + 0.116*ci2 + 0.008*ci3) % 360) * DEG_TO_RAD;
+    let w = ((352.905 + 11.65*ci) % 360) * DEG_TO_RAD;
+    let lambda = ((76.19854 + 4.53795711*di) % 360) * DEG_TO_RAD;
+    const theta = ((4.367 - 0.195*Ti) % 360) * DEG_TO_RAD;
+    const lsI = ((267.263 + 1222.114*Ti) % 360) * DEG_TO_RAD;
+    const wsI = ((91.796 + 0.562*Ti) % 360) * DEG_TO_RAD;
+    const ltI = ((261.319 + 22.576974*(jd-2411368.0)) % 360) * DEG_TO_RAD;
+    const wtI = ((277.102 + 0.001389*(jd-2411368.0)) % 360) * DEG_TO_RAD;
+    const phiI = ((60.470 + 1.521*Ti) % 360) * DEG_TO_RAD;
     const l = lambda - w;
     const ls2 = lsI - wsI;
     const lt2 = ltI - wtI;
     const g = w - node - theta;
-    const gs = wsI - ((146.819 - 3.918*Ti) % 360)*DEG;
-    const gt = wtI - ((205.055 - 2.091*Ti) % 360)*DEG;
+    const gs = wsI - ((146.819 - 3.918*Ti) % 360)*DEG_TO_RAD;
+    const gt = wtI - ((205.055 - 2.091*Ti) % 360)*DEG_TO_RAD;
     const gl = w - node - phiI;
     w += (0.08077*sin(gl-gt) + 0.03547*sin(lt2+gt-gl) + 0.02139*sin(2*(ls2+gs-g))
         + 0.01632*sin(2*l+gl-lt2-gt) + 0.01380*sin(l) - 0.00676*sin(l+2*(gl-ls2-gs))
-        + 0.00028*sin(3*ls2+2*gs-g))*DEG / e;
+        + 0.00028*sin(3*ls2+2*gs-g))*DEG_TO_RAD / e;
     node += (0.04204*sin(2*(ls2+gs)+theta) - 0.0142*sin(ls2)
            + 0.00358*sin(l+gl-lt2-gt+phiI) + 0.0028*sin(3*ls2+2*gs)
            - 0.0012*sin(ls2+2*gs) - 0.0006*sin(2*ls2)
-           + 0.0003*sin(4*ls2+2*gs))*DEG / sin(inc);
+           + 0.0003*sin(4*ls2+2*gs))*DEG_TO_RAD / sin(inc);
     const a = a0*(1 + 98.79e-5*cos(l+gl-lt2-gt) + 7.87e-5*cos(2*(l+g-ls2-gs)));
     e += -140.97e-5*cos(gl-gt) + 61.90e-5*cos(lt2+gt-gl) + 37.33e-5*cos(2*(ls2+gs-g))
        + 28.49e-5*cos(2*l+gl-lt2-gt) + 24.08e-5*cos(l) + 11.80e-5*cos(l+2*(g-ls2-gs));
     inc += (0.04204*cos(2*(ls2+gs)+theta) + 0.00360*cos(l+gl-lt2-gt+phiI)
           + 0.00235*cos(l+gl+lt2+gt+phiI) + 0.0058*cos(3*ls2+2*gs)
-          - 0.0024*cos(ls2+2*gs))*DEG;
+          - 0.0024*cos(ls2+2*gs))*DEG_TO_RAD;
     lambda += (-0.06312*sin(ls2) - 0.04299*sin(l+gl-lt2-gt)
              - 0.02231*sin(2*(ls2+gs)) - 0.00789*sin(2*(l+g-ls2-gs))
-             + 0.00650*sin(2*(ls2+gs)+theta))*DEG;
+             + 0.00650*sin(2*(ls2+gs)+theta))*DEG_TO_RAD;
     const M = lambda - w;
     const [x, y2, z] = eclipticMoon(a, e, inc, w, node, M);
     moons.push({name: 'Iapetus', x, y: y2, z});
@@ -500,12 +500,12 @@ function saturnMoons(jd) {
   {
     const d9 = jd - 2433282.5;
     const y9 = d9 / 365.25;
-    const lambda = ((277.872 - 0.6541068 * d9) % 360) * DEG;
+    const lambda = ((277.872 - 0.6541068 * d9) % 360) * DEG_TO_RAD;
     const a = 0.0865752;
     const e = 0.16326;
-    const inc = ((173.949 - 0.020 * y9) % 360) * DEG;
-    const w = ((280.165 - 0.19586 * y9) % 360) * DEG;
-    const node = ((245.998 - 0.41353 * y9) % 360) * DEG;
+    const inc = ((173.949 - 0.020 * y9) % 360) * DEG_TO_RAD;
+    const w = ((280.165 - 0.19586 * y9) % 360) * DEG_TO_RAD;
+    const node = ((245.998 - 0.41353 * y9) % 360) * DEG_TO_RAD;
     const M = lambda - w;
     const [x, y2, z] = eclipticMoon(a, e, inc, w, node, M);
     moons.push({name: 'Phoebe', x, y: y2, z});
@@ -522,8 +522,8 @@ function uranusMoons(jd) {
   const T = jd - 2444239.5;
   const moons = [];
 
-  const je = (90.0 - 15.04) * DEG;
-  const neU = (90.0 + 76.72) * DEG;
+  const je = (90.0 - 15.04) * DEG_TO_RAD;
+  const neU = (90.0 + 76.72) * DEG_TO_RAD;
   const mUranJ2000 = mmul(mB1950J2000, mmul(rz(neU), rx(je)));
 
   function uranianMoon(a, L, z_re, z_im, zeta_re, zeta_im) {
@@ -642,18 +642,18 @@ function neptuneMoons(jd) {
   // J2000 frame with time-dependent pole. γ=159° requires full formula.
   {
     const Tc = (jd - 2451545.0) / 36525.0;
-    const N = ((359.28 + 54.308*Tc) % 360) * DEG;
+    const N = ((359.28 + 54.308*Tc) % 360) * DEG_TO_RAD;
     const ap = 298.72 + 2.58*sin(N) - 0.04*sin(2*N);
     const dp = 42.63 - 1.90*cos(N) + 0.01*cos(2*N);
-    const jeT = (90.0 - dp) * DEG;
-    const neT = (90.0 + ap) * DEG;
+    const jeT = (90.0 - dp) * DEG_TO_RAD;
+    const neT = (90.0 + ap) * DEG_TO_RAD;
     const mTriton = mmul(rz(neT), rx(jeT));
 
     const d = jd - 2433282.5;
     const a = 0.002368266;
-    const gamma = 158.996 * DEG;
-    const theta = ((151.401 + 0.57806 * d / 365.25) % 360) * DEG;
-    const l = ((200.913 + 61.2588532 * d) % 360) * DEG;
+    const gamma = 158.996 * DEG_TO_RAD;
+    const theta = ((151.401 + 0.57806 * d / 365.25) % 360) * DEG_TO_RAD;
+    const l = ((200.913 + 61.2588532 * d) % 360) * DEG_TO_RAD;
     const [xr, yr, zr] = orbitPosition(a, l, gamma, theta);
     const [x, y, z] = mvmul(mTriton, xr, yr, zr);
     moons.push({name: 'Triton', x, y, z});
@@ -665,19 +665,19 @@ function neptuneMoons(jd) {
   {
     const t = jd - 2433680.5;
     const Tc = t / 36525.0;
-    const psi = ((289.2 + 2.68*Tc) % 360) * DEG;
+    const psi = ((289.2 + 2.68*Tc) % 360) * DEG_TO_RAD;
     const a = 0.036868;
     const e = 0.74515;
-    const gamma = 10.041 * DEG;
-    const theta = ((329.3 - 2.4*Tc + 19.7*sin(2*psi) - 3.3*sin(4*psi)) % 360) * DEG;
-    const P = psi - (19.25*sin(2*psi) + 3.23*sin(4*psi))*DEG;
-    const M = ((358.91 + 0.999552*t) % 360) * DEG;
+    const gamma = 10.041 * DEG_TO_RAD;
+    const theta = ((329.3 - 2.4*Tc + 19.7*sin(2*psi) - 3.3*sin(4*psi)) % 360) * DEG_TO_RAD;
+    const P = psi - (19.25*sin(2*psi) + 3.23*sin(4*psi))*DEG_TO_RAD;
+    const M = ((358.91 + 0.999552*t) % 360) * DEG_TO_RAD;
     const E = solveKepler(((M % TAU) + TAU) % TAU, e);
     const f = trueAnomaly(E, e);
     const r = a * (1 - e*e) / (1 + e * cos(f));
 
-    const JeN = 22.313 * DEG;
-    const NeN = 3.522 * DEG;
+    const JeN = 22.313 * DEG_TO_RAD;
+    const NeN = 3.522 * DEG_TO_RAD;
     const u = f + P - theta;
     const [xr, yr, zr] = orbitPosition(r, u, gamma, theta);
     const mNereid = mmul(mB1950J2000, mmul(rz(NeN), rx(JeN)));
@@ -694,9 +694,9 @@ function neptuneMoons(jd) {
 function plutoMoons(jd) {
   const d = jd - 2445000.5;
   const a = 0.00012788;
-  const J = 94.3 * DEG;
-  const N = 223.7 * DEG;
-  const u = ((78.6 + 56.3625 * d) % 360) * DEG;
+  const J = 94.3 * DEG_TO_RAD;
+  const N = 223.7 * DEG_TO_RAD;
+  const u = ((78.6 + 56.3625 * d) % 360) * DEG_TO_RAD;
   const m = mmul(mB1950J2000, mmul(rz(N), rx(J)));
   const [x, y, z] = mvmul(m, a*cos(u), a*sin(u), 0);
   return [{name: 'Charon', x, y, z}];
@@ -745,10 +745,10 @@ function moonPositionKepler(name, jde) {
   const dt = jde - md.epoch;
   const wRate = md.Pw ? 360.0 / md.Pw : 0;
   const nRate = md.Pnode ? 360.0 / md.Pnode : 0;
-  const M = mod360(md.M + md.n * dt) * DEG;
-  const w = mod360(md.w + wRate * dt / 365.25) * DEG;
-  const N = mod360(md.node + nRate * dt / 365.25) * DEG;
-  const inc = md.i * DEG;
+  const M = mod360(md.M + md.n * dt) * DEG_TO_RAD;
+  const w = mod360(md.w + wRate * dt / 365.25) * DEG_TO_RAD;
+  const N = mod360(md.node + nRate * dt / 365.25) * DEG_TO_RAD;
+  const inc = md.i * DEG_TO_RAD;
 
   const E = solveKepler(M, md.e);
   const nu = trueAnomaly(E, md.e);
@@ -767,7 +767,7 @@ function moonPositionKepler(name, jde) {
   //   = z_J2000 × pole = (-sin(RA), cos(RA), 0)
   // y-axis = pole × x-axis = (-sin(Dec)cos(RA), -sin(Dec)sin(RA), cos(Dec))
   // z-axis = pole = (cos(Dec)cos(RA), cos(Dec)sin(RA), sin(Dec))
-  const ra = md.RA * DEG, dec = md.Dec * DEG;
+  const ra = md.RA * DEG_TO_RAD, dec = md.Dec * DEG_TO_RAD;
   const cosRA = cos(ra), sinRA = sin(ra), cosDec = cos(dec), sinDec = sin(dec);
   return {
     x: (-sinRA * xr - sinDec * cosRA * yr + cosDec * cosRA * zr) / KM_PER_AU,

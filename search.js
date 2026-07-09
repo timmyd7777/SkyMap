@@ -24,27 +24,6 @@ function _rtsText(r) {
   return '—';
 }
 
-// ---- RA/Dec formatting ----
-
-function formatRA(raDeg) {
-  raDeg = ((raDeg % 360) + 360) % 360;
-  var totalSec = round(raDeg / 15 * 360000) / 100;
-  if (totalSec >= 86400) totalSec = 0;
-  var hh = floor(totalSec / 3600);
-  var mm = floor((totalSec % 3600) / 60);
-  var ss = (totalSec % 60).toFixed(2);
-  return String(hh).padStart(2, '0') + 'h ' + String(mm).padStart(2, '0') + 'm ' + ss.padStart(5, '0') + 's';
-}
-
-function formatDec(decDeg) {
-  var sign = decDeg < 0 ? '−' : '+';
-  var totalArcsec = round(abs(decDeg) * 36000) / 10;
-  var dd = floor(totalArcsec / 3600);
-  var mm = floor((totalArcsec % 3600) / 60);
-  var ss = (totalArcsec % 60).toFixed(1);
-  return sign + String(dd).padStart(2, '0') + '° ' + String(mm).padStart(2, '0') + '′ ' + ss.padStart(4, '0') + '″';
-}
-
 // ---- Type label lookup ----
 
 const DS_TYPE_NAMES = {
@@ -70,8 +49,8 @@ class SkyObject {
     this.norad = opts.norad;
   }
 
-  get ra() { return mod360(atan2(this.jy, this.jx) * RAD); }
-  get dec() { return asin(max(-1, min(1, this.jz))) * RAD; }
+  get ra() { return atan2pi(this.jy, this.jx) * RAD_TO_DEG; }
+  get dec() { return asin(max(-1, min(1, this.jz))) * RAD_TO_DEG; }
   get raStr() { return formatRA(this.ra); }
   get decStr() { return formatDec(this.dec); }
   get displayName() { return this.name || (this.names.length ? this.names[0] : '(unnamed)'); }
@@ -104,7 +83,6 @@ class SkyObject {
   }
 
   distStr() {
-    var LY_PER_PC = 3.26156;
     if (this.type === 'star') {
       var pc = this.data[4];
       if (!pc || pc <= 0) return '';
@@ -141,7 +119,7 @@ class SkyObject {
     }
     var ss = this.ssData;
     if (ss && ss.angRad) {
-      var diamArcsec = ss.angRad * 2 * RAD * 3600;
+      var diamArcsec = ss.angRad * 2 * RAD_TO_DEG * 3600;
       if (diamArcsec >= 60) return (diamArcsec / 60).toFixed(1) + '′';
       return diamArcsec.toFixed(1) + '″';
     }
@@ -151,8 +129,8 @@ class SkyObject {
   altAz(jd, latRad, lonRad) {
     var m = frameMatrix('horizon', jd, latRad, lonRad, false);
     var h = mvmul(m, this.jx, this.jy, this.jz);
-    var alt = asin(max(-1, min(1, h[2]))) * RAD;
-    var az = mod360(atan2(h[0], h[1]) * RAD);
+    var alt = asin(max(-1, min(1, h[2]))) * RAD_TO_DEG;
+    var az = atan2pi(h[0], h[1]) * RAD_TO_DEG;
     return { alt: alt, az: az };
   }
 
@@ -637,9 +615,9 @@ function refreshInfoPanel() {
     var jd = julianDate(dt.y, dt.m, dt.d, dt.h + dt.mi / 60 + dt.s / 3600);
     var m = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, viewJ2000);
     var fv = mvmul(m, obj.jx, obj.jy, obj.jz);
-    var latDeg = asin(max(-1, min(1, fv[2]))) * RAD;
-    var lon = viewFrame === 'horizon' ? atan2(fv[0], fv[1]) : atan2(fv[1], fv[0]);
-    var lonDeg = mod360(lon * RAD);
+    var latDeg = asin(max(-1, min(1, fv[2]))) * RAD_TO_DEG;
+    var lon = viewFrame === 'horizon' ? atan2pi(fv[0], fv[1]) : atan2pi(fv[1], fv[0]);
+    var lonDeg = lon * RAD_TO_DEG;
     if (viewFrame === 'equatorial') {
       lonStr = formatRA(lonDeg);
       latStr = formatDec(latDeg);
@@ -697,10 +675,10 @@ function refreshInfoPanel() {
     // we just need refraction plus the Moon's actual current semidiameter here,
     // the same logic as the Sun's -50' (34' refraction + 16' semidiameter).
     var h0 = REFRACTION_ALT;
-    if (obj.type === 'sun') h0 = (-50 / 60) * DEG;
+    if (obj.type === 'sun') h0 = (-50 / 60) * DEG_TO_RAD;
     else if (obj.type === 'moon') {
       var moonSS = obj.ssData;
-      var moonSemiDiam = (moonSS && moonSS.angRad) ? moonSS.angRad : (15.5 / 60) * DEG;
+      var moonSemiDiam = (moonSS && moonSS.angRad) ? moonSS.angRad : (15.5 / 60) * DEG_TO_RAD;
       h0 = REFRACTION_ALT - moonSemiDiam;
     }
 

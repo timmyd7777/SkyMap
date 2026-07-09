@@ -85,8 +85,8 @@ function phaseElongation(s, R, r) {
 // los/las = Saturn's geocentric ecliptic lon/lat (radians, of date), d = day number.
 // Returns a magnitude offset to add to Saturn's base magnitude.
 function saturnRingMagn(los, las, d) {
-  const ir = 28.06 * DEG;
-  const Nr = (169.51 + 3.82e-5 * d) * DEG;
+  const ir = 28.06 * DEG_TO_RAD;
+  const Nr = (169.51 + 3.82e-5 * d) * DEG_TO_RAD;
   const B = asin(sin(las)*cos(ir) - cos(las)*sin(ir)*sin(los - Nr));
   return -2.6 * abs(sin(B)) + 1.2 * sin(B) * sin(B);
 }
@@ -114,10 +114,10 @@ function trueAnomaly(E, e) {
 // el = {N, i, w, M} in degrees, {a} in AU, {e} dimensionless.
 // Returns {lon, lat, r}: ecliptic lon/lat in radians (of date), r in AU.
 function planetHelioEcl(el) {
-  const Nr = mod360(el.N) * DEG;
-  const ir = el.i * DEG;
-  const wr = mod360(el.w) * DEG;
-  const Mr = mod360(el.M) * DEG;
+  const Nr = mod360(el.N) * DEG_TO_RAD;
+  const ir = el.i * DEG_TO_RAD;
+  const wr = mod360(el.w) * DEG_TO_RAD;
+  const Mr = mod360(el.M) * DEG_TO_RAD;
   const E = solveKepler(Mr, el.e);
   const xv = el.a * (cos(E) - el.e);
   const yv = el.a * sqrt(1 - el.e * el.e) * sin(E);
@@ -134,41 +134,41 @@ function planetHelioEcl(el) {
 // d = day number, lon/lat in radians (of date), r in AU.
 // Returns corrected {lon, lat, r}.
 function planetPerturbations(name, d, lon, lat, r) {
-  const Mj = mod360(19.8950 + 0.0830853001 * d) * DEG;
-  const Ms = mod360(316.9670 + 0.0334442282 * d) * DEG;
-  const Mu = mod360(142.5905 + 0.011725806 * d) * DEG;
+  const Mj = mod360(19.8950 + 0.0830853001 * d) * DEG_TO_RAD;
+  const Ms = mod360(316.9670 + 0.0334442282 * d) * DEG_TO_RAD;
+  const Mu = mod360(142.5905 + 0.011725806 * d) * DEG_TO_RAD;
   let dlon = 0, dlat = 0;
   if (name === 'Jupiter') {
-    dlon = -0.332*sin(2*Mj - 5*Ms - 67.6*DEG)
-           -0.056*sin(2*Mj - 2*Ms + 21*DEG)
-           +0.042*sin(3*Mj - 5*Ms + 21*DEG)
+    dlon = -0.332*sin(2*Mj - 5*Ms - 67.6*DEG_TO_RAD)
+           -0.056*sin(2*Mj - 2*Ms + 21*DEG_TO_RAD)
+           +0.042*sin(3*Mj - 5*Ms + 21*DEG_TO_RAD)
            -0.036*sin(Mj - 2*Ms)
            +0.022*cos(Mj - Ms)
-           +0.023*sin(2*Mj - 3*Ms + 52*DEG)
-           -0.016*sin(Mj - 5*Ms - 69*DEG);
+           +0.023*sin(2*Mj - 3*Ms + 52*DEG_TO_RAD)
+           -0.016*sin(Mj - 5*Ms - 69*DEG_TO_RAD);
   } else if (name === 'Saturn') {
-    dlon = +0.812*sin(2*Mj - 5*Ms - 67.6*DEG)
-           -0.229*cos(2*Mj - 4*Ms - 2*DEG)
-           +0.119*sin(Mj - 2*Ms - 3*DEG)
-           +0.046*sin(2*Mj - 6*Ms - 69*DEG)
-           +0.014*sin(Mj - 3*Ms + 32*DEG);
-    dlat = -0.020*cos(2*Mj - 4*Ms - 2*DEG)
-           +0.018*sin(2*Mj - 6*Ms - 49*DEG);
+    dlon = +0.812*sin(2*Mj - 5*Ms - 67.6*DEG_TO_RAD)
+           -0.229*cos(2*Mj - 4*Ms - 2*DEG_TO_RAD)
+           +0.119*sin(Mj - 2*Ms - 3*DEG_TO_RAD)
+           +0.046*sin(2*Mj - 6*Ms - 69*DEG_TO_RAD)
+           +0.014*sin(Mj - 3*Ms + 32*DEG_TO_RAD);
+    dlat = -0.020*cos(2*Mj - 4*Ms - 2*DEG_TO_RAD)
+           +0.018*sin(2*Mj - 6*Ms - 49*DEG_TO_RAD);
   } else if (name === 'Uranus') {
-    dlon = +0.040*sin(Ms - 2*Mu + 6*DEG)
-           +0.035*sin(Ms - 3*Mu + 33*DEG)
-           -0.015*sin(Mj - Mu + 20*DEG);
+    dlon = +0.040*sin(Ms - 2*Mu + 6*DEG_TO_RAD)
+           +0.035*sin(Ms - 3*Mu + 33*DEG_TO_RAD)
+           -0.015*sin(Mj - Mu + 20*DEG_TO_RAD);
   }
-  return { lon: lon + dlon * DEG, lat: lat + dlat * DEG, r };
+  return { lon: lon + dlon * DEG_TO_RAD, lat: lat + dlat * DEG_TO_RAD, r };
 }
 
 // Sun ecliptic position (of date).
 // d = day number. Returns {lon, lat, r, M, w}: lon/lat in radians, r in AU,
 // M (mean anomaly) and w (argument of perihelion) in radians — needed by moonPosition.
 function sunPosition(d) {
-  const w = mod360(282.9404 + 4.70935e-5 * d) * DEG;
+  const w = mod360(282.9404 + 4.70935e-5 * d) * DEG_TO_RAD;
   const e = 0.016709 - 1.151e-9 * d;
-  const M = mod360(356.0470 + 0.9856002585 * d) * DEG;
+  const M = mod360(356.0470 + 0.9856002585 * d) * DEG_TO_RAD;
   const E = solveKepler(M, e);
   const xv = cos(E) - e;
   const yv = sqrt(1 - e * e) * sin(E);
@@ -181,12 +181,12 @@ function sunPosition(d) {
 // d = day number, sunM = Sun's mean anomaly (radians), sunW = Sun's arg of perihelion (radians).
 // Returns {lon, lat, dist}: ecliptic lon/lat in radians (of date), dist in Earth radii.
 function moonPosition(d, sunM, sunW) {
-  const mN = mod360(125.1228 - 0.0529538083 * d) * DEG;
-  const mI = 5.1454 * DEG;
-  const mw = mod360(318.0634 + 0.1643573223 * d) * DEG;
+  const mN = mod360(125.1228 - 0.0529538083 * d) * DEG_TO_RAD;
+  const mI = 5.1454 * DEG_TO_RAD;
+  const mw = mod360(318.0634 + 0.1643573223 * d) * DEG_TO_RAD;
   const mA = 60.2666;
   const mE = 0.054900;
-  const mM = mod360(115.3654 + 13.0649929509 * d) * DEG;
+  const mM = mod360(115.3654 + 13.0649929509 * d) * DEG_TO_RAD;
 
   const moonEcc = solveKepler(mM, mE);
   const xv = mA * (cos(moonEcc) - mE);
@@ -210,10 +210,10 @@ function moonPosition(d, sunM, sunW) {
     - 0.059*sin(2*mM - 2*mD) - 0.057*sin(mM - 2*mD + sunM)
     + 0.053*sin(mM + 2*mD) + 0.046*sin(2*mD - sunM)
     + 0.041*sin(mM - sunM) - 0.035*sin(mD) - 0.031*sin(mM + sunM)
-    - 0.015*sin(2*F - 2*mD) + 0.011*sin(mM - 4*mD)) * DEG;
+    - 0.015*sin(2*F - 2*mD) + 0.011*sin(mM - 4*mD)) * DEG_TO_RAD;
   lat += (-0.173*sin(F - 2*mD) - 0.055*sin(mM - F - 2*mD)
     - 0.046*sin(mM + F - 2*mD) + 0.033*sin(F + 2*mD)
-    + 0.017*sin(2*mM + F)) * DEG;
+    + 0.017*sin(2*mM + F)) * DEG_TO_RAD;
   dist += -0.58*cos(mM - 2*mD) - 0.46*cos(2*mD);
 
   return { lon, lat, dist };
@@ -257,7 +257,7 @@ function topocentricCorrection(ra, dec, distER, lstR, latRad, mObs) {
 // Ecliptic longitude precession correction from of-date to J2000 (Schlyter, ppcomp section 8).
 // d = Schlyter day number (JD - 2451543.5). Returns correction in radians.
 function eclLonJ2000Corr(d) {
-  return -3.82394e-5 * d * DEG;
+  return -3.82394e-5 * d * DEG_TO_RAD;
 }
 
 // ---- Asteroid & Comet orbit computation ----
@@ -327,10 +327,10 @@ function orbitToEcliptic(node, inc, w, v, r) {
 // Returns {lon, lat, r} in radians.
 function asteroidPosition(ast, d, j2000) {
   const dEpoch = julianDate(ast.epoch.y, ast.epoch.m, ast.epoch.d, 0) - 2451543.5;
-  const M = mod360(ast.M + ast.n * (d - dEpoch)) * DEG;
-  const node = (ast.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG;
-  const inc = ast.inc * DEG;
-  const w = ast.w * DEG;
+  const M = mod360(ast.M + ast.n * (d - dEpoch)) * DEG_TO_RAD;
+  const node = (ast.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG_TO_RAD;
+  const inc = ast.inc * DEG_TO_RAD;
+  const w = ast.w * DEG_TO_RAD;
   const E = solveKepler(M, ast.e);
   const xv = ast.a * (cos(E) - ast.e);
   const yv = ast.a * sqrt(1 - ast.e * ast.e) * sin(E);
@@ -346,14 +346,14 @@ function asteroidPosition(ast, d, j2000) {
 function cometPosition(comet, d, j2000) {
   const dT = julianDate(comet.Ty, comet.Tm, comet.Td, 0) - 2451543.5;
   const dt = d - dT;
-  const node = (comet.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG;
-  const inc = comet.inc * DEG;
-  const w = comet.w * DEG;
+  const node = (comet.node + (j2000 ? 0 : 3.82394e-5 * d)) * DEG_TO_RAD;
+  const inc = comet.inc * DEG_TO_RAD;
+  const w = comet.w * DEG_TO_RAD;
   let v, r;
   if (comet.e < 0.98) {
     const a = comet.q / (1 - comet.e);
     const P = 365.2568984 * a * sqrt(a);
-    const M = mod360(360 * dt / P) * DEG;
+    const M = mod360(360 * dt / P) * DEG_TO_RAD;
     const E = solveKepler(M, comet.e);
     const xv = a * (cos(E) - comet.e);
     const yv = a * sqrt(1 - comet.e * comet.e) * sin(E);
@@ -419,7 +419,7 @@ function solSysObjPosition(target, jd, latRad, lonRad) {
 
   if (target === 'Sun') {
     const eq = eclToEq(sun.lon, 0, eps);
-    return { ra: mod2pi(eq[0]), dec: eq[1] };
+    return { ra: eq[0], dec: eq[1] };
   }
 
   if (target === 'Moon') {
@@ -438,14 +438,14 @@ function solSysObjPosition(target, jd, latRad, lonRad) {
       h = planetPerturbations(target, d, h.lon, h.lat, h.r);
     const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
     const eq = eclToEq(geo.lon, geo.lat, eps);
-    return { ra: mod2pi(eq[0]), dec: eq[1] };
+    return { ra: eq[0], dec: eq[1] };
   }
 
   // target is an already-resolved asteroid or comet element object.
   const h = 'a' in target ? asteroidPosition(target, d, false) : cometPosition(target, d, false);
   const geo = helioToGeo(h, { lon: sun.lon, r: sun.r });
   const eq = eclToEq(geo.lon, geo.lat, eps);
-  return { ra: mod2pi(eq[0]), dec: eq[1] };
+  return { ra: eq[0], dec: eq[1] };
 }
 
 // Meeus "Astronomical Algorithms" ch.47 — truncated ELP2000 lunar theory (~10" accuracy).
@@ -469,8 +469,8 @@ function moonPositionMeeus(d) {
   const E = 1 - 0.002516*T - 0.0000074*T2;
   const E2 = E * E;
 
-  const Dr = D*DEG, Mr = M*DEG, Mpr = Mp*DEG, Fr = F*DEG;
-  const Lpr = Lp*DEG, A1r = A1*DEG, A2r = A2*DEG, A3r = A3*DEG;
+  const Dr = D*DEG_TO_RAD, Mr = M*DEG_TO_RAD, Mpr = Mp*DEG_TO_RAD, Fr = F*DEG_TO_RAD;
+  const Lpr = Lp*DEG_TO_RAD, A1r = A1*DEG_TO_RAD, A2r = A2*DEG_TO_RAD, A3r = A3*DEG_TO_RAD;
 
   // Table 47.A: longitude (Σl, 1e-6 deg) and distance (Σr, 1e-3 km)
   let Sl = 0, Sr = 0;
@@ -617,8 +617,8 @@ function moonPositionMeeus(d) {
       + 175*sin(A1r + Fr) + 127*sin(Lpr - Mpr) - 115*sin(Lpr + Mpr);
 
   const lonDeg = mod360(Lp + Sl * 1e-6);
-  const lon = lonDeg * DEG;
-  const lat = Sb * 1e-6 * DEG;
+  const lon = lonDeg * DEG_TO_RAD;
+  const lat = Sb * 1e-6 * DEG_TO_RAD;
   const dist = (385000.56 + Sr * 0.001) / 6378.14;
 
   return { lon, lat, dist };
@@ -662,11 +662,11 @@ const PLANET_PHYS = {
     poleRA: (T) => 281.0097 - 0.0328*T,
     poleDec: (T) => 61.4143 - 0.0049*T,
     W: (t) => {
-      const M1 = (174.791086 + 4.092335*t) * DEG;
-      const M2 = (349.582171 + 8.184670*t) * DEG;
-      const M3 = (164.373257 + 12.277005*t) * DEG;
-      const M4 = (339.164343 + 16.369340*t) * DEG;
-      const M5 = (153.955429 + 20.461675*t) * DEG;
+      const M1 = (174.791086 + 4.092335*t) * DEG_TO_RAD;
+      const M2 = (349.582171 + 8.184670*t) * DEG_TO_RAD;
+      const M3 = (164.373257 + 12.277005*t) * DEG_TO_RAD;
+      const M4 = (339.164343 + 16.369340*t) * DEG_TO_RAD;
+      const M5 = (153.955429 + 20.461675*t) * DEG_TO_RAD;
       return 329.5469 + 6.1385205*t
         + 0.00993822*sin(M1) - 0.00104581*sin(M2) - 0.00010280*sin(M3)
         - 0.00002364*sin(M4) - 0.00000532*sin(M5);
@@ -685,21 +685,21 @@ const PLANET_PHYS = {
     W: (t) => 176.630 + 350.89198226*t },
   Jupiter: { radius: 71492, flattening: 0.064874,
     poleRA: (T) => {
-      const J1 = (99.360714 + 4850.4046*T) * DEG;
-      const J2 = (175.895369 + 1191.9605*T) * DEG;
-      const J3 = (300.323162 + 262.5475*T) * DEG;
-      const J4 = (114.012305 + 6070.2476*T) * DEG;
-      const J5 = (49.511251 + 64.3000*T) * DEG;
+      const J1 = (99.360714 + 4850.4046*T) * DEG_TO_RAD;
+      const J2 = (175.895369 + 1191.9605*T) * DEG_TO_RAD;
+      const J3 = (300.323162 + 262.5475*T) * DEG_TO_RAD;
+      const J4 = (114.012305 + 6070.2476*T) * DEG_TO_RAD;
+      const J5 = (49.511251 + 64.3000*T) * DEG_TO_RAD;
       return 268.056595 - 0.006499*T
         + 0.000117*sin(J1) + 0.000938*sin(J2) + 0.001432*sin(J3)
         + 0.000030*sin(J4) + 0.002150*sin(J5);
     },
     poleDec: (T) => {
-      const J1 = (99.360714 + 4850.4046*T) * DEG;
-      const J2 = (175.895369 + 1191.9605*T) * DEG;
-      const J3 = (300.323162 + 262.5475*T) * DEG;
-      const J4 = (114.012305 + 6070.2476*T) * DEG;
-      const J5 = (49.511251 + 64.3000*T) * DEG;
+      const J1 = (99.360714 + 4850.4046*T) * DEG_TO_RAD;
+      const J2 = (175.895369 + 1191.9605*T) * DEG_TO_RAD;
+      const J3 = (300.323162 + 262.5475*T) * DEG_TO_RAD;
+      const J4 = (114.012305 + 6070.2476*T) * DEG_TO_RAD;
+      const J5 = (49.511251 + 64.3000*T) * DEG_TO_RAD;
       return 64.495303 + 0.002413*T
         + 0.000050*cos(J1) + 0.000404*cos(J2) + 0.000617*cos(J3)
         - 0.000013*cos(J4) + 0.000926*cos(J5);
@@ -714,9 +714,9 @@ const PLANET_PHYS = {
     poleDec: () => -15.175,
     W: (t) => 203.81 - 501.1600928*t },
   Neptune: { radius: 24764, flattening: 0.017081,
-    poleRA: (T) => { const N = (357.85 + 52.316*T) * DEG; return 299.36 + 0.70*sin(N); },
-    poleDec: (T) => { const N = (357.85 + 52.316*T) * DEG; return 43.46 - 0.51*cos(N); },
-    W: (t) => { const T = t/36525; const N = (357.85 + 52.316*T) * DEG; return 253.18 + 536.3128492*t - 0.48*sin(N); } },
+    poleRA: (T) => { const N = (357.85 + 52.316*T) * DEG_TO_RAD; return 299.36 + 0.70*sin(N); },
+    poleDec: (T) => { const N = (357.85 + 52.316*T) * DEG_TO_RAD; return 43.46 - 0.51*cos(N); },
+    W: (t) => { const T = t/36525; const N = (357.85 + 52.316*T) * DEG_TO_RAD; return 253.18 + 536.3128492*t - 0.48*sin(N); } },
   Pluto: { radius: 1195, flattening: 0.0,
     poleRA: () => 132.993,
     poleDec: () => -6.163,
@@ -724,32 +724,32 @@ const PLANET_PHYS = {
   Moon: { radius: 1737.4, flattening: 0,
     poleRA: (T) => {
       const d = T * 36525;
-      const E1 = (125.045 - 0.0529921*d)*DEG, E2 = (250.089 - 0.1059842*d)*DEG,
-            E3 = (260.008 + 13.0120009*d)*DEG, E4 = (176.625 + 13.3407154*d)*DEG,
-            E6 = (311.589 + 26.4057084*d)*DEG, E10 = (15.134 - 0.1589763*d)*DEG,
-            E13 = (25.053 + 12.9590088*d)*DEG;
+      const E1 = (125.045 - 0.0529921*d)*DEG_TO_RAD, E2 = (250.089 - 0.1059842*d)*DEG_TO_RAD,
+            E3 = (260.008 + 13.0120009*d)*DEG_TO_RAD, E4 = (176.625 + 13.3407154*d)*DEG_TO_RAD,
+            E6 = (311.589 + 26.4057084*d)*DEG_TO_RAD, E10 = (15.134 - 0.1589763*d)*DEG_TO_RAD,
+            E13 = (25.053 + 12.9590088*d)*DEG_TO_RAD;
       return 269.9949 + 0.0031*T - 3.8787*sin(E1) - 0.1204*sin(E2)
         + 0.0700*sin(E3) - 0.0172*sin(E4) + 0.0072*sin(E6)
         - 0.0052*sin(E10) + 0.0043*sin(E13);
     },
     poleDec: (T) => {
       const d = T * 36525;
-      const E1 = (125.045 - 0.0529921*d)*DEG, E2 = (250.089 - 0.1059842*d)*DEG,
-            E3 = (260.008 + 13.0120009*d)*DEG, E4 = (176.625 + 13.3407154*d)*DEG,
-            E6 = (311.589 + 26.4057084*d)*DEG, E7 = (134.963 + 13.0649930*d)*DEG,
-            E10 = (15.134 - 0.1589763*d)*DEG, E13 = (25.053 + 12.9590088*d)*DEG;
+      const E1 = (125.045 - 0.0529921*d)*DEG_TO_RAD, E2 = (250.089 - 0.1059842*d)*DEG_TO_RAD,
+            E3 = (260.008 + 13.0120009*d)*DEG_TO_RAD, E4 = (176.625 + 13.3407154*d)*DEG_TO_RAD,
+            E6 = (311.589 + 26.4057084*d)*DEG_TO_RAD, E7 = (134.963 + 13.0649930*d)*DEG_TO_RAD,
+            E10 = (15.134 - 0.1589763*d)*DEG_TO_RAD, E13 = (25.053 + 12.9590088*d)*DEG_TO_RAD;
       return 66.5392 + 0.0130*T + 1.5419*cos(E1) + 0.0239*cos(E2)
         - 0.0278*cos(E3) + 0.0068*cos(E4) - 0.0029*cos(E6)
         + 0.0009*cos(E7) + 0.0008*cos(E10) - 0.0009*cos(E13);
     },
     W: (t) => {
-      const E1 = (125.045 - 0.0529921*t)*DEG, E2 = (250.089 - 0.1059842*t)*DEG,
-            E3 = (260.008 + 13.0120009*t)*DEG, E4 = (176.625 + 13.3407154*t)*DEG,
-            E5 = (357.529 + 0.9856003*t)*DEG, E6 = (311.589 + 26.4057084*t)*DEG,
-            E7 = (134.963 + 13.0649930*t)*DEG, E8 = (276.617 + 0.3287146*t)*DEG,
-            E9 = (34.226 + 1.7484877*t)*DEG, E10 = (15.134 - 0.1589763*t)*DEG,
-            E11 = (119.743 + 0.0036096*t)*DEG, E12 = (239.961 + 0.1643573*t)*DEG,
-            E13 = (25.053 + 12.9590088*t)*DEG;
+      const E1 = (125.045 - 0.0529921*t)*DEG_TO_RAD, E2 = (250.089 - 0.1059842*t)*DEG_TO_RAD,
+            E3 = (260.008 + 13.0120009*t)*DEG_TO_RAD, E4 = (176.625 + 13.3407154*t)*DEG_TO_RAD,
+            E5 = (357.529 + 0.9856003*t)*DEG_TO_RAD, E6 = (311.589 + 26.4057084*t)*DEG_TO_RAD,
+            E7 = (134.963 + 13.0649930*t)*DEG_TO_RAD, E8 = (276.617 + 0.3287146*t)*DEG_TO_RAD,
+            E9 = (34.226 + 1.7484877*t)*DEG_TO_RAD, E10 = (15.134 - 0.1589763*t)*DEG_TO_RAD,
+            E11 = (119.743 + 0.0036096*t)*DEG_TO_RAD, E12 = (239.961 + 0.1643573*t)*DEG_TO_RAD,
+            E13 = (25.053 + 12.9590088*t)*DEG_TO_RAD;
       return 38.3213 + 13.17635815*t - 1.4e-12*t*t + 3.5610*sin(E1)
         + 0.1208*sin(E2) - 0.0642*sin(E3) + 0.0158*sin(E4)
         + 0.0252*sin(E5) - 0.0066*sin(E6) - 0.0047*sin(E7)
@@ -770,13 +770,13 @@ function planetOrientation(name, d, jx, jy, jz) {
   const phys = PLANET_PHYS[name];
   if (!phys) return null;
   const T = d / 36525;
-  const ra = phys.poleRA(T) * DEG, dec = phys.poleDec(T) * DEG;
+  const ra = phys.poleRA(T) * DEG_TO_RAD, dec = phys.poleDec(T) * DEG_TO_RAD;
   const poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
   const subObsLat = asin(-dot(poleJ2k[0], poleJ2k[1], poleJ2k[2], jx, jy, jz));
   const nodeRA = ra + PI/2;
   const eNx = cos(nodeRA), eNy = sin(nodeRA);
   const [ePx, ePy, ePz] = cross(poleJ2k[0], poleJ2k[1], poleJ2k[2], eNx, eNy, 0);
-  const Wrad = phys.W(d) * DEG;
+  const Wrad = phys.W(d) * DEG_TO_RAD;
   const pmX = eNx*cos(Wrad) + ePx*sin(Wrad);
   const pmY = eNy*cos(Wrad) + ePy*sin(Wrad);
   const pmZ =                 ePz*sin(Wrad);

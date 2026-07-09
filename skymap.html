@@ -290,16 +290,16 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=15"></script>
+<script src="astromath.js?v=24"></script>
 <script src="vsop87.js?v=1"></script>
-<script src="planets.js?v=15"></script>
+<script src="planets.js?v=17"></script>
 <script src="mpc.js?v=1"></script>
-<script src="sgp4.js?v=2"></script>
+<script src="sgp4.js?v=3"></script>
 <script src="satmag.js?v=5"></script>
-<script src="moons.js?v=2"></script>
+<script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=30"></script>
-<script src="search.js?v=20"></script>
+<script src="skymap.js?v=34"></script>
+<script src="search.js?v=26"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -378,11 +378,11 @@ function getDateTimeFromFields() {
 
 function setDateTimeFields(y, m, d, h, mi, s) {
   document.getElementById('dpYear').value = y;
-  document.getElementById('dpMonth').value = p2(m);
-  document.getElementById('dpDay').value = p2(d);
-  document.getElementById('tpHour').value = p2(h);
-  document.getElementById('tpMin').value = p2(mi);
-  document.getElementById('tpSec').value = p2(s);
+  document.getElementById('dpMonth').value = pad2(m);
+  document.getElementById('dpDay').value = pad2(d);
+  document.getElementById('tpHour').value = pad2(h);
+  document.getElementById('tpMin').value = pad2(mi);
+  document.getElementById('tpSec').value = pad2(s);
 }
 
 function clampGregorianGap(y, m, d, dir) {
@@ -499,21 +499,21 @@ function getLocation() {
   const lonM = parseInt(document.getElementById('lonMin').value) || 0;
   const lonS = parseInt(document.getElementById('lonSec').value) || 0;
   const lonSign = document.querySelector('input[name="lonEW"]:checked').value === 'W' ? -1 : 1;
-  const latRad = latSign * (latD + latM / 60 + latS / 3600) * DEG;
-  const lonRad = lonSign * (lonD + lonM / 60 + lonS / 3600) * DEG;
+  const latRad = latSign * (latD + latM / 60 + latS / 3600) * DEG_TO_RAD;
+  const lonRad = lonSign * (lonD + lonM / 60 + lonS / 3600) * DEG_TO_RAD;
   return {latRad, lonRad};
 }
 
 function setLocation(latDeg, lonDeg) {
   const latAbs = abs(latDeg);
   const lonAbs = abs(lonDeg);
-  document.getElementById('latDeg').value = p2(floor(latAbs));
-  document.getElementById('latMin').value = p2(floor((latAbs % 1) * 60));
-  document.getElementById('latSec').value = p2(round(((latAbs * 60) % 1) * 60));
+  document.getElementById('latDeg').value = pad2(floor(latAbs));
+  document.getElementById('latMin').value = pad2(floor((latAbs % 1) * 60));
+  document.getElementById('latSec').value = pad2(round(((latAbs * 60) % 1) * 60));
   document.querySelector(`input[name="latNS"][value="${latDeg >= 0 ? 'N' : 'S'}"]`).checked = true;
   document.getElementById('lonDeg').value = floor(lonAbs);
-  document.getElementById('lonMin').value = p2(floor((lonAbs % 1) * 60));
-  document.getElementById('lonSec').value = p2(round(((lonAbs * 60) % 1) * 60));
+  document.getElementById('lonMin').value = pad2(floor((lonAbs % 1) * 60));
+  document.getElementById('lonSec').value = pad2(round(((lonAbs * 60) % 1) * 60));
   document.querySelector(`input[name="lonEW"][value="${lonDeg >= 0 ? 'E' : 'W'}"]`).checked = true;
 }
 
@@ -555,7 +555,7 @@ function togglePanel() {
 
 function savePNG() {
   const dt = getDateTimeFromFields();
-  const fname = `skymap-${dt.localY}-${p2(dt.localM)}-${p2(dt.localD)}-${p2(dt.localH)}${p2(dt.localMi)}${p2(dt.localS)}.png`;
+  const fname = `skymap-${dt.localY}-${pad2(dt.localM)}-${pad2(dt.localD)}-${pad2(dt.localH)}${pad2(dt.localMi)}${pad2(dt.localS)}.png`;
   const link = document.createElement('a');
   link.download = fname;
   link.href = canvas.toDataURL('image/png');
@@ -592,7 +592,7 @@ function updateSliderLabels() {
   if (viewFrame === 'equatorial') {
     const raH = ((viewLon / 15) % 24 + 24) % 24;
     const raHi = floor(raH), raMin = round((raH - raHi) * 60);
-    document.getElementById('viewAzVal').textContent = `${raHi}h ${p2(raMin)}m`;
+    document.getElementById('viewAzVal').textContent = `${raHi}h ${pad2(raMin)}m`;
   } else {
     document.getElementById('viewAzVal').textContent = round(viewLon) + '°';
   }
@@ -612,7 +612,7 @@ function draw() {
   const offSign = offHrs >= 0 ? '+' : '-';
   const absMin = abs(dt.tzOffMin);
   const offH = floor(absMin / 60), offM = absMin % 60;
-  const offStr = offM === 0 ? `${offSign}${offH}` : `${offSign}${offH}:${p2(offM)}`;
+  const offStr = offM === 0 ? `${offSign}${offH}` : `${offSign}${offH}:${pad2(offM)}`;
   const janOff = round((localToUTC(dt.localY, 1, 1, 12, 0, 0) - Date.UTC(dt.localY, 0, 1, 12, 0, 0)) / 60000);
   const julOff = round((localToUTC(dt.localY, 7, 1, 12, 0, 0) - Date.UTC(dt.localY, 6, 1, 12, 0, 0)) / 60000);
   const stdOff = max(janOff, julOff);
@@ -821,8 +821,8 @@ function init() {
     const rect = canvas.getBoundingClientRect();
     const canvasX = x - rect.left, canvasY = y - rect.top;
     const mouseAltAz = viewUnproject(canvasX, canvasY);
-    const mouseAltDeg = mouseAltAz ? mouseAltAz[0] * RAD : viewLat;
-    const cosAlt = cos(min(85, abs(mouseAltDeg)) * DEG);
+    const mouseAltDeg = mouseAltAz ? mouseAltAz[0] * RAD_TO_DEG : viewLat;
+    const cosAlt = cos(min(85, abs(mouseAltDeg)) * DEG_TO_RAD);
     const degPerPx = viewFov / min(canvas.width, canvas.height);
     const lonSign = viewFrame === 'horizon' ? -1 : 1;
     viewLon = mod360(viewLon + lonSign * dx * degPerPx / cosAlt);

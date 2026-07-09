@@ -126,7 +126,7 @@ function formatCoords(lonDeg, latDeg) {
     const raH = ((lonDeg / 15) % 24 + 24) % 24;
     const raHi = floor(raH), raMin = (raH - raHi) * 60;
     const decAbs = abs(latDeg), decD = floor(decAbs), decM = round((decAbs - decD) * 60);
-    return `RA ${p2(raHi)}h ${raMin < 10 ? '0' : ''}${raMin.toFixed(1)}m  Dec ${latDeg >= 0 ? '+' : '-'}${p2(decD)}° ${p2(decM)}'`;
+    return `RA ${pad2(raHi)}h ${raMin < 10 ? '0' : ''}${raMin.toFixed(1)}m  Dec ${latDeg >= 0 ? '+' : '-'}${pad2(decD)}° ${pad2(decM)}'`;
   } else if (viewFrame === 'ecliptic') {
     const latSign = latDeg >= 0 ? '+' : '';
     return `Ecl Lon ${lonDeg.toFixed(1)}° Lat ${latSign}${latDeg.toFixed(1)}°`;
@@ -145,7 +145,6 @@ function formatCoords(lonDeg, latDeg) {
 // km (moon/satellite), or AU (sun/planet/comet/asteroid/planetmoon).
 // Returns '' if the distance is unknown or non-positive.
 function formatDist(obj) {
-  const LY_PER_PC = 3.26156;
   if (obj.type === 'star') {
     const pc = obj.data[4];
     if (!pc || pc <= 0) return '';
@@ -351,8 +350,8 @@ function skymapDraw(canvas, params) {
       if (fresh) { centerObject.jx = fresh.x; centerObject.jy = fresh.y; centerObject.jz = fresh.z; }
     }
     const [fx, fy, fz] = mvmul(mFrame, centerObject.jx, centerObject.jy, centerObject.jz);
-    viewLon = mod360((viewFrame === 'horizon' ? atan2(fx, fy) : atan2(fy, fx)) * RAD);
-    viewLat = max(-90, min(90, asin(max(-1, min(1, fz))) * RAD));
+    viewLon = (viewFrame === 'horizon' ? atan2pi(fx, fy) : atan2pi(fy, fx)) * RAD_TO_DEG;
+    viewLat = max(-90, min(90, asin(max(-1, min(1, fz))) * RAD_TO_DEG));
   }
 
   // ---- View projection parameters ----
@@ -361,8 +360,8 @@ function skymapDraw(canvas, params) {
   // vLon: azimuth-style atan2(x,y) angle (north-referenced) used by the
   // projection math below. Horizon's viewLon already is azimuth; the
   // other frames store RA/ecliptic-lon/galactic-lon, which is 90° off from that.
-  const vLon = (viewFrame === 'horizon' ? viewLon : mod360(90 - viewLon)) * DEG;
-  const vLat = viewLat * DEG, vWidth = viewFov * DEG;
+  const vLon = (viewFrame === 'horizon' ? viewLon : mod360(90 - viewLon)) * DEG_TO_RAD;
+  const vLat = viewLat * DEG_TO_RAD, vWidth = viewFov * DEG_TO_RAD;
   const vCosL = cos(vLon), vSinL = sin(vLon);
   const vTheta = PI / 2 - vLat;                      // co-latitude of view center
   const vCosT = cos(vTheta), vSinT = sin(vTheta);
@@ -442,7 +441,7 @@ function skymapDraw(canvas, params) {
     ctx.beginPath();
     const i0 = round((90 - maxLat) / 5), i1 = 36 - i0;
     for (let i = i0; i <= i1; i++) {
-      const lat = PI/2 - i * 5 * DEG;
+      const lat = PI/2 - i * 5 * DEG_TO_RAD;
       const cLat = cos(lat);
       const [qx, qy, qz] = mvmul(mV, cLat * cl, cLat * sl, sin(lat));
       const front = qz > -1e-10;
@@ -469,7 +468,7 @@ function skymapDraw(canvas, params) {
     let prevPt = null, prevFront = false;
     ctx.beginPath();
     for (let i = 0; i <= 72; i++) {
-      const phi = i * 5 * DEG;
+      const phi = i * 5 * DEG_TO_RAD;
       const cp = cos(phi), sp = sin(phi);
       const qx = cc*px + sc*(cp*ux + sp*vx);
       const qy = cc*py + sc*(cp*uy + sp*vy);
@@ -501,7 +500,7 @@ function skymapDraw(canvas, params) {
   function j2kPAToScreen(j2kPA, vx, vy, vz, sx, sy) {
     const ncpX = M[2], ncpY = M[5], ncpZ = M[8];
     const dp = dot(vx, vy, vz, ncpX, ncpY, ncpZ);
-    const t = DEG / sqrt(1 - dp*dp || 1e-20);
+    const t = DEG_TO_RAD / sqrt(1 - dp*dp || 1e-20);
     const nx = vx + t*(ncpX - dp*vx);
     const ny = vy + t*(ncpY - dp*vy);
     const nz = vz + t*(ncpZ - dp*vz);
@@ -526,8 +525,8 @@ function skymapDraw(canvas, params) {
     const pz = -vSinT * vy + vCosT * vz;
     const px = vCosL * x1 + vSinL * y1;
     const py = -vSinL * x1 + vCosL * y1;
-    const lon = viewFrame === 'horizon' ? atan2(px, py) : atan2(py, px);
-    return [asin(max(-1, min(1, pz))), mod2pi(lon)];
+    const lon = viewFrame === 'horizon' ? atan2pi(px, py) : atan2pi(py, px);
+    return [asin(max(-1, min(1, pz))), lon];
   };
 
   // ---- Label collision avoidance ----
@@ -560,7 +559,7 @@ function skymapDraw(canvas, params) {
     let bestRect = null;
     for (let i = 0; i < quadrants.length; i++) {
       const q = quadrants[i];
-      const rad = q.ang * DEG;
+      const rad = q.ang * DEG_TO_RAD;
       const px = objX + radius * cos(rad);
       const py = objY - radius * sin(rad);
       const rect = {
@@ -661,19 +660,19 @@ function skymapDraw(canvas, params) {
     const lonStep = viewFov < 20 ? 5 : viewFov < 60 ? 15 : 45;
     // Latitude parallels
     for (let lat = -90 + latStep; lat <= 90 - latStep; lat += latStep) {
-      drawGreatCircle(gridPoleX, gridPoleY, gridPoleZ, PI/2 - lat * DEG);
+      drawGreatCircle(gridPoleX, gridPoleY, gridPoleZ, PI/2 - lat * DEG_TO_RAD);
     }
     // Longitude meridians (cardinal meridians extend pole-to-pole)
     const merMaxLat = 90 - latStep;
     for (let lon = 0; lon < 360; lon += lonStep) {
-      drawMeridian(mView, lon * DEG, lon % 90 === 0 ? 90 : merMaxLat);
+      drawMeridian(mView, lon * DEG_TO_RAD, lon % 90 === 0 ? 90 : merMaxLat);
     }
     // Longitude labels along the nearest visible parallel to the equator
     const glfs = max(minFontSize, round(min(W, H) / 85));
     ctx.font = `${glfs}px sans-serif`;
     ctx.fillStyle = frameColor(viewFrame, 0.5);
     const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
-    const halfFovV = (atan2(rTop, 2) + atan2(rBot, 2)) / DEG;
+    const halfFovV = (atan2(rTop, 2) + atan2(rBot, 2)) / DEG_TO_RAD;
     const lat = viewLat;
     let lonLabelLat;
     if ((lat > 0 && lat - halfFovV < 0) || (lat < 0 && lat + halfFovV > 0) || lat === 0) {
@@ -684,10 +683,10 @@ function skymapDraw(canvas, params) {
       lonLabelLat = floor((lat + halfFovV) / latStep) * latStep;
     }
     {
-      const llR = lonLabelLat * DEG;
+      const llR = lonLabelLat * DEG_TO_RAD;
       const cLL = cos(llR), sLL = sin(llR);
       for (let lon = 0; lon < 360; lon += lonStep) {
-        const lonR = lon * DEG;
+        const lonR = lon * DEG_TO_RAD;
         const cl = cos(lonR), sl = sin(lonR);
         const [qx, qy, qz] = mvmul(mView, cLL * cl, cLL * sl, sLL);
         if (qz < 0) continue;
@@ -699,7 +698,7 @@ function skymapDraw(canvas, params) {
         if (viewFrame === 'equatorial') {
           const totalMin = dispLon * 4;
           const h = floor(totalMin / 60), m = totalMin % 60;
-          label = m === 0 ? `${h}h` : `${h}h${p2(m)}m`;
+          label = m === 0 ? `${h}h` : `${h}h${pad2(m)}m`;
         } else {
           label = `${dispLon}°`;
         }
@@ -723,21 +722,21 @@ function skymapDraw(canvas, params) {
     let labelLonR;
     if (poleVisible) {
       const primeLon = viewFrame === 'horizon' ? 90 : 0;
-      labelLonR = primeLon * DEG;
+      labelLonR = primeLon * DEG_TO_RAD;
     } else {
       const corner = viewUnproject(0, lat >= 0 ? H : 0);
-      const cornerDisp = corner ? corner[1] * RAD : viewLon;
+      const cornerDisp = corner ? corner[1] * RAD_TO_DEG : viewLon;
       const nextDisp = viewFrame === 'horizon'
         ? (ceil(cornerDisp / lonStep) * lonStep) % 360
         : (floor(cornerDisp / lonStep) * lonStep + 360) % 360;
       const labelLon = viewFrame === 'horizon' ? mod360(90 - nextDisp) : nextDisp;
-      labelLonR = labelLon * DEG;
+      labelLonR = labelLon * DEG_TO_RAD;
     }
     // Walk from -90° to +90° (and wrap through the far pole) to label both hemispheres
     const cl = cos(labelLonR), sl = sin(labelLonR);
     for (let lat = -90; lat < 270; lat += latStep) {
       const effLat = lat > 90 ? 180 - lat : lat;
-      const latR = lat * DEG;
+      const latR = lat * DEG_TO_RAD;
       const cLat = cos(latR), sLat = sin(latR);
       const [qx, qy, qz] = mvmul(mView, cLat * cl, cLat * sl, sLat);
       if (qz < 0) continue;
@@ -774,7 +773,7 @@ function skymapDraw(canvas, params) {
       ctx.strokeStyle = frameColor('galactic');
       ctx.lineWidth = 1.5;
       // Galactic north pole (J2000): RA 192.85948°, Dec +27.12825°
-      const gRA = 192.85948 * DEG, gDec = 27.12825 * DEG;
+      const gRA = 192.85948 * DEG_TO_RAD, gDec = 27.12825 * DEG_TO_RAD;
       const [gx0, gy0, gz0] = sph2uxyz(gRA, gDec);
       drawGreatCircle(...mvmul(M, gx0, gy0, gz0), PI/2);
     }
@@ -915,7 +914,7 @@ function skymapDraw(canvas, params) {
       const d = 1 + vz;
       const pt = toScreen(2 * x1 / d, -2 * vy / d);
       const dsSize = ds[5];
-      const r = dsSize ? max(5, radToPx(pt[0], pt[1], dsSize * DEG / 60) / 2) : 5;
+      const r = dsSize ? max(5, radToPx(pt[0], pt[1], dsSize * DEG_TO_RAD / 60) / 2) : 5;
       // Enlarge the cull rectangle by the object's radius (major axis) so
       // extended objects aren't culled just because their center is off-canvas.
       if (pt[0] < -r || pt[0] > W + r || pt[1] < -r || pt[1] > H + r) { dsPositions.push(null); continue; }
@@ -953,9 +952,9 @@ function skymapDraw(canvas, params) {
       } else if (typ === 'GX') {
         const minorSize = ds[6];
         if (minorSize) {
-          const rMinor = max(3, radToPx(pt[0], pt[1], minorSize * DEG / 60) / 2);
+          const rMinor = max(3, radToPx(pt[0], pt[1], minorSize * DEG_TO_RAD / 60) / 2);
           const pa = ds[7];
-          const rot = pa != null ? j2kPAToScreen(pa * DEG, x1, vy, vz, pt[0], pt[1]) : 0;
+          const rot = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, x1, vy, vz, pt[0], pt[1]) : 0;
           ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
           dObj.rMinor = rMinor; dObj.rot = rot;
         } else {
@@ -1087,7 +1086,7 @@ function skymapDraw(canvas, params) {
     const sunR = earth.R;
     const [sx, sy, sz] = mvmul(mEcl2J2000, ...sph2uxyz(sunLon, sunLat));
     ssCache.push({ type:'sun', name:'Sun', x:sx, y:sy, z:sz,
-      mag:-26.74, angRad:(SUN_DIAM1AU / sunR) / 3600 * DEG / 2, dist:sunR });
+      mag:-26.74, angRad:(SUN_DIAM1AU / sunR) / 3600 * DEG_TO_RAD / 2, dist:sunR });
 
     // Earth heliocentric Cartesian (ecliptic of-date) for planet geocentric conversion
     const earthX = earth.R * cos(earth.B) * cos(earth.L);
@@ -1121,7 +1120,7 @@ function skymapDraw(canvas, params) {
       const [geoLon, geoLat] = uxyz2sph(px, py, pz);
       const geoDist = vmag(px, py, pz);
       const { FV } = phaseElongation(sunR, geoDist, h.R);
-      const FVdeg = FV * RAD;
+      const FVdeg = FV * RAD_TO_DEG;
       // d + 1.5: Schlyter functions use epoch JD 2451543.5 (1.5 days before J2000)
       const ringMagn = name === 'Saturn' ? saturnRingMagn(geoLon, geoLat, d + 1.5) : 0;
       const [jx, jy, jz] = mvmul(mEcl2J2000, ...sph2uxyz(geoLon, geoLat));
@@ -1129,7 +1128,7 @@ function skymapDraw(canvas, params) {
         mag: planetMag(name, h.R, geoDist, FVdeg, ringMagn),
         symbol: PLANET_SYMBOLS[name],
         helioDist:h.R, geoDist, phaseAngle:FV,
-        angRad: (PLANET_DIAM1AU[name] || 0) / geoDist / 3600 * DEG / 2 };
+        angRad: (PLANET_DIAM1AU[name] || 0) / geoDist / 3600 * DEG_TO_RAD / 2 };
       const ori = planetOrientation(name, d - lt, jx, jy, jz);
       if (ori) {
         entry.subObsLat = ori.subObsLat;
@@ -1151,10 +1150,10 @@ function skymapDraw(canvas, params) {
     const { FV: plutoFV } = phaseElongation(sunR, plutoDist, plutoH.r);
     const [pjx, pjy, pjz] = mvmul(mEcl2J2000, ...sph2uxyz(plutoGeoLon, plutoGeoLat));
     const plutoEntry = { type:'planet', name:'Pluto', x:pjx, y:pjy, z:pjz,
-      mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD, 0),
+      mag: planetMag('Pluto', plutoH.r, plutoDist, plutoFV * RAD_TO_DEG, 0),
       symbol: PLANET_SYMBOLS['Pluto'],
       helioDist:plutoH.r, geoDist:plutoDist, phaseAngle:plutoFV,
-      angRad: (PLANET_DIAM1AU['Pluto'] || 0) / plutoDist / 3600 * DEG / 2 };
+      angRad: (PLANET_DIAM1AU['Pluto'] || 0) / plutoDist / 3600 * DEG_TO_RAD / 2 };
     const plutoOri = planetOrientation('Pluto', d - plutoLt, pjx, pjy, pjz);
     if (plutoOri) {
       plutoEntry.subObsLat = plutoOri.subObsLat;
@@ -1176,8 +1175,8 @@ function skymapDraw(canvas, params) {
     const moonElong = mod2pi(moonPos.lon - sunLon);
     const moonFV = abs(PI - moonElong);
     const moonEntry = { type:'moon', name:'Moon', x:mx, y:my, z:mz,
-      mag: moonMag(sunR, moonPos.dist, moonFV * RAD),
-      angRad: moonAngArcmin / 60 * DEG / 2, dist: topoDistER * 6378.14, phaseAngle: moonFV };
+      mag: moonMag(sunR, moonPos.dist, moonFV * RAD_TO_DEG),
+      angRad: moonAngArcmin / 60 * DEG_TO_RAD / 2, dist: topoDistER * 6378.14, phaseAngle: moonFV };
     const moonOri = planetOrientation('Moon', d, mx, my, mz);
     if (moonOri) {
       moonEntry.subObsLat = moonOri.subObsLat;
@@ -1510,11 +1509,11 @@ function skymapDraw(canvas, params) {
     // Latitude lines at ±30, ±60
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
     for (const latDeg of [30, 60, -30, -60]) {
-      const phi = latDeg * DEG;
+      const phi = latDeg * DEG_TO_RAD;
       const sinPhi = sin(phi), cosPhi = cos(phi);
       const pts = [];
       for (let i = 0; i <= 72; i++) {
-        const dLam = i * 5 * DEG - lam0;
+        const dLam = i * 5 * DEG_TO_RAD - lam0;
         pts.push([cosPhi * sin(dLam),
                   cosPhi0 * sinPhi - sinPhi0 * cosPhi * cos(dLam),
                   sinPhi0 * sinPhi + cosPhi0 * cosPhi * cos(dLam)]);
@@ -1525,7 +1524,7 @@ function skymapDraw(canvas, params) {
     ctx.lineWidth = 1.0 / yScale;
     const eqPts = [];
     for (let i = 0; i <= 72; i++) {
-      const dLam = i * 5 * DEG - lam0;
+      const dLam = i * 5 * DEG_TO_RAD - lam0;
       eqPts.push([sin(dLam),
                   -sinPhi0 * cos(dLam),
                   cosPhi0 * cos(dLam)]);
@@ -1535,11 +1534,11 @@ function skymapDraw(canvas, params) {
     // Longitude lines every 30°
     ctx.lineWidth = 0.5 / yScale;
     for (let lonDeg = 0; lonDeg < 360; lonDeg += 30) {
-      const dLam = lonDeg * DEG - lam0;
+      const dLam = lonDeg * DEG_TO_RAD - lam0;
       const sinDLam = sin(dLam), cosDLam = cos(dLam);
       const pts = [];
       for (let i = 0; i <= 36; i++) {
-        const phi = (-90 + i * 5) * DEG;
+        const phi = (-90 + i * 5) * DEG_TO_RAD;
         const sinPhi = sin(phi), cosPhi = cos(phi);
         pts.push([cosPhi * sinDLam,
                   cosPhi0 * sinPhi - sinPhi0 * cosPhi * cosDLam,
@@ -1804,8 +1803,8 @@ function skymapDraw(canvas, params) {
     // At high zoom (FOV < 5°), the 5°×5° quad patches may all project off-screen
     // even though the view is below the horizon. Fill from the horizon line
     // (or canvas top, if the horizon is above the canvas) down to the bottom.
-    const botAlt = viewLat - 2 * atan2(cy, 2 * scale) * RAD;
-    if (viewFov < 5 && botAlt < REFRACTION_ALT * RAD) {
+    const botAlt = viewLat - 2 * atan2(cy, 2 * scale) * RAD_TO_DEG;
+    if (viewFov < 5 && botAlt < REFRACTION_ALT * RAD_TO_DEG) {
       const hp = viewProjectRaw(REFRACTION_ALT, vLon);
       const top = max(0, hp[1]);
       ctx.fillRect(0, top, W, H - top);
@@ -1815,22 +1814,22 @@ function skymapDraw(canvas, params) {
     const hPatch = 30;
     for (let az0 = 0; az0 < 360; az0 += hPatch) {
       for (let alt0 = -90; alt0 < 0; alt0 += hPatch) {
-        const altTop = alt0 + hPatch >= 0 ? REFRACTION_ALT / DEG : alt0 + hPatch;
+        const altTop = alt0 + hPatch >= 0 ? REFRACTION_ALT / DEG_TO_RAD : alt0 + hPatch;
         let anyVis = false;
         for (let a = az0; !anyVis && a <= az0 + hPatch; a += hStep) {
           for (let b = alt0; !anyVis && b < altTop; b += hStep) {
-            if (viewProject(b * DEG, a * DEG)) anyVis = true;
+            if (viewProject(b * DEG_TO_RAD, a * DEG_TO_RAD)) anyVis = true;
           }
-          if (!anyVis && viewProject(altTop * DEG, a * DEG)) anyVis = true;
+          if (!anyVis && viewProject(altTop * DEG_TO_RAD, a * DEG_TO_RAD)) anyVis = true;
         }
         if (!anyVis) continue;
         for (let a = az0; a < az0 + hPatch; a += hStep) {
           for (let b = alt0; b < altTop; b += hStep) {
             const bNext = min(b + hStep, altTop);
-            const p00 = viewProjectRaw(b * DEG, a * DEG);
-            const p10 = viewProjectRaw(bNext * DEG, a * DEG);
-            const p11 = viewProjectRaw(bNext * DEG, (a + hStep) * DEG);
-            const p01 = viewProjectRaw(b * DEG, (a + hStep) * DEG);
+            const p00 = viewProjectRaw(b * DEG_TO_RAD, a * DEG_TO_RAD);
+            const p10 = viewProjectRaw(bNext * DEG_TO_RAD, a * DEG_TO_RAD);
+            const p11 = viewProjectRaw(bNext * DEG_TO_RAD, (a + hStep) * DEG_TO_RAD);
+            const p01 = viewProjectRaw(b * DEG_TO_RAD, (a + hStep) * DEG_TO_RAD);
             const bnd = 2 * max(W, H);
             if (abs(p00[0]-cx) > bnd || abs(p00[1]-cy) > bnd ||
                 abs(p10[0]-cx) > bnd || abs(p10[1]-cy) > bnd ||
@@ -1863,9 +1862,9 @@ function skymapDraw(canvas, params) {
     ctx.fillStyle = frameColor('horizon');
     ctx.font = `bold ${dirFont}px sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const dirAltOffset = dirFont * 0.8 * viewFov / min(W, H) * DEG;
+    const dirAltOffset = dirFont * 0.8 * viewFov / min(W, H) * DEG_TO_RAD;
     for (const [azDeg, label] of dirs) {
-      const azR = azDeg * DEG;
+      const azR = azDeg * DEG_TO_RAD;
       const labelAlt = REFRACTION_ALT + dirAltOffset;
       if (!viewProject(labelAlt, azR)) continue;
       const pt = viewProjectRaw(labelAlt, azR);
@@ -1881,9 +1880,9 @@ function skymapDraw(canvas, params) {
   function drawHeader() {
     const sfs = max(minFontSize, round(min(W, H) / 50));
     if (showHeader) {
-      const dateStr = `${dt.localY}-${p2(dt.localM)}-${p2(dt.localD)}`;
-      const timeStr = `${p2(dt.localH)}:${p2(dt.localMi)}:${p2(dt.localS)} ${dt.tzAbbr}`;
-      const latDeg = loc.latRad * RAD, lonDeg = loc.lonRad * RAD;
+      const dateStr = `${dt.localY}-${pad2(dt.localM)}-${pad2(dt.localD)}`;
+      const timeStr = `${pad2(dt.localH)}:${pad2(dt.localMi)}:${pad2(dt.localS)} ${dt.tzAbbr}`;
+      const latDeg = loc.latRad * RAD_TO_DEG, lonDeg = loc.lonRad * RAD_TO_DEG;
       const latStr = `${abs(latDeg).toFixed(1)}° ${latDeg >= 0 ? 'N' : 'S'}`;
       const lonStr = `${abs(lonDeg).toFixed(1)}° ${lonDeg >= 0 ? 'E' : 'W'}`;
       const hfs = max(minFontSize, round(min(W, H) / 38));
@@ -1898,8 +1897,8 @@ function skymapDraw(canvas, params) {
       ctx.fillText(timeStr, hdrX, hfs * 1.2 + sfs * 4.2);
       const rLeft = abs((0 - cx) / scale), rRight = abs((W - cx) / scale);
       const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
-      const fovW = min(180, (2 * atan2(rLeft, 2) + 2 * atan2(rRight, 2)) / DEG);
-      const fovH = min(180, (2 * atan2(rTop, 2) + 2 * atan2(rBot, 2)) / DEG);
+      const fovW = min(180, (2 * atan2(rLeft, 2) + 2 * atan2(rRight, 2)) / DEG_TO_RAD);
+      const fovH = min(180, (2 * atan2(rTop, 2) + 2 * atan2(rBot, 2)) / DEG_TO_RAD);
       const useArcmin = min(fovW, fovH) < 1;
       const fmtFov = v => useArcmin
         ? (v * 60 >= 100 ? round(v * 60) + "'" : (v * 60).toFixed(1) + "'")
@@ -1913,9 +1912,9 @@ function skymapDraw(canvas, params) {
     if (selectedObject) {
       if (selectedObject.jx !== undefined) {
         const [fx, fy, fz] = mvmul(mFrame, selectedObject.jx, selectedObject.jy, selectedObject.jz);
-        const latDeg = asin(max(-1, min(1, fz))) * RAD;
-        const lon = viewFrame === 'horizon' ? atan2(fx, fy) : atan2(fy, fx);
-        const lonDeg = mod2pi(lon) * RAD;
+        const latDeg = asin(max(-1, min(1, fz))) * RAD_TO_DEG;
+        const lon = viewFrame === 'horizon' ? atan2pi(fx, fy) : atan2pi(fy, fx);
+        const lonDeg = lon * RAD_TO_DEG;
         selectedObject.coords = formatCoords(lonDeg, latDeg);
       }
       ctx.font = `${sfs}px sans-serif`;
@@ -2028,7 +2027,7 @@ function changeFrame(newFrame, j2000, dt, loc) {
   if (newFrame === viewFrame && j2000 === viewJ2000) return;
   if (curMFrame) {
     // Current view center → J2000 equatorial unit vector
-    const lon = viewLon * DEG, lat = viewLat * DEG;
+    const lon = viewLon * DEG_TO_RAD, lat = viewLat * DEG_TO_RAD;
     const [x, y, z] = sph2uxyz(viewFrame === 'horizon' ? PI/2 - lon : lon, lat);
     const [jx, jy, jz] = mvmul(mtranspose(curMFrame), x, y, z);
     // Build new frame's rotation matrix
@@ -2037,8 +2036,8 @@ function changeFrame(newFrame, j2000, dt, loc) {
     const mNew = frameMatrix(newFrame, jd, loc.latRad, loc.lonRad, j2000);
     // J2000 equatorial → new frame → display lon/lat
     const [nx, ny, nz] = mvmul(mNew, jx, jy, jz);
-    viewLon = mod360((newFrame === 'horizon' ? atan2(nx, ny) : atan2(ny, nx)) * RAD);
-    viewLat = max(-90, min(90, asin(max(-1, min(1, nz))) * RAD));
+    viewLon = (newFrame === 'horizon' ? atan2pi(nx, ny) : atan2pi(ny, nx)) * RAD_TO_DEG;
+    viewLat = max(-90, min(90, asin(max(-1, min(1, nz))) * RAD_TO_DEG));
   }
   viewFrame = newFrame;
   viewJ2000 = j2000;

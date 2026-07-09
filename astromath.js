@@ -1,29 +1,210 @@
 // ---- Constants ----
 const {PI, sin, cos, tan, atan2, sqrt, abs, max, min, round, floor, ceil, asin, pow} = Math;
 const TAU = 2 * PI;
-const DEG = PI / 180;       // multiply degrees by this to get radians
-const RAD = 180 / PI;       // multiply radians by this to get degrees
-const REFRACTION_ALT = -34 / 60 * DEG;  // standard atmospheric refraction at horizon (radians)
-const KM_PER_AU = 149597870.7;
-const p2 = v => String(v).padStart(2, '0');  // zero-pad a number to 2 digits
+const DEG_TO_RAD = PI / 180;       // multiply degrees by this to get radians
+const RAD_TO_DEG = 180 / PI;       // multiply radians by this to get degrees
+const REFRACTION_ALT = -34 / 60 * DEG_TO_RAD;  // standard atmospheric refraction at horizon (radians)
+const AU_PER_PC  = 206264.806247;
+const AU_PER_LY  = 63241.077084;
+const KM_PER_AU  = 149597870.7;
+const LY_PER_PC  = AU_PER_PC / AU_PER_LY;  // 1 parsec in light years (≈3.26156)
+const PC_PER_LY  = AU_PER_LY / AU_PER_PC;  // 1 light year in parsecs (≈0.306601)
+
+const pad2 = v => String(v).padStart(2, '0');  // zero-pad a number to 2 digits
+
 function mod360(deg) { return ((deg % 360) + 360) % 360; }
 function mod2pi(rad) { return ((rad % TAU) + TAU) % TAU; }
+function atan2pi(y, x) { return mod2pi(atan2(y, x)); }
 
-// 3×3 rotation matrix (row-major flat array) from J2000 equatorial to galactic coordinates.
-// Galactic north pole: RA 192.85948°, Dec +27.12825° (J2000)
-// Galactic center:     RA 266.405°,   Dec -28.936°  (J2000)
-const mGalactic = (function() {
-  const pRA = 192.85948 * DEG, pDec = 27.12825 * DEG;
-  const cRA = 266.405 * DEG, cDec = -28.936 * DEG;
-  const pz = [cos(pDec)*cos(pRA), cos(pDec)*sin(pRA), sin(pDec)];
-  const gc = [cos(cDec)*cos(cRA), cos(cDec)*sin(cRA), sin(cDec)];
-  const d = dot(pz[0],pz[1],pz[2], gc[0],gc[1],gc[2]);
-  const px = [gc[0] - pz[0]*d, gc[1] - pz[1]*d, gc[2] - pz[2]*d];
-  const pxLen = vmag(px[0], px[1], px[2]);
-  px[0] /= pxLen; px[1] /= pxLen; px[2] /= pxLen;
-  const py = cross(pz[0],pz[1],pz[2], px[0],px[1],px[2]);
-  return [px[0],px[1],px[2], py[0],py[1],py[2], pz[0],pz[1],pz[2]];
-})();
+/* ----------------------------------------------------------------
+   Angle formatting and parsing utilities.
+   All degree-based: RA in 0–360, Dec in -90–+90, DMS unsigned.
+---------------------------------------------------------------- */
+
+function formatRA(raDeg) {
+    raDeg = ((raDeg % 360) + 360) % 360;
+    var totalSec = Math.round(raDeg / 15 * 360000) / 100;
+    if (totalSec >= 86400) totalSec = 0;
+    var hh = Math.floor(totalSec / 3600);
+    var mm = Math.floor((totalSec % 3600) / 60);
+    var ss = (totalSec % 60).toFixed(2);
+    return String(hh).padStart(2,'0') + 'h ' + String(mm).padStart(2,'0') + 'm ' + ss.padStart(5,'0') + 's';
+}
+
+function formatDec(decDeg) {
+    var sign = decDeg < 0 ? '-' : '+';
+    var totalArcsec = Math.round(Math.abs(decDeg) * 36000) / 10;
+    var dd = Math.floor(totalArcsec / 3600);
+    var mm = Math.floor((totalArcsec % 3600) / 60);
+    var ss = (totalArcsec % 60).toFixed(1);
+    return sign + String(dd).padStart(2,'0') + '° ' + String(mm).padStart(2,'0') + "' " + ss.padStart(4,'0') + '"';
+}
+
+// Unsigned only — deg must be >= 0. NOT for declination (which is signed,
+// -90..+90): use formatDec() for that. Callers with a signed value (e.g.
+// longitude) must take Math.abs() and prepend their own sign/hemisphere
+// letter, as formatLonLat() does.
+function formatDMS(deg) {
+    var d = Math.floor(deg);
+    var mf = (deg - d) * 60;
+    var m = Math.floor(mf);
+    var s = Math.round((mf - m) * 60);
+    if (s >= 60) { s = 0; m += 1; }
+    if (m >= 60) { m = 0; d += 1; }
+    return d + '° ' + String(m).padStart(2,'0') + "' " + String(s).padStart(2,'0') + '"';
+}
+
+function parseDMS(str) {
+    str = (str || '').trim();
+    var m = str.match(/^(\d+(?:\.\d+)?)\s*°(?:\s*(\d+(?:\.\d+)?)\s*'(?:\s*(\d+(?:\.\d+)?)\"?)?)?$/);
+    if (m) return parseFloat(m[1]) + (m[2] ? parseFloat(m[2]) / 60 : 0) + (m[3] ? parseFloat(m[3]) / 3600 : 0);
+    m = str.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)(?::(\d+(?:\.\d+)?))?$/);
+    if (m) return parseFloat(m[1]) + parseFloat(m[2]) / 60 + (m[3] ? parseFloat(m[3]) / 3600 : 0);
+    m = str.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?:\s+(\d+(?:\.\d+)?))?$/);
+    if (m) return parseFloat(m[1]) + parseFloat(m[2]) / 60 + (m[3] ? parseFloat(m[3]) / 3600 : 0);
+    var v = parseFloat(str);
+    return isNaN(v) ? null : v;
+}
+
+function parseRA(str) {
+    str = str.trim();
+    var hours = null;
+    var m = str.match(/^(\d+(?:\.\d+)?)\s*h(?:\s*(\d+(?:\.\d+)?)\s*m(?:\s*(\d+(?:\.\d+)?)\s*s?)?)?$/i);
+    if (m) hours = parseFloat(m[1]) + (m[2] ? parseFloat(m[2]) / 60 : 0) + (m[3] ? parseFloat(m[3]) / 3600 : 0);
+    if (hours === null) {
+        m = str.match(/^(\d+(?:\.\d+)?)[:\s](\d+(?:\.\d+)?)(?:[:\s](\d+(?:\.\d+)?))?$/);
+        if (m) hours = parseFloat(m[1]) + parseFloat(m[2]) / 60 + (m[3] ? parseFloat(m[3]) / 3600 : 0);
+    }
+    if (hours === null) {
+        m = str.match(/^(\d+(?:\.\d+)?)\s*h?$/i);
+        if (m) hours = parseFloat(m[1]);
+    }
+    if (hours === null || isNaN(hours) || hours < 0 || hours >= 24) return null;
+    return hours * 15;
+}
+
+function parseDec(str) {
+    str = str.trim();
+    var deg = null;
+    var sign = str.startsWith('-') ? -1 : 1;
+    var abs = str.replace(/^[+-]/, '');
+    var m = abs.match(/^(\d+(?:\.\d+)?)\s*°(?:\s*(\d+(?:\.\d+)?)\s*'(?:\s*(\d+(?:\.\d+)?)\s*"?)?)?$/);
+    if (m) deg = sign * (parseFloat(m[1]) + (m[2] ? parseFloat(m[2]) / 60 : 0) + (m[3] ? parseFloat(m[3]) / 3600 : 0));
+    if (deg === null) {
+        m = abs.match(/^(\d+(?:\.\d+)?)[:\s](\d+(?:\.\d+)?)(?:[:\s](\d+(?:\.\d+)?))?$/);
+        if (m) deg = sign * (parseFloat(m[1]) + parseFloat(m[2]) / 60 + (m[3] ? parseFloat(m[3]) / 3600 : 0));
+    }
+    if (deg === null) {
+        m = abs.match(/^(\d+(?:\.\d+)?)°?$/);
+        if (m) deg = sign * parseFloat(m[1]);
+    }
+    if (deg === null || isNaN(deg) || deg < -90 || deg > 90) return null;
+    return deg;
+}
+
+function formatLonLat(lonDeg, latDeg) {
+    if (lonDeg == null || latDeg == null) return null;
+    var ew = lonDeg >= 0 ? 'E' : 'W';
+    var ns = latDeg >= 0 ? 'N' : 'S';
+    // Reuses formatDMS's rounding-carry guard (59.9999" must become 1' 0.0", not
+    // display as an invalid "60"") instead of re-deriving D/M/S inline.
+    return 'Lon ' + formatDMS(Math.abs(lonDeg)) + ' ' + ew +
+         '  Lat ' + formatDMS(Math.abs(latDeg)) + ' ' + ns;
+}
+
+// ---- Vector helpers ----
+
+// Dot product of two 3-vectors.
+function dot(x1, y1, z1, x2, y2, z2) {
+  return x1 * x2 + y1 * y2 + z1 * z2;
+}
+
+// Cross product of two 3-vectors. Returns [x, y, z].
+function cross(x1, y1, z1, x2, y2, z2) {
+  return [y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2];
+}
+
+// Magnitude (length) of a 3-vector.
+function vmag(x, y, z) {
+  return sqrt(x * x + y * y + z * z);
+}
+
+// Angular separation between two unit vectors using the haversine approach:
+// chord = |v2 - v1|, sep = 2 * asin(chord / 2). Stable for small angles
+// unlike acos(dot) which loses precision when vectors are nearly parallel.
+function angSep(x1, y1, z1, x2, y2, z2) {
+  const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+  return 2 * asin(min(1, vmag(dx, dy, dz) / 2));
+}
+
+// Position angle from unit vector (x1,y1,z1) to unit vector (x2,y2,z2),
+// measured north through east in radians. z-axis is the pole.
+function posAng(x1, y1, z1, x2, y2, z2) {
+  const nz = sqrt(1 - z1 * z1);
+  if (nz === 0) return 0;
+  const ex = -y1 / nz, ey = x1 / nz;
+  const nx = -x1 * z1 / nz, ny = -y1 * z1 / nz;
+  return atan2(ex * x2 + ey * y2, nx * x2 + ny * y2 + nz * z2);
+}
+
+// ---- Spherical / Cartesian conversions ----
+// Convention: x = r·cos(lat)·cos(lon), y = r·cos(lat)·sin(lon), z = r·sin(lat).
+// lon/lat in radians. lon = atan2(y, x), lat = atan2(z, √(x²+y²)).
+
+// Spherical (lon, lat, r) → Cartesian [x, y, z]. All angles in radians.
+function sph2xyz(lon, lat, r) {
+  const cd = r * cos(lat);
+  return [cd * cos(lon), cd * sin(lon), r * sin(lat)];
+}
+// Unit-sphere version: (lon, lat) → [x, y, z] with r = 1.
+function sph2uxyz(lon, lat) {
+  const cd = cos(lat);
+  return [cd * cos(lon), cd * sin(lon), sin(lat)];
+}
+// Cartesian → spherical. Returns [lon, lat, r] in radians; lon is already in [0, 2π) (see atan2pi).
+function xyz2sph(x, y, z) {
+  return [atan2pi(y, x), atan2(z, sqrt(x * x + y * y)), vmag(x, y, z)];
+}
+// Unit-sphere inverse: Cartesian → [lon, lat] in radians (ignores radius); lon is already in [0, 2π).
+function uxyz2sph(x, y, z) {
+  return [atan2pi(y, x), atan2(z, sqrt(x * x + y * y))];
+}
+
+// ---- Matrix helpers ----
+// All matrices are 3×3, stored as 9-element flat arrays in row-major order.
+
+// Transpose a 3×3 matrix (row-major). For rotation matrices, transpose = inverse.
+function mtranspose(m) {
+  return [m[0],m[3],m[6], m[1],m[4],m[7], m[2],m[5],m[8]];
+}
+// Multiply 3×3 matrix m by column vector (x, y, z). Returns [x', y', z'].
+function mvmul(m, x, y, z) {
+  return [m[0]*x+m[1]*y+m[2]*z, m[3]*x+m[4]*y+m[5]*z, m[6]*x+m[7]*y+m[8]*z];
+}
+// Multiply two 3×3 matrices. Returns a new 9-element row-major array.
+function mmul(a, b) {
+  return [
+    a[0]*b[0]+a[1]*b[3]+a[2]*b[6], a[0]*b[1]+a[1]*b[4]+a[2]*b[7], a[0]*b[2]+a[1]*b[5]+a[2]*b[8],
+    a[3]*b[0]+a[4]*b[3]+a[5]*b[6], a[3]*b[1]+a[4]*b[4]+a[5]*b[7], a[3]*b[2]+a[4]*b[5]+a[5]*b[8],
+    a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8],
+  ];
+}
+
+// Rotation about z-axis by angle a (radians).
+function rz(a) {
+  const c = cos(a), s = sin(a);
+  return [c,-s,0, s,c,0, 0,0,1];
+}
+// Rotation about y-axis by angle a (radians).
+function ry(a) {
+  const c = cos(a), s = sin(a);
+  return [c,0,s, 0,1,0, -s,0,c];
+}
+// Rotation about x-axis by angle a (radians).
+function rx(a) {
+  const c = cos(a), s = sin(a);
+  return [1,0,0, 0,c,-s, 0,s,c];
+}
 
 // ---- Time and date ----
 
@@ -116,7 +297,7 @@ function deltaT(y) {
 function gmst(jd) {
   const T = (jd - 2451545.0) / 36525.0;
   let g = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
-  return mod360(g) * DEG;
+  return mod360(g) * DEG_TO_RAD;
 }
 
 // Local Sidereal Time. jd = Julian Date, lonRad = observer longitude (radians east).
@@ -208,7 +389,7 @@ function riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, 
 // IAU 1976 precession angles (Lieske 1979) for century T = (JD - J2000) / 36525.
 // Returns {zetaA, zA, thetaA} in radians.
 function precessAngles(T) {
-  const a = DEG / 3600;
+  const a = DEG_TO_RAD / 3600;
   const T2 = T * T, T3 = T2 * T;
   return {
     zetaA:  (2306.2181 * T + 0.30188 * T2 + 0.017998 * T3) * a,
@@ -231,36 +412,36 @@ function precessStar(ra0, dec0, pp) {
 
 // Mean obliquity of the ecliptic for century T. Returns radians.
 function obliquity(T) {
-  return (23.439291 - 0.013004 * T) * DEG;
+  return (23.439291 - 0.013004 * T) * DEG_TO_RAD;
 }
 
 // IAU 1980 nutation, 3 dominant terms (~arcsecond accuracy).
 // T = Julian centuries from J2000. Returns {dPsi, dEps} in radians.
 function nutation(T) {
-  const Om    = (125.04452 - 1934.136261 * T) * DEG;
-  const Lsun  = (280.46646 + 36000.76983 * T) * DEG;
-  const Lmoon = (218.31654 + 481267.88134 * T) * DEG;
-  const dPsi = (-17.1996 * sin(Om) - 1.3187 * sin(2*Lsun) - 0.2274 * sin(2*Lmoon)) / 3600 * DEG;
-  const dEps = ( 9.2025 * cos(Om) + 0.5736 * cos(2*Lsun) + 0.0977 * cos(2*Lmoon)) / 3600 * DEG;
+  const Om    = (125.04452 - 1934.136261 * T) * DEG_TO_RAD;
+  const Lsun  = (280.46646 + 36000.76983 * T) * DEG_TO_RAD;
+  const Lmoon = (218.31654 + 481267.88134 * T) * DEG_TO_RAD;
+  const dPsi = (-17.1996 * sin(Om) - 1.3187 * sin(2*Lsun) - 0.2274 * sin(2*Lmoon)) / 3600 * DEG_TO_RAD;
+  const dEps = ( 9.2025 * cos(Om) + 0.5736 * cos(2*Lsun) + 0.0977 * cos(2*Lmoon)) / 3600 * DEG_TO_RAD;
   return { dPsi, dEps };
 }
 
 // Bennett's formula: true geometric alt → apparent alt (degrees).
 function refractionTrue2App(altDeg) {
   if (altDeg < -0.5) return altDeg;
-  return altDeg + 1 / tan((altDeg + 7.31 / (altDeg + 4.4)) * DEG) / 60;
+  return altDeg + 1 / tan((altDeg + 7.31 / (altDeg + 4.4)) * DEG_TO_RAD) / 60;
 }
 
 // Saemundsson's formula: apparent alt → true geometric alt (degrees).
 function refractionApp2True(altDeg) {
   if (altDeg < -0.5) return altDeg;
-  return altDeg - 1.02 / tan((altDeg + 10.3 / (altDeg + 5.11)) * DEG) / 60;
+  return altDeg - 1.02 / tan((altDeg + 10.3 / (altDeg + 5.11)) * DEG_TO_RAD) / 60;
 }
 
 // ---- Coordinate transforms ----
 
 // Ecliptic → equatorial. lam/beta/eps all in radians (of date).
-// Returns [ra, dec] in radians.
+// Returns [ra, dec] in radians; ra is already in [0, 2π) (see atan2pi).
 function eclToEq(lam, beta, eps) {
   const ce = cos(eps), se = sin(eps);
   const cb = cos(beta), sb = sin(beta);
@@ -268,7 +449,7 @@ function eclToEq(lam, beta, eps) {
   const x = cb * cl;
   const y = cb * sl * ce - sb * se;
   const z = cb * sl * se + sb * ce;
-  return [atan2(y, x), asin(max(-1, min(1, z)))];
+  return [atan2pi(y, x), asin(max(-1, min(1, z)))];
 }
 
 // Equatorial → horizon. ra/dec/lstRad/latRad all in radians.
@@ -283,101 +464,21 @@ function eqToAltAz(ra, dec, lstRad, latRad) {
   return [alt, ((az + TAU) % TAU)];
 }
 
-// ---- Matrix helpers ----
-// All matrices are 3×3, stored as 9-element flat arrays in row-major order.
-
-// Rotation about z-axis by angle a (radians).
-function rz(a) {
-  const c = cos(a), s = sin(a);
-  return [c,-s,0, s,c,0, 0,0,1];
-}
-// Rotation about y-axis by angle a (radians).
-function ry(a) {
-  const c = cos(a), s = sin(a);
-  return [c,0,s, 0,1,0, -s,0,c];
-}
-// Rotation about x-axis by angle a (radians).
-function rx(a) {
-  const c = cos(a), s = sin(a);
-  return [1,0,0, 0,c,-s, 0,s,c];
-}
-
-// ---- Spherical / Cartesian conversions ----
-// Convention: x = r·cos(lat)·cos(lon), y = r·cos(lat)·sin(lon), z = r·sin(lat).
-// lon/lat in radians. lon = atan2(y, x), lat = atan2(z, √(x²+y²)).
-
-// Spherical (lon, lat, r) → Cartesian [x, y, z]. All angles in radians.
-function sph2xyz(lon, lat, r) {
-  const cd = r * cos(lat);
-  return [cd * cos(lon), cd * sin(lon), r * sin(lat)];
-}
-// Unit-sphere version: (lon, lat) → [x, y, z] with r = 1.
-function sph2uxyz(lon, lat) {
-  const cd = cos(lat);
-  return [cd * cos(lon), cd * sin(lon), sin(lat)];
-}
-// Cartesian → spherical. Returns [lon, lat, r] in radians.
-function xyz2sph(x, y, z) {
-  return [atan2(y, x), atan2(z, sqrt(x * x + y * y)), vmag(x, y, z)];
-}
-// Unit-sphere inverse: Cartesian → [lon, lat] in radians (ignores radius).
-function uxyz2sph(x, y, z) {
-  return [atan2(y, x), atan2(z, sqrt(x * x + y * y))];
-}
-
-// ---- Vector helpers ----
-
-// Dot product of two 3-vectors.
-function dot(x1, y1, z1, x2, y2, z2) {
-  return x1 * x2 + y1 * y2 + z1 * z2;
-}
-
-// Cross product of two 3-vectors. Returns [x, y, z].
-function cross(x1, y1, z1, x2, y2, z2) {
-  return [y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2];
-}
-
-// Magnitude (length) of a 3-vector.
-function vmag(x, y, z) {
-  return sqrt(x * x + y * y + z * z);
-}
-
-// Angular separation between two unit vectors using the haversine approach:
-// chord = |v2 - v1|, sep = 2 * asin(chord / 2). Stable for small angles
-// unlike acos(dot) which loses precision when vectors are nearly parallel.
-function angSep(x1, y1, z1, x2, y2, z2) {
-  const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
-  return 2 * asin(min(1, vmag(dx, dy, dz) / 2));
-}
-
-// Position angle from unit vector (x1,y1,z1) to unit vector (x2,y2,z2),
-// measured north through east in radians. z-axis is the pole.
-function posAng(x1, y1, z1, x2, y2, z2) {
-  const nz = sqrt(1 - z1 * z1);
-  if (nz === 0) return 0;
-  const ex = -y1 / nz, ey = x1 / nz;
-  const nx = -x1 * z1 / nz, ny = -y1 * z1 / nz;
-  return atan2(ex * x2 + ey * y2, nx * x2 + ny * y2 + nz * z2);
-}
-
-// ---- Matrix helpers ----
-
-// Transpose a 3×3 matrix (row-major). For rotation matrices, transpose = inverse.
-function mtranspose(m) {
-  return [m[0],m[3],m[6], m[1],m[4],m[7], m[2],m[5],m[8]];
-}
-// Multiply 3×3 matrix m by column vector (x, y, z). Returns [x', y', z'].
-function mvmul(m, x, y, z) {
-  return [m[0]*x+m[1]*y+m[2]*z, m[3]*x+m[4]*y+m[5]*z, m[6]*x+m[7]*y+m[8]*z];
-}
-// Multiply two 3×3 matrices. Returns a new 9-element row-major array.
-function mmul(a, b) {
-  return [
-    a[0]*b[0]+a[1]*b[3]+a[2]*b[6], a[0]*b[1]+a[1]*b[4]+a[2]*b[7], a[0]*b[2]+a[1]*b[5]+a[2]*b[8],
-    a[3]*b[0]+a[4]*b[3]+a[5]*b[6], a[3]*b[1]+a[4]*b[4]+a[5]*b[7], a[3]*b[2]+a[4]*b[5]+a[5]*b[8],
-    a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8],
-  ];
-}
+// 3×3 rotation matrix (row-major flat array) from J2000 equatorial to galactic coordinates.
+// Galactic north pole: RA 192.85948°, Dec +27.12825° (J2000)
+// Galactic center:     RA 266.405°,   Dec -28.936°  (J2000)
+const mGalactic = (function() {
+  const pRA = 192.85948 * DEG_TO_RAD, pDec = 27.12825 * DEG_TO_RAD;
+  const cRA = 266.405 * DEG_TO_RAD, cDec = -28.936 * DEG_TO_RAD;
+  const pz = [cos(pDec)*cos(pRA), cos(pDec)*sin(pRA), sin(pDec)];
+  const gc = [cos(cDec)*cos(cRA), cos(cDec)*sin(cRA), sin(cDec)];
+  const d = dot(pz[0],pz[1],pz[2], gc[0],gc[1],gc[2]);
+  const px = [gc[0] - pz[0]*d, gc[1] - pz[1]*d, gc[2] - pz[2]*d];
+  const pxLen = vmag(px[0], px[1], px[2]);
+  px[0] /= pxLen; px[1] /= pxLen; px[2] /= pxLen;
+  const py = cross(pz[0],pz[1],pz[2], px[0],px[1],px[2]);
+  return [px[0],px[1],px[2], py[0],py[1],py[2], pz[0],pz[1],pz[2]];
+})();
 
 // ---- Frame rotation matrices ----
 
