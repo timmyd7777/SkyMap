@@ -23,21 +23,21 @@ function atan2pi(y, x) { return mod2pi(atan2(y, x)); }
 
 function formatRA(raDeg) {
     raDeg = ((raDeg % 360) + 360) % 360;
-    var totalSec = Math.round(raDeg / 15 * 360000) / 100;
+    var totalSec = Math.round(raDeg / 15 * 3600) / 10;
     if (totalSec >= 86400) totalSec = 0;
     var hh = Math.floor(totalSec / 3600);
     var mm = Math.floor((totalSec % 3600) / 60);
-    var ss = (totalSec % 60).toFixed(2);
-    return String(hh).padStart(2,'0') + 'h ' + String(mm).padStart(2,'0') + 'm ' + ss.padStart(5,'0') + 's';
+    var ss = (totalSec % 60).toFixed(1);
+    return String(hh).padStart(2,'0') + 'h ' + String(mm).padStart(2,'0') + 'm ' + ss.padStart(4,'0') + 's';
 }
 
 function formatDec(decDeg) {
     var sign = decDeg < 0 ? '-' : '+';
-    var totalArcsec = Math.round(Math.abs(decDeg) * 36000) / 10;
+    var totalArcsec = Math.round(Math.abs(decDeg) * 3600);
     var dd = Math.floor(totalArcsec / 3600);
     var mm = Math.floor((totalArcsec % 3600) / 60);
-    var ss = (totalArcsec % 60).toFixed(1);
-    return sign + String(dd).padStart(2,'0') + '° ' + String(mm).padStart(2,'0') + "' " + ss.padStart(4,'0') + '"';
+    var ss = totalArcsec % 60;
+    return sign + String(dd).padStart(2,'0') + '° ' + String(mm).padStart(2,'0') + "' " + String(ss).padStart(2,'0') + '"';
 }
 
 // Unsigned only — deg must be >= 0. NOT for declination (which is signed,

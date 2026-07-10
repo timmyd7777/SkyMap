@@ -185,7 +185,7 @@ class SkyObject {
     var names = [];
     var name = '';
     if (obj.type === 'star') {
-      var d = obj.data;
+      var d = obj.data.star;
       if (d[S_NAME]) { names.push(d[S_NAME]); name = d[S_NAME]; }
       if (d[S_BAYER]) names.push(d[S_BAYER]);
       if (d[S_FLAM]) names.push(d[S_FLAM]);
@@ -201,13 +201,14 @@ class SkyObject {
       if (d[DS_NAME]) names.push(d[DS_NAME]);
       name = d[DS_NAME] || '';
     } else {
-      name = obj.data.name || obj.name || '';
+      name = obj.data.name || '';
       if (name) names.push(name);
     }
-    var mag = obj.type === 'star' ? obj.data[S_MAG] : obj.type === 'deepsky' ? obj.data[DS_MAG] : (obj.data.mag != null ? obj.data.mag : null);
+    var s = obj.type === 'star' ? obj.data.star : null;
+    var mag = s ? s[S_MAG] : obj.type === 'deepsky' ? obj.data[DS_MAG] : (obj.data.mag != null ? obj.data.mag : null);
     return new SkyObject({
       type: obj.type, name: name, names: names, norad: obj.data ? obj.data.norad : undefined,
-      jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: obj.data
+      jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: s || obj.data
     });
   }
 }
@@ -528,13 +529,10 @@ function onObjectListSelect() {
   _searchCurrentObj = obj;
 
   // Set selectedObject (drawnObjects-compatible format)
-  var objName = obj.type === 'star' ? (obj.data[S_NAME] || '') : obj.name;
   selectedObject = {
     type: obj.type,
-    name: objName,
-    data: obj.data,
+    data: obj.type === 'star' ? {name: obj.name, star: obj.data} : obj.data,
     jx: obj.jx, jy: obj.jy, jz: obj.jz,
-    x: 0, y: 0, r: 5,
     hr: obj.type === 'star' ? obj.data[S_HR] : undefined
   };
   _lastSelectedObj = selectedObject;
@@ -765,20 +763,17 @@ function centerOnSelected() {
   var obj = _searchCurrentObj;
   if (!obj) return;
 
-  var objName = obj.type === 'star' ? (obj.data[S_NAME] || '') : obj.name;
   selectedObject = {
     type: obj.type,
-    name: objName,
-    data: obj.data,
+    data: obj.type === 'star' ? {name: obj.name, star: obj.data} : obj.data,
     jx: obj.jx, jy: obj.jy, jz: obj.jz,
-    x: 0, y: 0, r: 5,
     hr: obj.type === 'star' ? obj.data[S_HR] : undefined
   };
   _lastSelectedObj = selectedObject;
 
   centerObject = {
     type: obj.type,
-    name: obj.type === 'star' ? objName : (obj.data.name || obj.name),
+    name: obj.name,
     norad: obj.norad,
     jx: obj.jx, jy: obj.jy, jz: obj.jz
   };

@@ -31,6 +31,11 @@ let viewJ2000 = false;
 // (sx, sy) in canvas pixels → [lat, lon] in current frame (radians), or null.
 let viewUnproject = null;
 
+// Forward projection functions, set by skymapDraw() each frame.
+let skyProjectJ2000 = null;
+let skyIsVisibleJ2000 = null;
+let skyRadToPx = null;
+
 // Nebula contour name → NEBULA_CONTOURS index lookup, built by skymapInit().
 const nebulaContourMap = {};
 // DEEPSKY index → array of contour indices (or null), built by skymapInit().
@@ -147,7 +152,7 @@ function formatCoords(lonDeg, latDeg) {
 // Returns '' if the distance is unknown or non-positive.
 function formatDist(obj) {
   if (obj.type === 'star') {
-    const pc = obj.data[S_DIST];
+    const pc = obj.data.star[S_DIST];
     if (!pc || pc <= 0) return '';
     const ly = pc * LY_PER_PC;
     return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
@@ -176,17 +181,18 @@ function formatSelection(obj) {
   const ids = [];
   let type = '', name = '', mag = null;
   if (obj.type === 'star') {
+    const s = d.star;
     const STAR_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
-    type = STAR_TYPES[d[S_TYPE]] || 'Star';
-    const bayer = d[S_BAYER], flamsteed = d[S_FLAM], starName = d[S_NAME], dm = d[S_DM];
-    name = starName || '';
+    type = STAR_TYPES[s[S_TYPE]] || 'Star';
+    const bayer = s[S_BAYER], flamsteed = s[S_FLAM], dm = s[S_DM];
+    name = d.name;
     if (bayer) ids.push(bayer);
     if (flamsteed) ids.push(flamsteed);
     if (obj.hr) ids.push(`HR ${obj.hr}`);
-    if (d[S_HD]) ids.push(`HD ${d[S_HD]}`);
-    if (d[S_HIP]) ids.push(`HIP ${d[S_HIP]}`);
+    if (s[S_HD]) ids.push(`HD ${s[S_HD]}`);
+    if (s[S_HIP]) ids.push(`HIP ${s[S_HIP]}`);
     if (dm) ids.push(dm);
-    mag = d[S_MAG];
+    mag = s[S_MAG];
   } else if (obj.type === 'deepsky') {
     const DS_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star',
       OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
@@ -305,8 +311,8 @@ function skymapInit() {
 //   loc:  {latRad, lonRad, latDeg, lonDeg} — observer position,
 //   darkMode, showStars, showNames, showStarIds, showConst, showConstNames,
 //   showBounds, showPlanets, showPlanetNames, showDeepSky, showDeepSkyNames,
-//   showDeepSkyIds, showMilkyWay, showEcliptic, showCelEq, showGalEq,
-//   showGrid, showHeader: booleans
+//   showDeepSkyIds, showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
+//   showGrid, showHeader, flipH, flipV: booleans
 // }
 //
 // Side effects: updates viewUnproject, drawnObjects, curMFrame globals.
@@ -319,8 +325,8 @@ function skymapDraw(canvas, params) {
     showComets, showCometNames, showAsteroids, showAsteroidNames,
     showSatellites, showSatelliteNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
-    showMilkyWay, showEcliptic, showCelEq, showGalEq,
-    showGrid, showHeader,
+    showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
+    showGrid, showHeader, flipH, flipV,
   } = params;
   const showStarColors = true;
 
@@ -384,7 +390,8 @@ function skymapDraw(canvas, params) {
   // the view center is at +Z, +X is right, +Y is up on screen.
 
   // Stereographic chart coords (cX right, cY up) → canvas pixels.
-  function toScreen(cX, cY) { return [cx + cX * scale, cy - cY * scale]; }
+  const fX = flipH ? -1 : 1, fY = flipV ? -1 : 1;
+  function toScreen(cX, cY) { return [cx + cX * fX * scale, cy - cY * fY * scale]; }
 
   // CSS color string for a coordinate frame's overlay elements.
   function frameColor(frame, alpha) {
@@ -510,14 +517,14 @@ function skymapDraw(canvas, params) {
     if (nz <= -1) return -j2kPA;
     const nd = 1 + nz;
     const np = toScreen(2*nx/nd, -2*ny/nd);
-    return atan2(np[1] - sy, np[0] - sx) - j2kPA;
+    return atan2((np[1] - sy) / fY, (np[0] - sx) / fX) - j2kPA;
   }
 
   // Inverse stereographic projection: canvas pixels → current frame's display
   // coordinates (azimuth for Horizon, RA/ecliptic-lon/galactic-lon otherwise).
   // Returns [lat, lon] in radians, or null if the point is outside the hemisphere (r² > 4).
   viewUnproject = function(sx, sy) {
-    const cX = (sx - cx) / scale, cY = (cy - sy) / scale;
+    const cX = (sx - cx) / (fX * scale), cY = (cy - sy) / (fY * scale);
     const r2 = cX * cX + cY * cY;
     if (r2 > 4) return null;
     const vz = (4 - r2) / (4 + r2);
@@ -957,7 +964,8 @@ function skymapDraw(canvas, params) {
         if (minorSize) {
           const rMinor = max(3, radToPx(pt[0], pt[1], minorSize * DEG_TO_RAD / 60) / 2);
           const pa = ds[DS_PA];
-          const rot = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, x1, vy, vz, pt[0], pt[1]) : 0;
+          const rot0 = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, x1, vy, vz, pt[0], pt[1]) : 0;
+          const rot = atan2(fY * sin(rot0), fX * cos(rot0));
           ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
           dObj.rMinor = rMinor; dObj.rot = rot;
         } else {
@@ -1021,7 +1029,7 @@ function skymapDraw(canvas, params) {
       const r = max(0.5, (5.5 + magBoost - mag) * min(W, H) / 1000);
       ctx.fillStyle = darkMode && showStarColors ? bmvToRGB(bmv) : darkMode ? '#fff' : '#000';
       ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TAU); ctx.fill();
-      drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', name: s[S_NAME], hr, data: s, jx: s[S_X], jy: s[S_Y], jz: s[S_Z]});
+      drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', hr, data: {name: s[S_NAME], star: s}, jx: s[S_X], jy: s[S_Y], jz: s[S_Z]});
     }
     if (showNames || showStarIds) {
       ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
@@ -1373,6 +1381,7 @@ function skymapDraw(canvas, params) {
     const sinB = abs(sin(subObsLat));
     ctx.save();
     ctx.translate(sx, sy);
+    ctx.scale(fX, fY);
     ctx.rotate(-pa);
     // Near edge-on, the filled ellipse collapses to sub-pixel height.
     // Draw a single line across the full ring diameter instead; only on
@@ -1421,21 +1430,15 @@ function skymapDraw(canvas, params) {
     const ob = oblateness || 0;
     const pa = polePA || 0;
     const yScale = 1 - ob;
-    // Oblate planets: squash the canvas vertically by yScale and rotate so the
-    // pole axis is vertical, so a plain circle of radius r renders as the
-    // correctly-oriented flattened ellipse for everything drawn below.
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(fX, fY);
     if (ob > 0) {
-      ctx.save();
-      ctx.translate(sx, sy);
       ctx.rotate(-pa);
       ctx.scale(1, yScale);
     }
-    const cx0 = ob > 0 ? 0 : sx, cy0 = ob > 0 ? 0 : sy;
     let toSun;
     if (ob > 0) {
-      // Re-express the sun direction in the squashed/rotated local frame set up
-      // above, so the terminator below still points the correct physical way
-      // even though the canvas's y-axis no longer has its original scale.
       const sdx = cos(toSunAngle), sdy = -sin(toSunAngle);
       const lsx = cos(pa)*sdx - sin(pa)*sdy;
       const lsy = (sin(pa)*sdx + cos(pa)*sdy) / yScale;
@@ -1443,37 +1446,29 @@ function skymapDraw(canvas, params) {
     } else {
       toSun = toSunAngle;
     }
-    // Dark (unlit) side: fill the whole disc first. If the phase is near new
-    // (below), nothing is painted over it and the disc stays fully dark.
     ctx.fillStyle = darkMode ? '#333' : '#555';
-    ctx.beginPath(); ctx.arc(cx0, cy0, r, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
     if (FVrad < PI - 0.05) {
-      // Lit side: build the crescent/gibbous outline as two half-ellipse arcs —
-      // the near limb (a half-circle, the sunlit edge of the disc) and the
-      // terminator (a half-ellipse with semi-axis k*r, k = -cos(FVrad) ranging
-      // from -1 at full phase, through 0 at quarter phase (a straight-line
-      // terminator), to +1 near new phase (a sliver coincident with the limb).
-      // Both arcs are rotated by toSun so the lit side faces the Sun.
       const cs = cos(toSun), sn = sin(toSun), k = -cos(FVrad);
       ctx.fillStyle = litColor;
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
         const t = PI/2 - i*PI/24;
         const bx = r*cos(t), by = r*sin(t);
-        const px = cx0 + bx*cs - by*sn, py = cy0 - bx*sn - by*cs;
+        const px = bx*cs - by*sn, py = -bx*sn - by*cs;
         if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
       }
       for (let i = 0; i <= 24; i++) {
         const t = -PI/2 + i*PI/24;
         const bx = r*k*cos(t), by = r*sin(t);
-        const px = cx0 + bx*cs - by*sn, py = cy0 - bx*sn - by*cs;
+        const px = bx*cs - by*sn, py = -bx*sn - by*cs;
         ctx.lineTo(px,py);
       }
       ctx.closePath(); ctx.fill();
     }
     ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = ob > 0 ? 0.5 / yScale : 0.5;
-    ctx.beginPath(); ctx.arc(cx0, cy0, r, 0, TAU); ctx.stroke();
-    if (ob > 0) ctx.restore();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+    ctx.restore();
   }
 
   // Draw a planetographic lat/lon grid on a planet's disc via orthographic projection.
@@ -1488,6 +1483,7 @@ function skymapDraw(canvas, params) {
     const yScale = 1 - ob;
     ctx.save();
     ctx.translate(sx, sy);
+    ctx.scale(fX, fY);
     ctx.rotate(-pa);
     ctx.scale(1, yScale);
     ctx.lineWidth = 0.5 / yScale;
@@ -1809,8 +1805,13 @@ function skymapDraw(canvas, params) {
     const botAlt = viewLat - 2 * atan2(cy, 2 * scale) * RAD_TO_DEG;
     if (viewFov < 5 && botAlt < REFRACTION_ALT * RAD_TO_DEG) {
       const hp = viewProjectRaw(REFRACTION_ALT, vLon);
-      const top = max(0, hp[1]);
-      ctx.fillRect(0, top, W, H - top);
+      if (fY < 0) {
+        const bot = min(H, hp[1]);
+        ctx.fillRect(0, 0, W, bot);
+      } else {
+        const top = max(0, hp[1]);
+        ctx.fillRect(0, top, W, H - top);
+      }
       return;
     }
     const hStep = 5;
@@ -1913,15 +1914,8 @@ function skymapDraw(canvas, params) {
       ctx.textAlign = 'left';
     }
     if (selectedObject) {
-      if (selectedObject.jx !== undefined) {
-        const [fx, fy, fz] = mvmul(mFrame, selectedObject.jx, selectedObject.jy, selectedObject.jz);
-        const latDeg = asin(max(-1, min(1, fz))) * RAD_TO_DEG;
-        const lon = viewFrame === 'horizon' ? atan2pi(fx, fy) : atan2pi(fy, fx);
-        const lonDeg = lon * RAD_TO_DEG;
-        selectedObject.coords = formatCoords(lonDeg, latDeg);
-      }
       ctx.font = `${sfs}px sans-serif`;
-      ctx.fillStyle = darkMode ? '#fff' : '#000';
+      ctx.fillStyle = darkMode ? '#ee9911' : '#aa5500';
       ctx.textAlign = 'center';
       ctx.fillText(formatSelection(selectedObject), W / 2, H - sfs);
     }
@@ -1950,7 +1944,7 @@ function skymapDraw(canvas, params) {
   if (showDeepSky) drawDeepSky();
   if (showStars) drawStars(starPositions);
   if (showPlanets || showComets || showAsteroids || showSatellites) drawSolarSystem();
-  if (viewFrame === 'horizon') drawHorizon();
+  if (showHorizon) drawHorizon();
 
   ctx.restore();
 
@@ -1977,7 +1971,54 @@ function skymapDraw(canvas, params) {
       if (fresh.phaseAngle !== undefined) sel.data.phaseAngle = fresh.phaseAngle;
     }
   }
+  if (selectedObject && selectedObject.jx !== undefined) {
+    const [svx, svy, svz] = mvmul(M, selectedObject.jx, selectedObject.jy, selectedObject.jz);
+    if (svz >= -1e-10) {
+      const sd = 1 + svz;
+      const [smx, smy] = toScreen(2 * svx / sd, -2 * svy / sd);
+      if (smx >= -50 && smx <= W + 50 && smy >= -50 && smy <= H + 50) {
+        const drawn = drawnObjects.find(o => o.jx === selectedObject.jx && o.jy === selectedObject.jy && o.jz === selectedObject.jz);
+        ctx.strokeStyle = darkMode ? '#ee9911' : '#aa5500';
+        ctx.lineWidth = 1.5;
+        if (drawn && drawn.contourPts) {
+          for (const ring of drawn.contourPts) {
+            ctx.beginPath();
+            for (let i = 0; i < ring.length; i++) {
+              if (i === 0) ctx.moveTo(ring[i][0], ring[i][1]);
+              else ctx.lineTo(ring[i][0], ring[i][1]);
+            }
+            ctx.closePath(); ctx.stroke();
+          }
+        } else {
+          const mr = (drawn ? drawn.r : 0) + 5;
+          ctx.beginPath(); ctx.arc(smx, smy, mr, 0, TAU); ctx.stroke();
+        }
+      }
+    }
+  }
   drawHeader();
+
+  // ---- Forward projection (J2000 → screen) ----
+  // Expose closures so external code can project J2000 coordinates to canvas pixels.
+
+  // Project a J2000 equatorial unit vector to canvas pixel coordinates.
+  // Returns [sx, sy] or null if the point is behind the projection hemisphere.
+  skyProjectJ2000 = function(jx, jy, jz) {
+    const [vx, vy, vz] = mvmul(M, jx, jy, jz);
+    if (vz < -1e-10) return null;
+    const d = 1 + vz;
+    return toScreen(2 * vx / d, -2 * vy / d);
+  };
+
+  // Test whether a J2000 unit vector is on the visible hemisphere.
+  skyIsVisibleJ2000 = function(jx, jy, jz) {
+    const [,, vz] = mvmul(M, jx, jy, jz);
+    return vz >= -1e-10;
+  };
+
+  // Convert an angular radius (radians) to pixels at a given screen position.
+  // Accounts for stereographic projection distortion.
+  skyRadToPx = radToPx;
 }
 
 // ---- Object picking ----

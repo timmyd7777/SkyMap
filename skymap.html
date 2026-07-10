@@ -196,6 +196,10 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
       <span>Size</span><span id="viewWidthVal">180°</span>
     </div>
     <input type="range" id="viewWidth" min="1" max="209" value="209" autocomplete="off" style="width:100%">
+    <div style="display:flex; gap:12px; margin-top:4px;">
+      <label><input type="checkbox" id="flipH" autocomplete="off"> Flip Horizontal</label>
+      <label><input type="checkbox" id="flipV" autocomplete="off"> Flip Vertical</label>
+    </div>
   </div>
   <div>
     <label style="text-align:center; display:block;">Other Options</label>
@@ -291,7 +295,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=25"></script>
+<script src="astromath.js?v=26"></script>
 <script src="vsop87.js?v=1"></script>
 <script src="planets.js?v=17"></script>
 <script src="mpc.js?v=1"></script>
@@ -299,8 +303,8 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="satmag.js?v=5"></script>
 <script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=36"></script>
-<script src="searchinfo.js?v=28"></script>
+<script src="skymap.js?v=38"></script>
+<script src="searchinfo.js?v=29"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -640,6 +644,7 @@ function draw() {
     showDeepSkyNames: document.getElementById('showDeepSkyNames').checked,
     showDeepSkyIds: document.getElementById('showDeepSkyIds').checked,
     showMilkyWay: document.getElementById('showMilkyWay').checked,
+    showHorizon: viewFrame === 'horizon',
     showEcliptic: document.getElementById('showEcliptic').checked,
     showCelEq: document.getElementById('showCelEq').checked,
     showGalEq: document.getElementById('showGalEq').checked,
@@ -652,6 +657,8 @@ function draw() {
     showGrid: document.getElementById('showGrid').checked,
     showPlanetGrid: document.getElementById('showGrid').checked,
     showHeader: document.getElementById('showHeader').checked,
+    flipH: document.getElementById('flipH').checked,
+    flipV: document.getElementById('flipV').checked,
     comets: loadedComets,
     asteroids: loadedAsteroids,
     satellites: loadedSatellites,
@@ -775,7 +782,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle','flipH','flipV']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {
@@ -817,7 +824,9 @@ function init() {
   function dragMove(x, y) {
     if (!dragging || !viewUnproject) return;
     centerObject = null;
-    const dx = x - dragX, dy = y - dragY;
+    const fH = document.getElementById('flipH').checked ? -1 : 1;
+    const fV = document.getElementById('flipV').checked ? -1 : 1;
+    const dx = (x - dragX) * fH, dy = (y - dragY) * fV;
     dragX = x; dragY = y;
     const rect = canvas.getBoundingClientRect();
     const canvasX = x - rect.left, canvasY = y - rect.top;
@@ -845,7 +854,7 @@ function init() {
             || selectedObject.type !== centerObject.type
             || (centerObject.norad != null
                 ? selectedObject.data.norad !== centerObject.norad
-                : (selectedObject.name || selectedObject.data.name) !== centerObject.name)) centerObject = null;
+                : selectedObject.data.name !== centerObject.name)) centerObject = null;
         draw();
       }
     }
@@ -859,8 +868,8 @@ function init() {
     if (selectedObject) {
       centerObject = {
         type: selectedObject.type,
-        name: selectedObject.name || selectedObject.data.name,
-        norad: selectedObject.data ? selectedObject.data.norad : undefined,
+        name: selectedObject.data.name,
+        norad: selectedObject.data.norad,
         jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
       };
       draw();
@@ -899,8 +908,8 @@ function init() {
       if (now - lastTapTime < 350 && tdx*tdx + tdy*tdy < 400) {
         if (selectedObject) {
           centerObject = {
-            type: selectedObject.type, name: selectedObject.name || selectedObject.data.name,
-            norad: selectedObject.data ? selectedObject.data.norad : undefined,
+            type: selectedObject.type, name: selectedObject.data.name,
+            norad: selectedObject.data.norad,
             jx: selectedObject.jx, jy: selectedObject.jy, jz: selectedObject.jz
           };
           draw();
