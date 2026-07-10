@@ -8,11 +8,13 @@ data/Constellations.csv
 data/Cities.csv
 data/Messier.csv
 data/Caldwell.csv
-data/brightest.csv
+data/Brightest.csv
 data/SKY2000.csv
 data/MilkyWay.csv
 data/MCNGCIC.csv
 data/Contours.csv
 data/Index.csv
+data/Planets.csv
+data/Moons.csv
 data/VSOP87D.*
 data/mcnames.txt
