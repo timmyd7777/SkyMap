@@ -26,7 +26,12 @@ function _rtsText(r) {
 
 // ---- Type label lookup ----
 
+const STAR_TYPE_NAMES = {
+  SS: 'Star', DS: 'Double Star', VS: 'Variable Star', DV: 'Double Variable Star'
+};
+
 const DS_TYPE_NAMES = {
+  SS: 'Star', DS: 'Double Star', VS: 'Variable Star', DV: 'Double Variable Star',
   OC: 'Open Cluster', GC: 'Globular Cluster', BN: 'Bright Nebula',
   DN: 'Dark Nebula', PN: 'Planetary Nebula', GX: 'Galaxy'
 };
@@ -57,7 +62,7 @@ class SkyObject {
 
   get typeLabel() {
     switch (this.type) {
-      case 'star': return 'Star';
+      case 'star': return STAR_TYPE_NAMES[this.data[S_TYPE]] || 'Star';
       case 'sun': return 'Star (Sun)';
       case 'planet': return 'Planet';
       case 'moon': return 'Moon of Earth';
@@ -68,7 +73,7 @@ class SkyObject {
         var ss = this.ssData;
         return ss ? 'Moon of ' + ss.parent : 'Moon';
       case 'deepsky':
-        return DS_TYPE_NAMES[this.data[0]] || this.data[0];
+        return DS_TYPE_NAMES[this.data[DS_TYPE]] || this.data[DS_TYPE];
       default: return this.type;
     }
   }
@@ -84,16 +89,16 @@ class SkyObject {
 
   distStr() {
     if (this.type === 'star') {
-      var pc = this.data[4];
+      var pc = this.data[S_DIST];
       if (!pc || pc <= 0) return '';
       var ly = pc * LY_PER_PC;
       return ly >= 1000 ? (ly / 1000).toFixed(1) + ' kly' : ly.toFixed(1) + ' ly';
     }
     if (this.type === 'deepsky') {
-      var pc = this.data[4];
+      var pc = this.data[DS_DIST];
       if (!pc || pc <= 0) return '';
       var ly = pc * LY_PER_PC;
-      if (this.data[0] === 'GX') return (ly / 1e6).toFixed(1) + ' Mly';
+      if (this.data[DS_TYPE] === 'GX') return (ly / 1e6).toFixed(1) + ' Mly';
       return ly >= 1000 ? (ly / 1000).toFixed(1) + ' kly' : ly.toFixed(1) + ' ly';
     }
     var ss = this.ssData;
@@ -110,9 +115,9 @@ class SkyObject {
 
   sizeStr() {
     if (this.type === 'deepsky') {
-      var major = this.data[5];
+      var major = this.data[DS_MAJ];
       if (!major) return '';
-      var minor = this.data[6];
+      var minor = this.data[DS_MIN];
       if (minor && abs(minor - major) > 0.01)
         return major.toFixed(1) + '′ × ' + minor.toFixed(1) + '′';
       return major.toFixed(1) + '′';
@@ -144,28 +149,28 @@ class SkyObject {
 
   static fromStar(s) {
     var names = [];
-    if (s[10]) names.push(s[10]);
-    if (s[8]) names.push(s[8]);
-    if (s[9]) names.push(s[9]);
-    if (s[5]) names.push('HR ' + s[5]);
-    if (s[6]) names.push('HD ' + s[6]);
-    if (s[7]) names.push('HIP ' + s[7]);
-    if (s[11]) names.push(s[11]);
+    if (s[S_NAME]) names.push(s[S_NAME]);
+    if (s[S_BAYER]) names.push(s[S_BAYER]);
+    if (s[S_FLAM]) names.push(s[S_FLAM]);
+    if (s[S_HR]) names.push('HR ' + s[S_HR]);
+    if (s[S_HD]) names.push('HD ' + s[S_HD]);
+    if (s[S_HIP]) names.push('HIP ' + s[S_HIP]);
+    if (s[S_DM]) names.push(s[S_DM]);
     return new SkyObject({
-      type: 'star', name: s[10] || '', names: names,
-      jx: s[12], jy: s[13], jz: s[14], mag: s[2], data: s
+      type: 'star', name: s[S_NAME] || '', names: names,
+      jx: s[S_X], jy: s[S_Y], jz: s[S_Z], mag: s[S_MAG], data: s
     });
   }
 
   static fromDeepSky(ds) {
     var names = [];
-    if (ds[8]) names.push(ds[8]);
-    if (ds[9]) names.push(ds[9]);
-    if (ds[10]) names.push(ds[10]);
-    if (ds[11]) names.push(ds[11]);
+    if (ds[DS_MC]) names.push(ds[DS_MC]);
+    if (ds[DS_NGC]) names.push(ds[DS_NGC]);
+    if (ds[DS_NGC2]) names.push(ds[DS_NGC2]);
+    if (ds[DS_NAME]) names.push(ds[DS_NAME]);
     return new SkyObject({
-      type: 'deepsky', name: ds[11] || ds[8] || ds[9] || '', names: names,
-      jx: ds[12], jy: ds[13], jz: ds[14], mag: ds[3], data: ds
+      type: 'deepsky', name: ds[DS_NAME] || '', names: names,
+      jx: ds[DS_X], jy: ds[DS_Y], jz: ds[DS_Z], mag: ds[DS_MAG], data: ds
     });
   }
 
@@ -181,25 +186,25 @@ class SkyObject {
     var name = '';
     if (obj.type === 'star') {
       var d = obj.data;
-      if (d[10]) { names.push(d[10]); name = d[10]; }
-      if (d[8]) names.push(d[8]);
-      if (d[9]) names.push(d[9]);
-      if (d[5]) names.push('HR ' + d[5]);
-      if (d[6]) names.push('HD ' + d[6]);
-      if (d[7]) names.push('HIP ' + d[7]);
-      if (d[11]) names.push(d[11]);
+      if (d[S_NAME]) { names.push(d[S_NAME]); name = d[S_NAME]; }
+      if (d[S_BAYER]) names.push(d[S_BAYER]);
+      if (d[S_FLAM]) names.push(d[S_FLAM]);
+      if (d[S_HR]) names.push('HR ' + d[S_HR]);
+      if (d[S_HD]) names.push('HD ' + d[S_HD]);
+      if (d[S_HIP]) names.push('HIP ' + d[S_HIP]);
+      if (d[S_DM]) names.push(d[S_DM]);
     } else if (obj.type === 'deepsky') {
       var d = obj.data;
-      if (d[8]) names.push(d[8]);
-      if (d[9]) names.push(d[9]);
-      if (d[10]) names.push(d[10]);
-      if (d[11]) names.push(d[11]);
-      name = d[11] || d[8] || d[9] || '';
+      if (d[DS_MC]) names.push(d[DS_MC]);
+      if (d[DS_NGC]) names.push(d[DS_NGC]);
+      if (d[DS_NGC2]) names.push(d[DS_NGC2]);
+      if (d[DS_NAME]) names.push(d[DS_NAME]);
+      name = d[DS_NAME] || '';
     } else {
       name = obj.data.name || obj.name || '';
       if (name) names.push(name);
     }
-    var mag = obj.type === 'star' ? obj.data[2] : (obj.data.mag != null ? obj.data.mag : null);
+    var mag = obj.type === 'star' ? obj.data[S_MAG] : obj.type === 'deepsky' ? obj.data[DS_MAG] : (obj.data.mag != null ? obj.data.mag : null);
     return new SkyObject({
       type: obj.type, name: name, names: names, norad: obj.data ? obj.data.norad : undefined,
       jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: obj.data
@@ -219,15 +224,15 @@ function _buildSearchData() {
   for (var i = 0; i < STARS.length; i++) {
     var s = STARS[i];
     var parts = [];
-    if (s[10]) parts.push(s[10]);
-    if (s[8]) parts.push(s[8]);
-    if (s[9]) parts.push(s[9]);
-    if (s[5]) parts.push('HR ' + s[5]);
-    if (s[6]) parts.push('HD ' + s[6]);
-    if (s[7]) parts.push('HIP ' + s[7]);
-    if (s[11]) parts.push(s[11]);
+    if (s[S_NAME]) parts.push(s[S_NAME]);
+    if (s[S_BAYER]) parts.push(s[S_BAYER]);
+    if (s[S_FLAM]) parts.push(s[S_FLAM]);
+    if (s[S_HR]) parts.push('HR ' + s[S_HR]);
+    if (s[S_HD]) parts.push('HD ' + s[S_HD]);
+    if (s[S_HIP]) parts.push('HIP ' + s[S_HIP]);
+    if (s[S_DM]) parts.push(s[S_DM]);
     if (parts.length > 0) {
-      _starSearchData.push({ text: parts.join('\t').toLowerCase(), idx: i, mag: s[2] });
+      _starSearchData.push({ text: parts.join('\t').toLowerCase(), idx: i, mag: s[S_MAG] });
     }
   }
 
@@ -235,12 +240,12 @@ function _buildSearchData() {
   for (var i = 0; i < DEEPSKY.length; i++) {
     var ds = DEEPSKY[i];
     var parts = [];
-    if (ds[8]) parts.push(ds[8]);
-    if (ds[9]) parts.push(ds[9]);
-    if (ds[10]) parts.push(ds[10]);
-    if (ds[11]) parts.push(ds[11]);
+    if (ds[DS_MC]) parts.push(ds[DS_MC]);
+    if (ds[DS_NGC]) parts.push(ds[DS_NGC]);
+    if (ds[DS_NGC2]) parts.push(ds[DS_NGC2]);
+    if (ds[DS_NAME]) parts.push(ds[DS_NAME]);
     if (parts.length > 0) {
-      _dsSearchData.push({ text: parts.join('\t').toLowerCase(), idx: i, mag: ds[3] });
+      _dsSearchData.push({ text: parts.join('\t').toLowerCase(), idx: i, mag: ds[DS_MAG] });
     }
   }
 }
@@ -255,7 +260,7 @@ function searchObjects(query) {
     var e = _starSearchData[i];
     if (e.text.includes(q)) {
       var s = STARS[e.idx];
-      var label = s[10] || s[8] || s[9] || (s[5] ? 'HR ' + s[5] : 'HIP ' + s[7]);
+      var label = s[S_NAME] || s[S_BAYER] || s[S_FLAM] || (s[S_HR] ? 'HR ' + s[S_HR] : 'HIP ' + s[S_HIP]);
       results.push({ src: 'star', idx: e.idx, label: label, mag: e.mag, text: e.text });
     }
   }
@@ -264,7 +269,7 @@ function searchObjects(query) {
     var e = _dsSearchData[i];
     if (e.text.includes(q)) {
       var ds = DEEPSKY[e.idx];
-      var label = ds[8] ? (ds[8] + (ds[11] ? ' - ' + ds[11] : '')) : (ds[11] || ds[9]);
+      var label = ds[DS_MC] ? (ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '')) : (ds[DS_NAME] || ds[DS_NGC]);
       results.push({ src: 'deepsky', idx: e.idx, label: label, mag: e.mag, text: e.text });
     }
   }
@@ -375,10 +380,10 @@ function getObjectList(category) {
     case 'namedStars':
       for (var i = 0; i < STARS.length; i++) {
         var s = STARS[i];
-        if (s[10]) {
-          var desig = s[8] || s[9] || '';
-          var label = desig ? s[10] + ' - ' + desig : s[10];
-          items.push({ src: 'star', idx: i, label: label, mag: s[2] });
+        if (s[S_NAME]) {
+          var desig = s[S_BAYER] || s[S_FLAM] || '';
+          var label = desig ? s[S_NAME] + ' - ' + desig : s[S_NAME];
+          items.push({ src: 'star', idx: i, label: label, mag: s[S_MAG] });
         }
       }
       items.sort(function(a, b) { return a.label.localeCompare(b.label); });
@@ -387,22 +392,22 @@ function getObjectList(category) {
     case 'brightStars':
       for (var i = 0; i < STARS.length; i++) {
         var s = STARS[i];
-        if (s[2] <= 3.0) {
-          var desig = s[8] || s[9] || (s[5] ? 'HR ' + s[5] : 'HIP ' + s[7]);
-          var label = s[10] ? desig + ' - ' + s[10] : desig;
-          items.push({ src: 'star', idx: i, label: label, mag: s[2] });
+        if (s[S_MAG] <= 3.0) {
+          var desig = s[S_BAYER] || s[S_FLAM] || (s[S_HR] ? 'HR ' + s[S_HR] : 'HIP ' + s[S_HIP]);
+          var label = s[S_NAME] ? desig + ' - ' + s[S_NAME] : desig;
+          items.push({ src: 'star', idx: i, label: label, mag: s[S_MAG] });
         }
       }
-      items.sort(function(a, b) { return (a.mag || 99) - (b.mag || 99); });
+      items.sort(function(a, b) { return a.label.localeCompare(b.label); });
       break;
 
     case 'namedDSO':
       for (var i = 0; i < DEEPSKY.length; i++) {
         var ds = DEEPSKY[i];
-        if (ds[11]) {
-          var catId = ds[8] || ds[9] || '';
-          var label = catId ? ds[11] + ' - ' + catId : ds[11];
-          items.push({ src: 'deepsky', idx: i, label: label, mag: ds[3] });
+        if (ds[DS_NAME]) {
+          var catId = ds[DS_MC] || ds[DS_NGC] || '';
+          var label = catId ? ds[DS_NAME] + ' - ' + catId : ds[DS_NAME];
+          items.push({ src: 'deepsky', idx: i, label: label, mag: ds[DS_MAG] });
         }
       }
       items.sort(function(a, b) { return a.label.localeCompare(b.label); });
@@ -411,9 +416,9 @@ function getObjectList(category) {
     case 'messier':
       for (var i = 0; i < DEEPSKY.length; i++) {
         var ds = DEEPSKY[i];
-        if (ds[8] && ds[8].startsWith('M ')) {
-          var label = ds[8] + (ds[11] ? ' - ' + ds[11] : '');
-          items.push({ src: 'deepsky', idx: i, label: label, mag: ds[3] });
+        if (ds[DS_MC] && ds[DS_MC].startsWith('M ')) {
+          var label = ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '');
+          items.push({ src: 'deepsky', idx: i, label: label, mag: ds[DS_MAG] });
         }
       }
       items.sort(function(a, b) {
@@ -424,9 +429,9 @@ function getObjectList(category) {
     case 'caldwell':
       for (var i = 0; i < DEEPSKY.length; i++) {
         var ds = DEEPSKY[i];
-        if (ds[8] && ds[8].startsWith('C ')) {
-          var label = ds[8] + (ds[11] ? ' - ' + ds[11] : '');
-          items.push({ src: 'deepsky', idx: i, label: label, mag: ds[3] });
+        if (ds[DS_MC] && ds[DS_MC].startsWith('C ')) {
+          var label = ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '');
+          items.push({ src: 'deepsky', idx: i, label: label, mag: ds[DS_MAG] });
         }
       }
       items.sort(function(a, b) {
@@ -523,14 +528,14 @@ function onObjectListSelect() {
   _searchCurrentObj = obj;
 
   // Set selectedObject (drawnObjects-compatible format)
-  var objName = obj.type === 'star' ? (obj.data[10] || '') : obj.name;
+  var objName = obj.type === 'star' ? (obj.data[S_NAME] || '') : obj.name;
   selectedObject = {
     type: obj.type,
     name: objName,
     data: obj.data,
     jx: obj.jx, jy: obj.jy, jz: obj.jz,
     x: 0, y: 0, r: 5,
-    hr: obj.type === 'star' ? obj.data[5] : undefined
+    hr: obj.type === 'star' ? obj.data[S_HR] : undefined
   };
   _lastSelectedObj = selectedObject;
 
@@ -634,14 +639,31 @@ function refreshInfoPanel() {
   document.getElementById('info-mag').textContent =
     obj.mag == null ? '—' : !isFinite(obj.mag) ? 'Eclipsed' : (obj.mag >= 0 ? '+' : '') + obj.mag.toFixed(2);
   var bmvRow = document.getElementById('info-bmv-row');
-  if (obj.type === 'star' && obj.data[3]) {
+  if (obj.type === 'star' && obj.data[S_BMV]) {
     bmvRow.style.display = '';
-    document.getElementById('info-bmv').textContent = (obj.data[3] >= 0 ? '+' : '') + obj.data[3].toFixed(2);
+    document.getElementById('info-bmv').textContent = (obj.data[S_BMV] >= 0 ? '+' : '') + obj.data[S_BMV].toFixed(2);
   } else {
     bmvRow.style.display = 'none';
   }
   document.getElementById('info-dist').textContent = ssValid ? (obj.distStr() || '—') : '—';
-  document.getElementById('info-size').textContent = ssValid ? (obj.sizeStr() || '—') : '—';
+  var smRow = document.getElementById('info-spectmorph-row');
+  if (obj.type === 'star' && obj.data[S_SPEC]) {
+    smRow.style.display = '';
+    document.getElementById('info-spectmorph-label').textContent = 'Spectrum';
+    document.getElementById('info-spectmorph').textContent = obj.data[S_SPEC];
+  } else if (obj.type === 'deepsky' && obj.data[DS_MORPH]) {
+    var dsType = obj.data[DS_TYPE];
+    smRow.style.display = '';
+    document.getElementById('info-spectmorph-label').textContent =
+      (dsType === 'SS' || dsType === 'DS' || dsType === 'VS' || dsType === 'DV' || dsType === 'GC') ? 'Spectrum' : 'Morphology';
+    document.getElementById('info-spectmorph').textContent = obj.data[DS_MORPH];
+  } else {
+    smRow.style.display = 'none';
+  }
+  var sizeRow = document.getElementById('info-size-row');
+  var hasSize = obj.type !== 'star' && obj.type !== 'asteroid' && obj.type !== 'comet' && obj.type !== 'satellite';
+  sizeRow.style.display = hasSize ? '' : 'none';
+  if (hasSize) document.getElementById('info-size').textContent = ssValid ? (obj.sizeStr() || '—') : '—';
 
   // Phase (planets and Moon only)
   var phase = ssValid ? obj.phaseStr() : '';
@@ -743,14 +765,14 @@ function centerOnSelected() {
   var obj = _searchCurrentObj;
   if (!obj) return;
 
-  var objName = obj.type === 'star' ? (obj.data[10] || '') : obj.name;
+  var objName = obj.type === 'star' ? (obj.data[S_NAME] || '') : obj.name;
   selectedObject = {
     type: obj.type,
     name: objName,
     data: obj.data,
     jx: obj.jx, jy: obj.jy, jz: obj.jz,
     x: 0, y: 0, r: 5,
-    hr: obj.type === 'star' ? obj.data[5] : undefined
+    hr: obj.type === 'star' ? obj.data[S_HR] : undefined
   };
   _lastSelectedObj = selectedObject;
 

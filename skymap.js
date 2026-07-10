@@ -109,9 +109,10 @@ const SUPER_DIGITS = {0:'⁰',1:'¹',2:'²',3:'³',4:'⁴',
 function formatDesignation(bayer, flamsteed) {
   if (bayer) {
     const part = bayer.split(' ')[0];
-    const m = part.match(/^([a-z]+)([0-9]*)$/);
-    if (m && GREEK_MAP[m[1]]) {
-      let s = GREEK_MAP[m[1]];
+    const m = part.match(/^([a-zA-Z]+)([0-9]*)$/);
+    if (m) {
+      const greek = GREEK_MAP[m[1].toLowerCase()];
+      let s = greek || m[1];
       if (m[2]) s += [...m[2]].map(c => SUPER_DIGITS[c] || c).join('');
       return s;
     }
@@ -146,15 +147,15 @@ function formatCoords(lonDeg, latDeg) {
 // Returns '' if the distance is unknown or non-positive.
 function formatDist(obj) {
   if (obj.type === 'star') {
-    const pc = obj.data[4];
+    const pc = obj.data[S_DIST];
     if (!pc || pc <= 0) return '';
     const ly = pc * LY_PER_PC;
     return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
   } else if (obj.type === 'deepsky') {
-    const pc = obj.data[4];
+    const pc = obj.data[DS_DIST];
     if (!pc || pc <= 0) return '';
     const ly = pc * LY_PER_PC;
-    if (obj.data[0] === 'GX') return `${(ly/1e6).toFixed(1)} Mly`;
+    if (obj.data[DS_TYPE] === 'GX') return `${(ly/1e6).toFixed(1)} Mly`;
     return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
   } else if (obj.type === 'moon' || obj.type === 'satellite') {
     const km = obj.data.dist;
@@ -175,25 +176,27 @@ function formatSelection(obj) {
   const ids = [];
   let type = '', name = '', mag = null;
   if (obj.type === 'star') {
-    type = 'Star';
-    const bayer = d[8], flamsteed = d[9], starName = d[10], dm = d[11];
+    const STAR_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
+    type = STAR_TYPES[d[S_TYPE]] || 'Star';
+    const bayer = d[S_BAYER], flamsteed = d[S_FLAM], starName = d[S_NAME], dm = d[S_DM];
     name = starName || '';
     if (bayer) ids.push(bayer);
     if (flamsteed) ids.push(flamsteed);
     if (obj.hr) ids.push(`HR ${obj.hr}`);
-    if (d[6]) ids.push(`HD ${d[6]}`);
-    if (d[7]) ids.push(`HIP ${d[7]}`);
+    if (d[S_HD]) ids.push(`HD ${d[S_HD]}`);
+    if (d[S_HIP]) ids.push(`HIP ${d[S_HIP]}`);
     if (dm) ids.push(dm);
-    mag = d[2];
+    mag = d[S_MAG];
   } else if (obj.type === 'deepsky') {
-    const DS_TYPES = {OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
+    const DS_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star',
+      OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
       DN:'Dark Nebula',PN:'Planetary Nebula',GX:'Galaxy'};
-    type = DS_TYPES[d[0]] || d[0];
-    name = d[11] || '';
-    if (d[8]) ids.push(d[8]);
-    if (d[9]) ids.push(d[9]);
-    if (d[10]) ids.push(d[10]);
-    mag = d[3];
+    type = DS_TYPES[d[DS_TYPE]] || d[DS_TYPE];
+    name = d[DS_NAME] || '';
+    if (d[DS_MC]) ids.push(d[DS_MC]);
+    if (d[DS_NGC]) ids.push(d[DS_NGC]);
+    if (d[DS_NGC2]) ids.push(d[DS_NGC2]);
+    mag = d[DS_MAG];
   } else if (obj.type === 'planet') {
     type = 'Planet';
     name = d.name;
@@ -241,14 +244,14 @@ function formatSelection(obj) {
 function skymapInit() {
   for (let i = 0; i < STARS.length; i++) {
     const s = STARS[i];
-    s.push(...sph2uxyz(s[0], s[1]));
+    s.push(...sph2uxyz(s[S_RA], s[S_DEC]));
   }
   for (const c of CON_CENTERS) {
     c.push(...sph2uxyz(c[0], c[1]));
   }
   for (let i = 0; i < DEEPSKY.length; i++) {
     const ds = DEEPSKY[i];
-    ds.push(...sph2uxyz(ds[1], ds[2]));
+    ds.push(...sph2uxyz(ds[DS_RA], ds[DS_DEC]));
   }
   for (let i = 0; i < MILKYWAY.length; i++) {
     const ring = MILKYWAY[i];
@@ -272,8 +275,8 @@ function skymapInit() {
     for (const name of NEBULA_INDEX[i])
       (nebulaContourMap[name] ??= []).push(i);
   for (let i = 0; i < DEEPSKY.length; i++)
-    dsContours[i] = nebulaContourMap[DEEPSKY[i][8]] || nebulaContourMap[DEEPSKY[i][9]]
-      || nebulaContourMap[DEEPSKY[i][10]] || nebulaContourMap[DEEPSKY[i][11]] || null;
+    dsContours[i] = nebulaContourMap[DEEPSKY[i][DS_MC]] || nebulaContourMap[DEEPSKY[i][DS_NGC]]
+      || nebulaContourMap[DEEPSKY[i][DS_NGC2]] || nebulaContourMap[DEEPSKY[i][DS_NAME]] || null;
   // Precess constellation boundary vertices from B1875 to J2000
   const T1875 = (2405889.25 - 2451545.0) / 36525.0;
   const pp1875 = precessAngles(T1875);
@@ -788,9 +791,9 @@ function skymapDraw(canvas, params) {
     const spos = {};
     const starPositions = [];
     for (const s of STARS) {
-      const hr = s[5];
-      if (s[2] > starMagLimit && !hr) { starPositions.push(null); continue; }
-      const x0 = s[12], y0 = s[13], z0 = s[14];
+      const hr = s[S_HR];
+      if (s[S_MAG] > starMagLimit && !hr) { starPositions.push(null); continue; }
+      const x0 = s[S_X], y0 = s[S_Y], z0 = s[S_Z];
       const [x1, vy, vz] = mvmul(M, x0, y0, z0);
       let sx, sy;
       const d = 1 + vz;
@@ -906,21 +909,21 @@ function skymapDraw(canvas, params) {
     const dsPositions = [];
     const dsMagLimit = starMagLimit + 4;
     for (let dsi = 0; dsi < DEEPSKY.length; dsi++) { const ds = DEEPSKY[dsi];
-      if (viewFov > 45 && !ds[8]) { dsPositions.push(null); continue; }
-      if (viewFov >= 10 && !ds[8] && (ds[3] == null || ds[3] > dsMagLimit)) { dsPositions.push(null); continue; }
-      const x0 = ds[12], y0 = ds[13], z0 = ds[14];
+      if (viewFov > 45 && !ds[DS_MC]) { dsPositions.push(null); continue; }
+      if (viewFov >= 10 && !ds[DS_MC] && (ds[DS_MAG] == null || ds[DS_MAG] > dsMagLimit)) { dsPositions.push(null); continue; }
+      const x0 = ds[DS_X], y0 = ds[DS_Y], z0 = ds[DS_Z];
       const [x1, vy, vz] = mvmul(M, x0, y0, z0);
       if (vz < -1e-10) { dsPositions.push(null); continue; }
       const d = 1 + vz;
       const pt = toScreen(2 * x1 / d, -2 * vy / d);
-      const dsSize = ds[5];
+      const dsSize = ds[DS_MAJ];
       const r = dsSize ? max(5, radToPx(pt[0], pt[1], dsSize * DEG_TO_RAD / 60) / 2) : 5;
       // Enlarge the cull rectangle by the object's radius (major axis) so
       // extended objects aren't culled just because their center is off-canvas.
       if (pt[0] < -r || pt[0] > W + r || pt[1] < -r || pt[1] > H + r) { dsPositions.push(null); continue; }
       dsPositions.push({x: pt[0], y: pt[1], r});
       const dObj = {x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: x0, jy: y0, jz: z0};
-      const typ = ds[0];
+      const typ = ds[DS_TYPE];
       ctx.strokeStyle = dsColor;
       if (typ === 'OC') {
         ctx.setLineDash([3, 3]);
@@ -933,7 +936,7 @@ function skymapDraw(canvas, params) {
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0], pt[1] + r); ctx.stroke();
       } else if (typ === 'BN') {
         if (dsContours[dsi]) dObj.contourPts = drawDSContours(dsContours[dsi]);
-        else if (ds[3] != null || !dsSize || dsSize < 60) ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
+        else if (ds[DS_MAG] != null || !dsSize || dsSize < 60) ctx.strokeRect(pt[0] - r, pt[1] - r, 2 * r, 2 * r);
       } else if (typ === 'DN') {
         if (dsContours[dsi]) dObj.contourPts = drawDSContours(dsContours[dsi]);
         else {
@@ -950,10 +953,10 @@ function skymapDraw(canvas, params) {
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - t); ctx.lineTo(pt[0], pt[1] - r); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] + r); ctx.lineTo(pt[0], pt[1] + t); ctx.stroke();
       } else if (typ === 'GX') {
-        const minorSize = ds[6];
+        const minorSize = ds[DS_MIN];
         if (minorSize) {
           const rMinor = max(3, radToPx(pt[0], pt[1], minorSize * DEG_TO_RAD / 60) / 2);
-          const pa = ds[7];
+          const pa = ds[DS_PA];
           const rot = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, x1, vy, vz, pt[0], pt[1]) : 0;
           ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
           dObj.rMinor = rMinor; dObj.rot = rot;
@@ -973,11 +976,11 @@ function skymapDraw(canvas, params) {
       for (let i = 0; i < DEEPSKY.length; i++) {
         if (!dsPositions[i]) continue;
         const p = dsPositions[i];
-        const mcId = DEEPSKY[i][8];
-        const ngcic = DEEPSKY[i][9];
-        const name = DEEPSKY[i][11];
+        const mcId = DEEPSKY[i][DS_MC];
+        const ngcic = DEEPSKY[i][DS_NGC];
+        const name = DEEPSKY[i][DS_NAME];
         const isMC = !!mcId;
-        const labelOk = isMC || dsContours[i] || viewFov < 3 || (DEEPSKY[i][3] != null && DEEPSKY[i][3] <= dsLabelMagLimit);
+        const labelOk = isMC || dsContours[i] || viewFov < 3 || (DEEPSKY[i][DS_MAG] != null && DEEPSKY[i][DS_MAG] <= dsLabelMagLimit);
         if (showDeepSkyIds && labelOk) placeLabel(p.x, p.y, p.r + 3, mcId || ngcic || '');
         if (showDeepSkyNames && labelOk && name) placeLabel(p.x, p.y, p.r + 3, name);
       }
@@ -1013,12 +1016,12 @@ function skymapDraw(canvas, params) {
       const p = starPositions[i];
       if (!p || !p.inView) continue;
       const s = STARS[i];
-      const mag = s[2], bmv = s[3], hr = s[5];
+      const mag = s[S_MAG], bmv = s[S_BMV], hr = s[S_HR];
       if (mag > starMagLimit) continue;
       const r = max(0.5, (5.5 + magBoost - mag) * min(W, H) / 1000);
       ctx.fillStyle = darkMode && showStarColors ? bmvToRGB(bmv) : darkMode ? '#fff' : '#000';
       ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TAU); ctx.fill();
-      drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', name: s[10], hr, data: s, jx: s[12], jy: s[13], jz: s[14]});
+      drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', name: s[S_NAME], hr, data: s, jx: s[S_X], jy: s[S_Y], jz: s[S_Z]});
     }
     if (showNames || showStarIds) {
       ctx.font = `${max(minFontSize,round(min(W,H)/85))}px sans-serif`;
@@ -1028,7 +1031,7 @@ function skymapDraw(canvas, params) {
         const p = starPositions[i];
         if (!p || !p.inView) continue;
         const s = STARS[i];
-        const mag = s[2], bayer = s[8], flamsteed = s[9], name = s[10];
+        const mag = s[S_MAG], bayer = s[S_BAYER], flamsteed = s[S_FLAM], name = s[S_NAME];
         if (mag > 2.02 + 1.5 * magBoost) continue;
         const r = max(0.5, (5.5 + magBoost - mag) * min(W, H) / 1000);
         const desig = showStarIds ? formatDesignation(bayer, flamsteed) : '';

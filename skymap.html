@@ -276,7 +276,8 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
       <tr><td>Magnitude</td><td id="info-mag">—</td></tr>
       <tr id="info-bmv-row" style="display:none"><td>Color Index</td><td id="info-bmv">—</td></tr>
       <tr><td>Distance</td><td id="info-dist">—</td></tr>
-      <tr><td>Size</td><td id="info-size">—</td></tr>
+      <tr id="info-spectmorph-row" style="display:none"><td id="info-spectmorph-label">Spectrum</td><td id="info-spectmorph">—</td></tr>
+      <tr id="info-size-row"><td>Size</td><td id="info-size">—</td></tr>
       <tr id="info-phase-row" style="display:none"><td>Illumination</td><td id="info-phase">—</td></tr>
       <tr id="info-sublon-row" style="display:none"><td>Central Longitude</td><td id="info-sublon">—</td></tr>
       <tr id="info-sublat-row" style="display:none"><td>Central Latitude</td><td id="info-sublat">—</td></tr>
@@ -290,7 +291,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=24"></script>
+<script src="astromath.js?v=25"></script>
 <script src="vsop87.js?v=1"></script>
 <script src="planets.js?v=17"></script>
 <script src="mpc.js?v=1"></script>
@@ -298,8 +299,8 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="satmag.js?v=5"></script>
 <script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=34"></script>
-<script src="search.js?v=26"></script>
+<script src="skymap.js?v=36"></script>
+<script src="searchinfo.js?v=28"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -932,9 +933,9 @@ function init() {
 window.onload = function() {
   const isMobile = /Mobi|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
   const starScript = document.createElement('script');
-  starScript.src = (isMobile ? 'stars_hr.js' : 'stars.js') + '?v=6';
+  starScript.src = (isMobile ? 'stars_hr.js' : 'stars.js') + '?v=8';
   const dsScript = document.createElement('script');
-  dsScript.src = (isMobile ? 'deepsky_mc.js' : 'deepsky.js') + '?v=7';
+  dsScript.src = (isMobile ? 'deepsky_mc.js' : 'deepsky.js') + '?v=8';
   let loaded = 0;
   starScript.onload = dsScript.onload = function() { if (++loaded === 2) init(); };
   document.head.appendChild(starScript);

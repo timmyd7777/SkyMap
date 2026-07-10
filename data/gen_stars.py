@@ -4,7 +4,7 @@
 Usage: gen_stars.py <input.csv> <mag_limit>
 Example: gen_stars.py SKY2000.csv 8.0
 """
-import math, os, sys, re, urllib.request
+import csv, math, os, sys, re, urllib.request
 
 DOWNLOAD_FILES = {
     'brightest.csv': 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/Stars/Brightest.csv',
@@ -31,9 +31,10 @@ IAU_CON = {'And','Ant','Aps','Aqr','Aql','Ara','Ari','Aur','Boo','Cae',
     'Oph','Ori','Pav','Peg','Per','Phe','Pic','Psc','PsA','Pup','Pyx','Ret',
     'Sge','Sgr','Sco','Scl','Sct','Ser','Sex','Tau','Tel','Tri','TrA','Tuc',
     'UMa','UMi','Vel','Vir','Vol','Vul'}
-CATALOG_PREFIX = ('HR ','HD ','SAO ','BD ','CD ','HIP ','TYC ','GAIA ','WDS ','GJ ',
-                  'GC ','NGC ','IC ','PK ','PNG ','PGC ','UGC ','LBN ',
-                  'CST:','LTT ','GCVS ','NSV ','CP ')
+
+GREEK = {'alpha','beta','gamma','delta','epsilon','zeta','eta','theta',
+    'iota','kappa','lambda','mu','nu','xi','omicron','pi','rho','sigma',
+    'tau','upsilon','phi','chi','psi','omega'}
 
 def con_designation(f):
     """If f is 'prefix Con' where Con is an IAU abbreviation, return (prefix, Con).
@@ -57,13 +58,12 @@ def parse_dec(s):
     d, m, sec = int(parts[0]), int(parts[1]), float(parts[2])
     return sign * (d + m / 60 + sec / 3600) * math.pi / 180
 
-def parse_star_line(line):
-    line = line.strip()
-    if not line:
+def parse_star_line(parts):
+    """Parse a CSV row (list of fields) into one or more star entries."""
+    if len(parts) < 29:
         return None
-    parts = line.rstrip(',').split(',')
-    if len(parts) < 8:
-        return None
+
+    obj_type = parts[0].strip()
 
     try:
         ra = parse_ra(parts[1])
@@ -81,45 +81,54 @@ def parse_star_line(line):
     except (ValueError, IndexError):
         return None
 
-    hr_matches = re.findall(r'\bHR (\d+)\b', line)
-    hrs = [int(x) for x in hr_matches]
-    hr = hrs[0] if hrs else 0
-    hd_match = re.search(r'\bHD (\d+)\b', line)
-    hd = int(hd_match.group(1)) if hd_match else 0
-    hip_match = re.search(r'\bHIP (\d+)\b', line)
-    hip = int(hip_match.group(1)) if hip_match else 0
-    dm_match = re.search(r'\b(BD|CD|CP) [+-]\d+ \d+', line)
-    dm = dm_match.group(0) if dm_match else ''
-
     dist_str = parts[7].strip()
     try:
         dist = float(dist_str) if dist_str else None
     except ValueError:
         dist = None
 
+    spec = parts[9].strip() if len(parts) > 9 else ''
+
+    # Parse structured ID column (index 27): semicolon-delimited catalog IDs
+    ids = [x.strip() for x in parts[27].split(';') if x.strip()]
+
+    hrs = []
+    hd = 0
+    hip = 0
+    dm = ''
     bayer = ''
     flamsteed = ''
-    name = ''
-    for f in parts:
-        f = f.strip()
-        cd = con_designation(f)
+
+    for ident in ids:
+        m = re.match(r'^HR (\d+)$', ident)
+        if m:
+            hrs.append(int(m.group(1)))
+            continue
+        m = re.match(r'^HD (\d+)$', ident)
+        if m and not hd:
+            hd = int(m.group(1))
+            continue
+        m = re.match(r'^HIP (\d+)$', ident)
+        if m and not hip:
+            hip = int(m.group(1))
+            continue
+        m = re.match(r'^(BD|CD|CP) [+-]\d+ \d+', ident)
+        if m and not dm:
+            dm = ident
+            continue
+        cd = con_designation(ident)
         if cd:
             if re.match(r'^\d+$', cd[0]):
                 if not flamsteed:
-                    flamsteed = f
+                    flamsteed = ident
             else:
                 if not bayer:
-                    bayer = f
-    # The common name is the last non-catalog, non-Bayer, non-Flamsteed field
-    for f in reversed(parts):
-        f = f.strip()
-        if not f:
-            continue
-        if any(f.startswith(p) for p in CATALOG_PREFIX):
-            break
-        if not con_designation(f):
-            name = f
-            break
+                    prefix = re.sub(r'\d+$', '', cd[0])
+                    bayer = (cd[0].capitalize() + ' ' + cd[1]) if prefix in GREEK else ident
+
+    # Parse structured Names column (index 28): semicolon-delimited common names
+    names = [x.strip() for x in parts[28].split(';') if x.strip()]
+    name = names[0] if names else ''
 
     # Filter out object type codes and other non-name fields
     skip_names = {'A','B','AB','BC','AC','ABC','RS','EB','DCEP','BCEP','SR','SB',
@@ -128,8 +137,8 @@ def parse_star_line(line):
         name = ''
 
     base = {
-        'hd': hd, 'hip': hip,
-        'ra': ra, 'dec': dec, 'mag': mag, 'bmv': bmv, 'dist': dist,
+        'type': obj_type, 'hd': hd, 'hip': hip,
+        'ra': ra, 'dec': dec, 'mag': mag, 'bmv': bmv, 'dist': dist, 'spec': spec,
         'name': name, 'bayer': bayer, 'flamsteed': flamsteed, 'dm': dm,
     }
 
@@ -149,9 +158,11 @@ def parse_star_line(line):
 
 # Parse all stars
 all_stars = {}
-with open(INPUT_FILE) as f:
-    for line in f:
-        results = parse_star_line(line)
+with open(INPUT_FILE, newline='') as f:
+    reader = csv.reader(f)
+    next(reader)  # Skip header row
+    for parts in reader:
+        results = parse_star_line(parts)
         if results:
             for result in results:
                 k = result['key']
@@ -170,8 +181,9 @@ with_hr = sum(1 for s in stars if s['hr'])
 with_hd = sum(1 for s in stars if s['hd'])
 with_hip = sum(1 for s in stars if s['hip'])
 with_dist = sum(1 for s in stars if s['dist'] is not None)
+with_spec = sum(1 for s in stars if s['spec'])
 print(f"Total stars: {len(stars)} (mag <= {MAG_LIMIT})", file=sys.stderr)
-print(f"With HR: {with_hr}, HD: {with_hd}, HIP: {with_hip}, names: {named}, Bayer: {bayered}, Flamsteed: {flamsteeded}, distance: {with_dist}", file=sys.stderr)
+print(f"With HR: {with_hr}, HD: {with_hd}, HIP: {with_hip}, names: {named}, Bayer: {bayered}, Flamsteed: {flamsteeded}, distance: {with_dist}, spectrum: {with_spec}", file=sys.stderr)
 
 def js_str(s):
     if not s:
@@ -180,12 +192,12 @@ def js_str(s):
 
 with open('stars.js', 'w', encoding='utf-8') as out:
     out.write(f'// {len(stars)} stars from {INPUT_FILE} (mag <= {MAG_LIMIT})\n')
-    out.write('// Star: [RA_rad, Dec_rad, mag, bmv, dist_pc, HR, HD, HIP, bayer, flamsteed, name, dm]\n')
+    out.write('const S_TYPE=0,S_RA=1,S_DEC=2,S_MAG=3,S_BMV=4,S_DIST=5,S_SPEC=6,S_HR=7,S_HD=8,S_HIP=9,S_DM=10,S_BAYER=11,S_FLAM=12,S_NAME=13,S_X=14,S_Y=15,S_Z=16;\n')
     out.write('var STARS = [\n')
     for s in stars:
         dist = 'null' if s['dist'] is None else f"{s['dist']:.1f}"
-        out.write(f"[{s['ra']:.5f},{s['dec']:.5f},{s['mag']:.2f},{s['bmv']:.2f},{dist},"
-                  f"{s['hr']},{s['hd']},{s['hip']},{js_str(s['bayer'])},{js_str(s['flamsteed'])},{js_str(s['name'])},{js_str(s['dm'])}],\n")
+        out.write(f"[{js_str(s['type'])},{s['ra']:.5f},{s['dec']:.5f},{s['mag']:.2f},{s['bmv']:.2f},{dist},{js_str(s['spec'])},"
+                  f"{s['hr']},{s['hd']},{s['hip']},{js_str(s['dm'])},{js_str(s['bayer'])},{js_str(s['flamsteed'])},{js_str(s['name'])}],\n")
     out.write('];\n')
 
 print("Wrote stars.js", file=sys.stderr)

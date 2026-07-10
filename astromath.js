@@ -372,16 +372,23 @@ function riseTransitSet(raRad, decRad, jd, latRad, lonRad, h0Rad, rtsFlag) {
 // for "does not occur within this local calendar day".
 function riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, iterations) {
   if (iterations === undefined) iterations = 3;
+  const SID_DAY = 1 / 1.00273790935;
   let t = jd0 + 0.5;
   let result;
-  for (let i = 0; i < iterations; i++) {
-    const pos = getRaDec(t);
-    result = riseTransitSet(pos.ra, pos.dec, t, latRad, lonRad, h0Rad, rtsFlag);
-    if (result.status !== 'normal') return result;
-    if (result.jd < jd0 || result.jd >= jd0 + 1) return { status: 'none', jd: null };
-    t = result.jd;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < iterations; i++) {
+      const pos = getRaDec(t);
+      result = riseTransitSet(pos.ra, pos.dec, t, latRad, lonRad, h0Rad, rtsFlag);
+      if (result.status !== 'normal') return result;
+      t = result.jd;
+    }
+    if (result.jd >= jd0 && result.jd < jd0 + 1) return result;
+    // Nearest-transit heuristic locked onto the adjacent sidereal cycle.
+    // Shift toward the day and re-iterate; for genuinely absent events (Moon)
+    // the second pass also lands outside the day.
+    t = result.jd + (result.jd < jd0 ? SID_DAY : -SID_DAY);
   }
-  return result;
+  return { status: 'none', jd: null };
 }
 
 // ---- IAU 1976 Precession ----
