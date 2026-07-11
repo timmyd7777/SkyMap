@@ -154,32 +154,6 @@ function formatCoords(lonDeg, latDeg) {
 // Format an object's distance for display, with type-appropriate units.
 // obj: an entry from drawnObjects (has .type, .data, ...). Reads the relevant
 // distance field out of obj.data per type: parsecs (star/deepsky, → ly/kly/Mly),
-// km (moon/satellite), or AU (sun/planet/comet/asteroid/planetmoon).
-// Returns '' if the distance is unknown or non-positive.
-function formatDist(obj) {
-  if (obj.type === 'star') {
-    const pc = obj.data.star[S_DIST];
-    if (!pc || pc <= 0) return '';
-    const ly = pc * LY_PER_PC;
-    return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
-  } else if (obj.type === 'deepsky') {
-    const pc = obj.data[DS_DIST];
-    if (!pc || pc <= 0) return '';
-    const ly = pc * LY_PER_PC;
-    if (obj.data[DS_TYPE] === 'GX') return `${(ly/1e6).toFixed(1)} Mly`;
-    return ly >= 1000 ? `${(ly/1000).toFixed(1)} kly` : `${ly.toFixed(1)} ly`;
-  } else if (obj.type === 'moon' || obj.type === 'satellite') {
-    const km = obj.data.dist;
-    if (!km || km <= 0) return '';
-    return `${round(km).toLocaleString()} km`;
-  } else if (obj.type === 'sun' || obj.type === 'planet' || obj.type === 'comet' || obj.type === 'asteroid' || obj.type === 'planetmoon') {
-    const au = obj.data.geoDist || obj.data.dist;
-    if (!au || au <= 0) return '';
-    return `${au.toFixed(3)} AU`;
-  }
-  return '';
-}
-
 // Format a picked object into a one-line description string for display.
 // obj: an entry from drawnObjects (has .type, .data, optionally .hr).
 function formatSelection(obj) {
@@ -333,9 +307,10 @@ function skymapDraw(canvas, params) {
 
   // ---- Frame matrix (computed before view params for object centering) ----
   const mFrame = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, j2000);
+  const mFrameT = mtranspose(mFrame);
   const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonRad, j2000);
+  const mPrecessT = mtranspose(mPrecess);
   curMFrame = mFrame;
-  const mPT = mtranspose(mPrecess);
 
   // ---- Center on tracked object ----
   if (centerObject) {
@@ -360,9 +335,7 @@ function skymapDraw(canvas, params) {
   // other frames store RA/ecliptic-lon/galactic-lon, which is 90° off from that.
   const vLon = (viewFrame === 'horizon' ? viewLon : mod360(90 - viewLon)) * DEG_TO_RAD;
   const vLat = viewLat * DEG_TO_RAD, vWidth = viewFov * DEG_TO_RAD;
-  const vCosL = cos(vLon), vSinL = sin(vLon);
   const vTheta = PI / 2 - vLat;                      // co-latitude of view center
-  const vCosT = cos(vTheta), vSinT = sin(vTheta);
   const rEdge = 2 * tan(vWidth / 4);                 // stereographic radius at FOV edge
   const scale = chartR / rEdge;                      // pixels per unit stereographic radius
   const magBoost = min(5, Math.log2(180 / viewFov));
@@ -373,6 +346,7 @@ function skymapDraw(canvas, params) {
   // ---- Rotation matrices (continued) ----
   const mView = mmul(rx(vTheta), rz(vLon));          // frame coords → view coords
   const M = mmul(mView, mFrame);                     // combined: J2000 equatorial → view
+  const MT = mtranspose(M);                           // inverse: view → J2000 equatorial
 
   // ---- Projection helpers ----
   // All projection functions operate in the view coordinate system where
@@ -408,14 +382,26 @@ function skymapDraw(canvas, params) {
 
   // ---- Forward and reverse projection (J2000 mean equatorial XYZ ↔ canvas pixels) ----
 
-  skyProject = function(jx, jy, jz) {
+  // Internal projection: J2000 unit vector → canvas pixels.
+  // If raw is true, clamps behind-hemisphere points to a large radius instead of returning null.
+  function skyProjectRaw(jx, jy, jz, raw) {
     const [vx, vy, vz] = mvmul(M, jx, jy, jz);
-    if (vz < -1e-10) return null;
     const d = 1 + vz;
+    if (raw) {
+      if (d < 0.1) {
+        const len = sqrt(vx * vx + vy * vy);
+        if (len < 0.001) return toScreen(0, 0);
+        const maxR = 3 * rEdge;
+        return toScreen(maxR * vx / len, -maxR * vy / len);
+      }
+    } else if (vz < -1e-10) return null;
     return toScreen(2 * vx / d, -2 * vy / d);
+  }
+
+  skyProject = function(jx, jy, jz) {
+    return skyProjectRaw(jx, jy, jz, false);
   };
 
-  const MT = mtranspose(M);
   skyUnproject = function(sx, sy) {
     const cX = (sx - cx) / (fX * scale), cY = (cy - sy) / (fY * scale);
     const r2 = cX * cX + cY * cY;
@@ -432,34 +418,23 @@ function skymapDraw(canvas, params) {
 
 
   viewProject = function(alt, az) {
-    const px = cos(alt) * sin(az), py = cos(alt) * cos(az), pz = sin(alt);
-    const x1 = vCosL * px - vSinL * py;
-    const y1 = vSinL * px + vCosL * py;
-    const vy = vCosT * y1 - vSinT * pz;
-    const vz = vSinT * y1 + vCosT * pz;
-    if (vz < -1e-10) return null;
-    const d = 1 + vz;
-    return toScreen(2 * x1 / d, -2 * vy / d);
+    return skyProjectRaw(...mvmul(mFrameT, cos(alt) * sin(az), cos(alt) * cos(az), sin(alt)), false);
   };
 
   // Like viewProject but never returns null. Points behind the hemisphere are
   // clamped to a large radius in the correct direction (for drawing continuous
   // lines across the hemisphere boundary, e.g. horizon shading).
   function viewProjectRaw(alt, az) {
-    const px = cos(alt) * sin(az), py = cos(alt) * cos(az), pz = sin(alt);
-    const x1 = vCosL * px - vSinL * py;
-    const y1 = vSinL * px + vCosL * py;
-    const vy = vCosT * y1 - vSinT * pz;
-    const vz = vSinT * y1 + vCosT * pz;
-    const d = 1 + vz;
-    if (d < 0.1) {
-      const len = sqrt(x1 * x1 + vy * vy);
-      if (len < 0.001) return toScreen(0, 0);
-      const maxR = 3 * rEdge;
-      return toScreen(maxR * x1 / len, -maxR * vy / len);
-    }
-    return toScreen(2 * x1 / d, -2 * vy / d);
+    return skyProjectRaw(...mvmul(mFrameT, cos(alt) * sin(az), cos(alt) * cos(az), sin(alt)), true);
   }
+
+  viewUnproject = function(sx, sy) {
+    const j = skyUnproject(sx, sy);
+    if (!j) return null;
+    const [px, py, pz] = mvmul(mFrame, j[0], j[1], j[2]);
+    const lon = viewFrame === 'horizon' ? atan2pi(px, py) : atan2pi(py, px);
+    return [asin(max(-1, min(1, pz))), lon];
+  };
 
   // Draw a meridian arc in the current frame's grid.
   // mV: view rotation matrix (frame → view). lon: grid longitude (radians).
@@ -512,15 +487,6 @@ function skymapDraw(canvas, params) {
     ctx.stroke();
   }
 
-  // Project current-epoch (of-date) RA/Dec to canvas pixels.
-  // ra, dec in radians (of date). Un-precesses to J2000, then through full M matrix.
-  // Returns [sx, sy] or null if behind the hemisphere.
-  function projectEpochRaDec(ra, dec) {
-    const [vx, vy, vz] = mvmul(M, ...mvmul(mPT, ...sph2uxyz(ra, dec)));
-    if (vz < -1e-10) return null;
-    const d = 1 + vz;
-    return toScreen(2 * vx / d, -2 * vy / d);
-  }
 
   // Convert a J2000 position angle to a screen angle at a given position.
   // j2kPA: radians, measured from J2000 celestial north through east.
@@ -539,24 +505,6 @@ function skymapDraw(canvas, params) {
     return atan2((np[1] - sy) / fY, (np[0] - sx) / fX) - j2kPA;
   }
 
-  // Inverse stereographic projection: canvas pixels → current frame's display
-  // coordinates (azimuth for Horizon, RA/ecliptic-lon/galactic-lon otherwise).
-  // Returns [lat, lon] in radians, or null if the point is outside the hemisphere (r² > 4).
-  viewUnproject = function(sx, sy) {
-    const cX = (sx - cx) / (fX * scale), cY = (cy - sy) / (fY * scale);
-    const r2 = cX * cX + cY * cY;
-    if (r2 > 4) return null;
-    const vz = (4 - r2) / (4 + r2);
-    const f = 4 / (4 + r2);
-    const x1 = f * cX;
-    const vy = -f * cY;
-    const y1 = vCosT * vy + vSinT * vz;
-    const pz = -vSinT * vy + vCosT * vz;
-    const px = vCosL * x1 + vSinL * y1;
-    const py = -vSinL * x1 + vCosL * y1;
-    const lon = viewFrame === 'horizon' ? atan2pi(px, py) : atan2pi(py, px);
-    return [asin(max(-1, min(1, pz))), lon];
-  };
 
   // ---- Label collision avoidance ----
   // Shared across all drawing sub-functions. Labels are placed in the first
