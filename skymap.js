@@ -27,14 +27,20 @@ let viewLon = 180, viewLat = 90, viewFov = 180;
 let viewFrame = 'horizon';
 let viewJ2000 = false;
 
-// Inverse projection function, set by skymapDraw() each frame.
-// (sx, sy) in canvas pixels → [lat, lon] in current frame (radians), or null.
-let viewUnproject = null;
+// Forward and inverse projection in the current coordinate frame, set by skymapDraw() each frame.
+let viewProject = null;   // (lat, lon) in current frame (radians) → [sx, sy] canvas pixels, or null.
+let viewUnproject = null;  // (sx, sy) in canvas pixels → [lat, lon] in current frame (radians), or null.
 
-// Forward projection functions, set by skymapDraw() each frame.
-let skyProjectJ2000 = null;
-let skyIsVisibleJ2000 = null;
-let skyRadToPx = null;
+// Projection functions for J2000 mean equatorial XYZ unit vector (jx, jy, jz)
+// to and from canvas pixels (sx, sy). Set by skymapDraw() each frame.
+let skyProject = null;    // (jx, jy, jz) → [sx, sy] or null
+let skyUnproject = null;  // (sx, sy) → [jx, jy, jz] or null
+let skyIsVisible = null;  // (jx, jy, jz) → boolean
+
+// Converts angular size from radians to pixels at a given screen position (sx, sy)
+// and vice-versa. Set by skymapDraw() each frame.
+let radToPx = null;       // (sx, sy, rad) → pixels
+let pxToRad = null;       // (sx, sy, px) → radians
 
 // Nebula contour name → NEBULA_CONTOURS index lookup, built by skymapInit().
 const nebulaContourMap = {};
@@ -179,20 +185,18 @@ function formatDist(obj) {
 function formatSelection(obj) {
   const d = obj.data;
   const ids = [];
-  let type = '', name = '', mag = null;
+  let type = '', name = '';
   if (obj.type === 'star') {
     const s = d.star;
     const STAR_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
     type = STAR_TYPES[s[S_TYPE]] || 'Star';
-    const bayer = s[S_BAYER], flamsteed = s[S_FLAM], dm = s[S_DM];
     name = d.name;
-    if (bayer) ids.push(bayer);
-    if (flamsteed) ids.push(flamsteed);
+    if (s[S_BAYER]) ids.push(s[S_BAYER]);
+    if (s[S_FLAM]) ids.push(s[S_FLAM]);
     if (obj.hr) ids.push(`HR ${obj.hr}`);
     if (s[S_HD]) ids.push(`HD ${s[S_HD]}`);
     if (s[S_HIP]) ids.push(`HIP ${s[S_HIP]}`);
-    if (dm) ids.push(dm);
-    mag = s[S_MAG];
+    if (s[S_DM]) ids.push(s[S_DM]);
   } else if (obj.type === 'deepsky') {
     const DS_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star',
       OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
@@ -202,35 +206,20 @@ function formatSelection(obj) {
     if (d[DS_MC]) ids.push(d[DS_MC]);
     if (d[DS_NGC]) ids.push(d[DS_NGC]);
     if (d[DS_NGC2]) ids.push(d[DS_NGC2]);
-    mag = d[DS_MAG];
   } else if (obj.type === 'planet') {
-    type = 'Planet';
-    name = d.name;
-    mag = d.mag;
+    type = 'Planet'; name = d.name;
   } else if (obj.type === 'sun') {
-    type = 'Star';
-    name = 'Sun';
-    mag = d.mag;
+    type = 'Star'; name = 'Sun';
   } else if (obj.type === 'moon') {
     type = 'Moon';
-    name = 'Moon';
-    mag = d.mag;
   } else if (obj.type === 'asteroid') {
-    type = 'Asteroid';
-    name = d.name;
-    mag = d.mag;
+    type = 'Asteroid'; name = d.name;
   } else if (obj.type === 'comet') {
-    type = 'Comet';
-    name = d.name;
-    mag = d.mag;
+    type = 'Comet'; name = d.name;
   } else if (obj.type === 'satellite') {
-    type = 'Satellite';
-    name = d.name;
-    mag = d.mag;
+    type = 'Satellite'; name = d.name;
   } else if (obj.type === 'planetmoon') {
-    type = d.parent + ' moon';
-    name = d.name;
-    mag = d.mag;
+    type = d.parent + ' moon'; name = d.name;
   }
   if (centerObject) type = 'Tracking ' + type;
   let s = type;
@@ -312,7 +301,7 @@ function skymapInit() {
 //   darkMode, showStars, showNames, showStarIds, showConst, showConstNames,
 //   showBounds, showPlanets, showPlanetNames, showDeepSky, showDeepSkyNames,
 //   showDeepSkyIds, showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
-//   showGrid, showHeader, flipH, flipV: booleans
+//   showGrid, showHeader, showSelection, flipH, flipV: booleans
 // }
 //
 // Side effects: updates viewUnproject, drawnObjects, curMFrame globals.
@@ -326,7 +315,7 @@ function skymapDraw(canvas, params) {
     showSatellites, showSatelliteNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
     showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
-    showGrid, showHeader, flipH, flipV,
+    showGrid, showHeader, showSelection, flipH, flipV,
   } = params;
   const showStarColors = true;
 
@@ -404,15 +393,45 @@ function skymapDraw(canvas, params) {
 
   // Convert angular size in arcminutes to pixels at a given screen position.
   // Accounts for stereographic projection distortion (objects near edge appear larger).
-  function radToPx(sx, sy, rad) {
+  radToPx = function(sx, sy, rad) {
     const cX = (sx - cx) / scale, cY = (cy - sy) / scale;
     const r2 = cX * cX + cY * cY;
     return rad * scale * (4 + r2) / 4;
-  }
+  };
 
-  // Project a point in the current frame (lat/lon in radians) to canvas pixels.
-  // Returns [sx, sy] or null if the point is behind the projection hemisphere.
-  function viewProject(alt, az) {
+  // Convert a pixel size to angular size in radians at a given screen position.
+  pxToRad = function(sx, sy, px) {
+    const cX = (sx - cx) / scale, cY = (cy - sy) / scale;
+    const r2 = cX * cX + cY * cY;
+    return px * 4 / (scale * (4 + r2));
+  };
+
+  // ---- Forward and reverse projection (J2000 mean equatorial XYZ ↔ canvas pixels) ----
+
+  skyProject = function(jx, jy, jz) {
+    const [vx, vy, vz] = mvmul(M, jx, jy, jz);
+    if (vz < -1e-10) return null;
+    const d = 1 + vz;
+    return toScreen(2 * vx / d, -2 * vy / d);
+  };
+
+  const MT = mtranspose(M);
+  skyUnproject = function(sx, sy) {
+    const cX = (sx - cx) / (fX * scale), cY = (cy - sy) / (fY * scale);
+    const r2 = cX * cX + cY * cY;
+    if (r2 > 4) return null;
+    const vz = (4 - r2) / (4 + r2);
+    const f = 4 / (4 + r2);
+    return mvmul(MT, f * cX, -f * cY, vz);
+  };
+
+  skyIsVisible = function(jx, jy, jz) {
+    const [,, vz] = mvmul(M, jx, jy, jz);
+    return vz >= -1e-10;
+  };
+
+
+  viewProject = function(alt, az) {
     const px = cos(alt) * sin(az), py = cos(alt) * cos(az), pz = sin(alt);
     const x1 = vCosL * px - vSinL * py;
     const y1 = vSinL * px + vCosL * py;
@@ -421,7 +440,7 @@ function skymapDraw(canvas, params) {
     if (vz < -1e-10) return null;
     const d = 1 + vz;
     return toScreen(2 * x1 / d, -2 * vy / d);
-  }
+  };
 
   // Like viewProject but never returns null. Points behind the hemisphere are
   // clamped to a large radius in the correct direction (for drawing continuous
@@ -839,11 +858,8 @@ function skymapDraw(canvas, params) {
       ctx.fillStyle = darkMode ? 'rgba(130,140,210,0.75)' : 'rgba(60,60,130,0.75)';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (const c of CON_CENTERS) {
-        const ccx = c[4], ccy = c[5], ccz = c[6];
-        const [x1, vy, vz] = mvmul(M, ccx, ccy, ccz);
-        if (vz < -1e-10) continue;
-        const d = 1 + vz;
-        const pt = toScreen(2 * x1 / d, -2 * vy / d);
+        const pt = skyProject(c[4], c[5], c[6]);
+        if (!pt) continue;
         if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) continue;
         placeLabelCentered(pt[0], pt[1], c[2]);
       }
@@ -918,18 +934,15 @@ function skymapDraw(canvas, params) {
     for (let dsi = 0; dsi < DEEPSKY.length; dsi++) { const ds = DEEPSKY[dsi];
       if (viewFov > 45 && !ds[DS_MC]) { dsPositions.push(null); continue; }
       if (viewFov >= 10 && !ds[DS_MC] && (ds[DS_MAG] == null || ds[DS_MAG] > dsMagLimit)) { dsPositions.push(null); continue; }
-      const x0 = ds[DS_X], y0 = ds[DS_Y], z0 = ds[DS_Z];
-      const [x1, vy, vz] = mvmul(M, x0, y0, z0);
-      if (vz < -1e-10) { dsPositions.push(null); continue; }
-      const d = 1 + vz;
-      const pt = toScreen(2 * x1 / d, -2 * vy / d);
+      const pt = skyProject(ds[DS_X], ds[DS_Y], ds[DS_Z]);
+      if (!pt) { dsPositions.push(null); continue; }
       const dsSize = ds[DS_MAJ];
       const r = dsSize ? max(5, radToPx(pt[0], pt[1], dsSize * DEG_TO_RAD / 60) / 2) : 5;
       // Enlarge the cull rectangle by the object's radius (major axis) so
       // extended objects aren't culled just because their center is off-canvas.
       if (pt[0] < -r || pt[0] > W + r || pt[1] < -r || pt[1] > H + r) { dsPositions.push(null); continue; }
       dsPositions.push({x: pt[0], y: pt[1], r});
-      const dObj = {x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: x0, jy: y0, jz: z0};
+      const dObj = {x: pt[0], y: pt[1], r, type: 'deepsky', idx: dsi, data: ds, jx: ds[DS_X], jy: ds[DS_Y], jz: ds[DS_Z]};
       const typ = ds[DS_TYPE];
       ctx.strokeStyle = dsColor;
       if (typ === 'OC') {
@@ -964,7 +977,8 @@ function skymapDraw(canvas, params) {
         if (minorSize) {
           const rMinor = max(3, radToPx(pt[0], pt[1], minorSize * DEG_TO_RAD / 60) / 2);
           const pa = ds[DS_PA];
-          const rot0 = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, x1, vy, vz, pt[0], pt[1]) : 0;
+          const [gvx, gvy, gvz] = mvmul(M, ds[DS_X], ds[DS_Y], ds[DS_Z]);
+          const rot0 = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, gvx, gvy, gvz, pt[0], pt[1]) : 0;
           const rot = atan2(fY * sin(rot0), fX * cos(rot0));
           ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
           dObj.rMinor = rMinor; dObj.rot = rot;
@@ -1585,13 +1599,11 @@ function skymapDraw(canvas, params) {
   function drawMoonShadows(obj, px, py, discR) {
     if (!obj.shadows) return;
     for (const sh of obj.shadows) {
-      const [svx, svy, svz] = mvmul(M, sh.x, sh.y, sh.z);
-      if (svz > -1) {
-        const sd = 1 + svz;
-        const [ssx, ssy] = toScreen(2*svx/sd, -2*svy/sd);
-        const penR = radToPx(ssx, ssy, sh.penumbraAngRad);
-        const umbR = radToPx(ssx, ssy, sh.umbraAngRad);
-        drawShadowDisc(px, py, discR, ssx, ssy, penR, umbR, 'rgba(0,0,0,0.5)');
+      const sp = skyProject(sh.x, sh.y, sh.z);
+      if (sp) {
+        const penR = radToPx(sp[0], sp[1], sh.penumbraAngRad);
+        const umbR = radToPx(sp[0], sp[1], sh.umbraAngRad);
+        drawShadowDisc(px, py, discR, sp[0], sp[1], penR, umbR, 'rgba(0,0,0,0.5)');
       }
     }
   }
@@ -1696,13 +1708,11 @@ function skymapDraw(canvas, params) {
             drawPlanetGrid(sx, sy, phaseR, PI/2 - j2kPAToScreen(obj.polePA, vx, vy, vz, sx, sy), 0, obj.subObsLat, obj.subObsLon);
           // Earth's shadow on Moon
           if (obj.shadowX !== undefined) {
-            const [svx, svy, svz] = mvmul(M, obj.shadowX, obj.shadowY, obj.shadowZ);
-            if (svz > -1) {
-              const sd = 1 + svz;
-              const [ssx, ssy] = toScreen(2*svx/sd, -2*svy/sd);
-              const penR = radToPx(ssx, ssy, obj.penumbraAngRad);
-              const umbR = radToPx(ssx, ssy, obj.umbraAngRad);
-              drawShadowDisc(sx, sy, phaseR, ssx, ssy, penR, umbR, 'rgba(64,0,0,0.5)');
+            const sp = skyProject(obj.shadowX, obj.shadowY, obj.shadowZ);
+            if (sp) {
+              const penR = radToPx(sp[0], sp[1], obj.penumbraAngRad);
+              const umbR = radToPx(sp[0], sp[1], obj.umbraAngRad);
+              drawShadowDisc(sx, sy, phaseR, sp[0], sp[1], penR, umbR, 'rgba(64,0,0,0.5)');
             }
           }
         }
@@ -1880,45 +1890,36 @@ function skymapDraw(canvas, params) {
 
   // Draw header text (top corners) and selected-object info (bottom center).
   // Top-left: title, location, date, time. Top-right: coordinates, FOV size.
-  // Bottom: one-line description of the currently picked object, if any.
   function drawHeader() {
     const sfs = max(minFontSize, round(min(W, H) / 50));
-    if (showHeader) {
-      const dateStr = `${dt.localY}-${pad2(dt.localM)}-${pad2(dt.localD)}`;
-      const timeStr = `${pad2(dt.localH)}:${pad2(dt.localMi)}:${pad2(dt.localS)} ${dt.tzAbbr}`;
-      const latDeg = loc.latRad * RAD_TO_DEG, lonDeg = loc.lonRad * RAD_TO_DEG;
-      const latStr = `${abs(latDeg).toFixed(1)}° ${latDeg >= 0 ? 'N' : 'S'}`;
-      const lonStr = `${abs(lonDeg).toFixed(1)}° ${lonDeg >= 0 ? 'E' : 'W'}`;
-      const hfs = max(minFontSize, round(min(W, H) / 38));
-      ctx.textAlign = 'left';
-      ctx.font = `bold ${hfs}px sans-serif`;
-      ctx.fillStyle = darkMode ? '#fff' : '#000';
-      const hdrX = 48;
-      ctx.fillText('Sky Map', hdrX, hfs * 1.2);
-      ctx.font = `${sfs}px sans-serif`;
-      ctx.fillText(`${lonStr}, ${latStr}`, hdrX, hfs * 1.2 + sfs * 1.4);
-      ctx.fillText(dateStr, hdrX, hfs * 1.2 + sfs * 2.8);
-      ctx.fillText(timeStr, hdrX, hfs * 1.2 + sfs * 4.2);
-      const rLeft = abs((0 - cx) / scale), rRight = abs((W - cx) / scale);
-      const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
-      const fovW = min(180, (2 * atan2(rLeft, 2) + 2 * atan2(rRight, 2)) / DEG_TO_RAD);
-      const fovH = min(180, (2 * atan2(rTop, 2) + 2 * atan2(rBot, 2)) / DEG_TO_RAD);
-      const useArcmin = min(fovW, fovH) < 1;
-      const fmtFov = v => useArcmin
-        ? (v * 60 >= 100 ? round(v * 60) + "'" : (v * 60).toFixed(1) + "'")
-        : (v >= 100 ? round(v) + '°' : v.toFixed(1) + '°');
-      ctx.textAlign = 'right';
-      const hdrR = W - hdrX;
-      ctx.fillText(formatCoords(viewLon, viewLat), hdrR, sfs * 1.4);
-      ctx.fillText(`Size ${fmtFov(fovW)} × ${fmtFov(fovH)}`, hdrR, sfs * 2.8);
-      ctx.textAlign = 'left';
-    }
-    if (selectedObject) {
-      ctx.font = `${sfs}px sans-serif`;
-      ctx.fillStyle = darkMode ? '#ee9911' : '#aa5500';
-      ctx.textAlign = 'center';
-      ctx.fillText(formatSelection(selectedObject), W / 2, H - sfs);
-    }
+    const dateStr = `${dt.localY}-${pad2(dt.localM)}-${pad2(dt.localD)}`;
+    const timeStr = `${pad2(dt.localH)}:${pad2(dt.localMi)}:${pad2(dt.localS)} ${dt.tzAbbr}`;
+    const latDeg = loc.latRad * RAD_TO_DEG, lonDeg = loc.lonRad * RAD_TO_DEG;
+    const latStr = `${abs(latDeg).toFixed(1)}° ${latDeg >= 0 ? 'N' : 'S'}`;
+    const lonStr = `${abs(lonDeg).toFixed(1)}° ${lonDeg >= 0 ? 'E' : 'W'}`;
+    const hfs = max(minFontSize, round(min(W, H) / 38));
+    ctx.textAlign = 'left';
+    ctx.font = `bold ${hfs}px sans-serif`;
+    ctx.fillStyle = darkMode ? '#fff' : '#000';
+    const hdrX = 48;
+    ctx.fillText('Sky Map', hdrX, hfs * 1.2);
+    ctx.font = `${sfs}px sans-serif`;
+    ctx.fillText(`${lonStr}, ${latStr}`, hdrX, hfs * 1.2 + sfs * 1.4);
+    ctx.fillText(dateStr, hdrX, hfs * 1.2 + sfs * 2.8);
+    ctx.fillText(timeStr, hdrX, hfs * 1.2 + sfs * 4.2);
+    const rLeft = abs((0 - cx) / scale), rRight = abs((W - cx) / scale);
+    const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
+    const fovW = min(180, (2 * atan2(rLeft, 2) + 2 * atan2(rRight, 2)) / DEG_TO_RAD);
+    const fovH = min(180, (2 * atan2(rTop, 2) + 2 * atan2(rBot, 2)) / DEG_TO_RAD);
+    const useArcmin = min(fovW, fovH) < 1;
+    const fmtFov = v => useArcmin
+      ? (v * 60 >= 100 ? round(v * 60) + "'" : (v * 60).toFixed(1) + "'")
+      : (v >= 100 ? round(v) + '°' : v.toFixed(1) + '°');
+    ctx.textAlign = 'right';
+    const hdrR = W - hdrX;
+    ctx.fillText(formatCoords(viewLon, viewLat), hdrR, sfs * 1.4);
+    ctx.fillText(`Size ${fmtFov(fovW)} × ${fmtFov(fovH)}`, hdrR, sfs * 2.8);
+    ctx.textAlign = 'left';
   }
 
   // ==== Render orchestration ====
@@ -1971,54 +1972,41 @@ function skymapDraw(canvas, params) {
       if (fresh.phaseAngle !== undefined) sel.data.phaseAngle = fresh.phaseAngle;
     }
   }
-  if (selectedObject && selectedObject.jx !== undefined) {
-    const [svx, svy, svz] = mvmul(M, selectedObject.jx, selectedObject.jy, selectedObject.jz);
-    if (svz >= -1e-10) {
-      const sd = 1 + svz;
-      const [smx, smy] = toScreen(2 * svx / sd, -2 * svy / sd);
-      if (smx >= -50 && smx <= W + 50 && smy >= -50 && smy <= H + 50) {
-        const drawn = drawnObjects.find(o => o.jx === selectedObject.jx && o.jy === selectedObject.jy && o.jz === selectedObject.jz);
-        ctx.strokeStyle = darkMode ? '#ee9911' : '#aa5500';
-        ctx.lineWidth = 1.5;
-        if (drawn && drawn.contourPts) {
-          for (const ring of drawn.contourPts) {
-            ctx.beginPath();
-            for (let i = 0; i < ring.length; i++) {
-              if (i === 0) ctx.moveTo(ring[i][0], ring[i][1]);
-              else ctx.lineTo(ring[i][0], ring[i][1]);
-            }
-            ctx.closePath(); ctx.stroke();
-          }
-        } else {
-          const mr = (drawn ? drawn.r : 0) + 5;
-          ctx.beginPath(); ctx.arc(smx, smy, mr, 0, TAU); ctx.stroke();
+  function drawSelectionMarker() {
+    if (!selectedObject || selectedObject.jx === undefined) return;
+    const pt = skyProject(selectedObject.jx, selectedObject.jy, selectedObject.jz);
+    if (!pt) return;
+    const [smx, smy] = pt;
+    if (smx < -50 || smx > W + 50 || smy < -50 || smy > H + 50) return;
+    const drawn = drawnObjects.find(o => o.jx === selectedObject.jx && o.jy === selectedObject.jy && o.jz === selectedObject.jz);
+    ctx.strokeStyle = darkMode ? '#ee9911' : '#aa5500';
+    ctx.lineWidth = 1.5;
+    if (drawn && drawn.contourPts) { // nebulae with contours
+      for (const ring of drawn.contourPts) {
+        ctx.beginPath();
+        for (let i = 0; i < ring.length; i++) {
+          if (i === 0) ctx.moveTo(ring[i][0], ring[i][1]);
+          else ctx.lineTo(ring[i][0], ring[i][1]);
         }
+        ctx.closePath(); ctx.stroke();
       }
+    } else if (drawn && drawn.rMinor !== undefined) { // galaxy ellipses
+      ctx.beginPath(); ctx.ellipse(smx, smy, drawn.r + 5, drawn.rMinor + 5, drawn.rot, 0, TAU); ctx.stroke();
+    } else if (drawn && drawn.type === 'deepsky' && (drawn.data[DS_TYPE] === 'BN' || drawn.data[DS_TYPE] === 'DN')) { // nebulae without contours
+      const mr = drawn.r + 5;
+      ctx.strokeRect(smx - mr, smy - mr, 2 * mr, 2 * mr);
+    } else { // stars, planets, clusters, etc.
+      const mr = (drawn ? drawn.r : 0) + 5;
+      ctx.beginPath(); ctx.arc(smx, smy, mr, 0, TAU); ctx.stroke();
     }
+    const sfs = max(minFontSize, round(min(W, H) / 50));
+    ctx.font = `${sfs}px sans-serif`;
+    ctx.fillStyle = darkMode ? '#ee9911' : '#aa5500';
+    ctx.textAlign = 'center';
+    ctx.fillText(formatSelection(selectedObject), W / 2, H - sfs);
   }
-  drawHeader();
-
-  // ---- Forward projection (J2000 → screen) ----
-  // Expose closures so external code can project J2000 coordinates to canvas pixels.
-
-  // Project a J2000 equatorial unit vector to canvas pixel coordinates.
-  // Returns [sx, sy] or null if the point is behind the projection hemisphere.
-  skyProjectJ2000 = function(jx, jy, jz) {
-    const [vx, vy, vz] = mvmul(M, jx, jy, jz);
-    if (vz < -1e-10) return null;
-    const d = 1 + vz;
-    return toScreen(2 * vx / d, -2 * vy / d);
-  };
-
-  // Test whether a J2000 unit vector is on the visible hemisphere.
-  skyIsVisibleJ2000 = function(jx, jy, jz) {
-    const [,, vz] = mvmul(M, jx, jy, jz);
-    return vz >= -1e-10;
-  };
-
-  // Convert an angular radius (radians) to pixels at a given screen position.
-  // Accounts for stereographic projection distortion.
-  skyRadToPx = radToPx;
+  if (showSelection) drawSelectionMarker();
+  if (showHeader) drawHeader();
 }
 
 // ---- Object picking ----
@@ -2034,8 +2022,11 @@ function pickObject(canvasX, canvasY) {
   for (const obj of drawnObjects) {
     if (obj.contourPts) {
       if (obj.contourPts.some(pts => pointInPolygon(canvasX, canvasY, pts)))
-        hits.push(obj);
-    } else if (obj.rMinor !== undefined) {
+        { hits.push(obj); continue; }
+      if (obj.type !== 'deepsky' || obj.data[DS_TYPE] !== 'OC')
+        continue;
+    }
+    if (obj.rMinor !== undefined) {
       // Galaxy ellipse: rotate click point into ellipse frame and test
       const dx = canvasX - obj.x, dy = canvasY - obj.y;
       const cs = cos(obj.rot), sn = sin(obj.rot);

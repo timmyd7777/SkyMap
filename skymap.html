@@ -220,6 +220,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
       <label><input type="checkbox" id="showGalEq" autocomplete="off"> Galactic Equator</label>
       <label><input type="checkbox" id="showGrid" autocomplete="off"> Coordinate Grid</label>
       <label><input type="checkbox" id="showHeader" checked autocomplete="off"> Header</label>
+      <label><input type="checkbox" id="showSelection" checked autocomplete="off"> Selection</label>
       <label><input type="checkbox" id="darkToggle" checked autocomplete="off"> Dark Mode</label>
     </div>
   </div>
@@ -303,7 +304,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="satmag.js?v=5"></script>
 <script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=38"></script>
+<script src="skymap.js?v=39"></script>
 <script src="searchinfo.js?v=29"></script>
 <script>
 
@@ -657,6 +658,7 @@ function draw() {
     showGrid: document.getElementById('showGrid').checked,
     showPlanetGrid: document.getElementById('showGrid').checked,
     showHeader: document.getElementById('showHeader').checked,
+    showSelection: document.getElementById('showSelection').checked,
     flipH: document.getElementById('flipH').checked,
     flipV: document.getElementById('flipV').checked,
     comets: loadedComets,
@@ -782,7 +784,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','darkToggle','flipH','flipV']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','showSelection','darkToggle','flipH','flipV']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {
