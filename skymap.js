@@ -1953,6 +1953,26 @@ function skymapDraw(canvas, params) {
     ctx.textAlign = 'center';
     ctx.fillText(formatSelection(selectedObject), W / 2, H - sfs);
   }
+  // Draw an ImageFrame (astromath.js) as a rectangle on the sky map.
+  // Unprojects the four pixel corners to J2000 unit vectors, projects each
+  // onto the canvas via skyProject(), and strokes the quadrilateral.
+  function drawImageFrame(frame) {
+    if (!frame) return;
+    const corners = [[0, 0], [frame.width, 0], [frame.width, frame.height], [0, frame.height]];
+    const pts = corners.map(([px, py]) => {
+      const xyz = frame.pixelXYtoSkyXYZ(px, py);
+      return skyProject(xyz[0], xyz[1], xyz[2]);
+    });
+    if (pts.some(p => !p)) return;
+    ctx.strokeStyle = darkMode ? '#ee9911' : '#aa5500';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i <= 4; i++) ctx.lineTo(pts[i % 4][0], pts[i % 4][1]);
+    ctx.stroke();
+  }
+
+  if (params.imageFrame) drawImageFrame(params.imageFrame);
   if (showSelection) drawSelectionMarker();
   if (showHeader) drawHeader();
 }

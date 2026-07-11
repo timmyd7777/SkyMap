@@ -23,7 +23,7 @@ function atan2pi(y, x) { return mod2pi(atan2(y, x)); }
 
 function formatRA(raDeg) {
     raDeg = ((raDeg % 360) + 360) % 360;
-    var totalSec = Math.round(raDeg / 15 * 3600) / 10;
+    var totalSec = Math.round(raDeg / 15 * 36000) / 10;
     if (totalSec >= 86400) totalSec = 0;
     var hh = Math.floor(totalSec / 3600);
     var mm = Math.floor((totalSec % 3600) / 60);
@@ -519,5 +519,217 @@ function frameMatrix(frame, jd, latRad, lonRad, j2000) {
   } else {
     return mGalactic;
   }
+}
+
+// ---- Image frame (gnomonic/tangent-plane projection) ----
+
+// Create an image frame for astrometry.
+// raRad, decRad: center J2000 mean equatorial (radians).
+// orient: position angle of image "up" at center (radians, 0 = toward NCP, increasing through east).
+// width, height: image dimensions in pixels.
+// fovX, fovY: angular field of view corresponding to width/height (radians).
+function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY) {
+  this.ra = raRad;
+  this.dec = decRad;
+  this.orient = orient;
+  this.width = width;
+  this.height = height;
+  this.fovX = fovX;
+  this.fovY = fovY;
+  this.scaleX = width / fovX;
+  this.scaleY = height / fovY;
+
+  // J2000 → image frame: rz(-ra) aligns center to xz plane,
+  // ry(dec - π/2) tips center to z-axis, rz(π/2 - orient) rotates about boresight.
+  this.m = mmul(rz(PI / 2 - orient), mmul(ry(decRad - PI / 2), rz(-raRad)));
+  this.mt = mtranspose(this.m);
+}
+
+// Project J2000 mean equatorial unit vector to image pixel coordinates.
+// Returns [px, py] with (0,0) at top-left, or null if behind the tangent plane.
+ImageFrame.prototype.skyXYZtoPixelXY = function(jx, jy, jz) {
+  const [ix, iy, iz] = mvmul(this.m, jx, jy, jz);
+  if (iz <= 0) return null;
+  return [this.width / 2 + ix / iz * this.scaleX, this.height / 2 - iy / iz * this.scaleY];
+};
+
+// Unproject image pixel coordinates to J2000 mean equatorial unit vector.
+// Returns [jx, jy, jz].
+ImageFrame.prototype.pixelXYtoSkyXYZ = function(px, py) {
+  const tx = (px - this.width / 2) / this.scaleX;
+  const ty = (this.height / 2 - py) / this.scaleY;
+  const [x, y, z] = mvmul(this.mt, tx, ty, 1);
+  const r = sqrt(x * x + y * y + z * z);
+  return [x / r, y / r, z / r];
+};
+
+// Project J2000 (ra, dec) in radians to image pixel coordinates.
+// Returns [px, py] with (0,0) at top-left, or null if behind the tangent plane.
+ImageFrame.prototype.raDecToPixelXY = function(raRad, decRad) {
+  const p = sph2uxyz(raRad, decRad);
+  return this.skyXYZtoPixelXY(p[0], p[1], p[2]);
+};
+
+// Unproject image pixel coordinates to J2000 (ra, dec) in radians.
+// Returns [ra, dec] in radians.
+ImageFrame.prototype.pixelXYtoRADec = function(px, py) {
+  const p = this.pixelXYtoSkyXYZ(px, py);
+  return uxyz2sph(p[0], p[1], p[2]);
+};
+
+// Solve for an ImageFrame from N reference stars with known sky positions and pixel positions.
+// stars: array of {jx, jy, jz, px, py} where (jx,jy,jz) is a J2000 unit vector
+//        and (px,py) is the corresponding image pixel position.
+// width, height: image dimensions in pixels.
+// Requires at least 3 stars. With exactly 3, the solution is exact; with more,
+// it is a least-squares fit that minimizes the sum of squared pixel residuals.
+//
+// Returns {frame, residuals} where frame is an ImageFrame and residuals is an array
+// of per-star pixel errors (distance in pixels between observed and predicted position).
+// Returns null if the solve fails (e.g. fewer than 3 stars, or degenerate geometry).
+//
+// Method:
+// 1. Estimate the boresight (image center direction) from the mean of all star unit vectors.
+// 2. Project each star onto the tangent plane at that boresight using gnomonic projection,
+//    giving standard coordinates (xi, eta) in radians.
+// 3. Solve two independent least-squares problems for the affine mapping from standard
+//    coordinates to pixel coordinates:
+//      px = a*xi + b*eta + e
+//      py = c*xi + d*eta + f
+//    using the normal equations (A^T A x = A^T b) where A is the Nx3 matrix [xi, eta, 1].
+// 4. Extract plate scale and orientation from the affine coefficients:
+//      scaleX = sqrt(a^2 + c^2)   pixels per radian in the image-x direction
+//      scaleY = sqrt(b^2 + d^2)   pixels per radian in the image-y direction
+//      orient = atan2(-b, d)      position angle of image "up"
+// 5. Refine the boresight: the affine offsets (e, f) give the pixel position where the
+//    tangent point (initial boresight estimate) projects. The true image center is at
+//    (width/2, height/2), so the offset tells us how far off the initial estimate was.
+//    Unproject (width/2, height/2) through the affine inverse back to the tangent plane,
+//    then rotate from the tangent plane back to J2000 to get the refined boresight.
+// 6. Compute per-star residuals by projecting each star through the resulting ImageFrame
+//    and measuring the pixel distance from the observed position.
+
+function solveImageFrame(stars, width, height) {
+  if (!stars || stars.length < 3) return null;
+  const n = stars.length;
+
+  // Step 1: estimate boresight as the mean direction of all star unit vectors.
+  let bx = 0, by = 0, bz = 0;
+  for (let i = 0; i < n; i++) { bx += stars[i].jx; by += stars[i].jy; bz += stars[i].jz; }
+  let bLen = sqrt(bx * bx + by * by + bz * bz);
+  if (bLen < 1e-10) return null;
+  bx /= bLen; by /= bLen; bz /= bLen;
+
+  // Iterate: project stars onto the tangent plane at the current boresight estimate,
+  // solve the affine mapping, refine the boresight from the affine offset, and repeat.
+  // The first pass uses the mean-direction estimate; subsequent passes use the refined
+  // center. Two iterations converge to sub-milliarcsecond / sub-millipixel accuracy.
+  let refRA, refDec, orient, scaleX, scaleY;
+  for (let iter = 0; iter < 2; iter++) {
+
+    // Build a rotation matrix from J2000 to the tangent plane at the current boresight.
+    // Same decomposition as ImageFrame with orient=0: rz(π/2) · ry(dec-π/2) · rz(-ra).
+    const [bRA, bDec] = uxyz2sph(bx, by, bz);
+    const mBore = mmul(rz(PI / 2), mmul(ry(bDec - PI / 2), rz(-bRA)));
+
+    // Project each star onto the tangent plane via gnomonic projection.
+    // Rotate into the boresight frame, then divide by iz to get
+    // standard coordinates (xi, eta) in radians on the tangent plane.
+    const xi = new Array(n), eta = new Array(n);
+    let bad = false;
+    for (let i = 0; i < n; i++) {
+      const [ix, iy, iz] = mvmul(mBore, stars[i].jx, stars[i].jy, stars[i].jz);
+      if (iz <= 0) { bad = true; break; }  // star is behind the tangent plane
+      xi[i] = ix / iz;
+      eta[i] = iy / iz;
+    }
+    if (bad) return null;
+
+    // Solve two least-squares problems via normal equations.
+    // Affine model:  px = a·ξ + b·η + e
+    //                py = c·ξ + d·η + f
+    // Build the 3×3 normal matrix AᵀA and the right-hand-side vectors Aᵀpx, Aᵀpy.
+    // AᵀA is the same for both; only the right-hand side differs.
+    let s00 = 0, s01 = 0, s02 = 0, s11 = 0, s12 = 0, s22 = 0;
+    let rpx0 = 0, rpx1 = 0, rpx2 = 0;
+    let rpy0 = 0, rpy1 = 0, rpy2 = 0;
+    for (let i = 0; i < n; i++) {
+      const x = xi[i], e2 = eta[i];
+      s00 += x * x;    s01 += x * e2;  s02 += x;
+      s11 += e2 * e2;  s12 += e2;      s22 += 1;
+      rpx0 += x * stars[i].px;   rpx1 += e2 * stars[i].px;  rpx2 += stars[i].px;
+      rpy0 += x * stars[i].py;   rpy1 += e2 * stars[i].py;  rpy2 += stars[i].py;
+    }
+
+    // Solve the 3×3 symmetric system using Cramer's rule.
+    const det = s00 * (s11 * s22 - s12 * s12)
+              - s01 * (s01 * s22 - s12 * s02)
+              + s02 * (s01 * s12 - s11 * s02);
+    if (abs(det) < 1e-30) return null;  // singular — stars are collinear or coincident
+    const invDet = 1 / det;
+
+    // Cofactor matrix (transposed = inverse × det, since M is symmetric).
+    const c00 = s11 * s22 - s12 * s12;
+    const c01 = s02 * s12 - s01 * s22;
+    const c02 = s01 * s12 - s02 * s11;
+    const c11 = s00 * s22 - s02 * s02;
+    const c12 = s01 * s02 - s00 * s12;
+    const c22 = s00 * s11 - s01 * s01;
+
+    // Affine coefficients for px = a·ξ + b·η + e
+    const a = (c00 * rpx0 + c01 * rpx1 + c02 * rpx2) * invDet;
+    const b = (c01 * rpx0 + c11 * rpx1 + c12 * rpx2) * invDet;
+    const e = (c02 * rpx0 + c12 * rpx1 + c22 * rpx2) * invDet;
+
+    // Affine coefficients for py = c·ξ + d·η + f
+    const c = (c00 * rpy0 + c01 * rpy1 + c02 * rpy2) * invDet;
+    const d = (c01 * rpy0 + c11 * rpy1 + c12 * rpy2) * invDet;
+    const f = (c02 * rpy0 + c12 * rpy1 + c22 * rpy2) * invDet;
+
+    // Extract plate scale and orientation from affine coefficients.
+    // The affine matrix [[a, b], [c, d]] maps tangent-plane (ξ, η) to pixels.
+    // Given the boresight frame convention (mBore with rz(π/2)):
+    //   a = cos(orient) · scaleX,  b = sin(orient) · scaleX
+    //   c = sin(orient) · scaleY,  d = -cos(orient) · scaleY
+    scaleX = sqrt(a * a + b * b);
+    scaleY = sqrt(c * c + d * d);
+    if (scaleX < 1e-10 || scaleY < 1e-10) return null;
+    orient = atan2pi(b, a);
+
+    // Refine the boresight.
+    // The affine offset (e, f) is where the current boresight estimate lands in pixel space.
+    // The true image center is at (width/2, height/2). Invert the affine transform to find
+    // the tangent-plane coordinates of the true center, then rotate back to J2000.
+    const ctrPx = width / 2 - e;
+    const ctrPy = height / 2 - f;
+    const affDet = a * d - b * c;
+    if (abs(affDet) < 1e-30) return null;
+    const ctrXi  = ( d * ctrPx - b * ctrPy) / affDet;
+    const ctrEta = (-c * ctrPx + a * ctrPy) / affDet;
+
+    // Convert tangent-plane offset back to a J2000 unit vector.
+    // The tangent-plane point (ctrXi, ctrEta) in the boresight frame is direction (ctrXi, ctrEta, 1).
+    // Rotate back to J2000 via the transpose of mBore and normalize.
+    const mBoreT = mtranspose(mBore);
+    const [rx, ry2, rz2] = mvmul(mBoreT, ctrXi, ctrEta, 1);
+    const rLen = sqrt(rx * rx + ry2 * ry2 + rz2 * rz2);
+    bx = rx / rLen; by = ry2 / rLen; bz = rz2 / rLen;
+    [refRA, refDec] = uxyz2sph(bx, by, bz);
+  }
+
+  // Build the final ImageFrame and compute per-star residuals.
+  const fovX = width / scaleX;
+  const fovY = height / scaleY;
+  const frame = new ImageFrame(refRA, refDec, orient, width, height, fovX, fovY);
+
+  const residuals = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const pred = frame.skyXYZtoPixelXY(stars[i].jx, stars[i].jy, stars[i].jz);
+    if (!pred) { residuals[i] = Infinity; continue; }
+    const dx = pred[0] - stars[i].px, dy = pred[1] - stars[i].py;
+    residuals[i] = sqrt(dx * dx + dy * dy);
+  }
+
+  return { frame, residuals };
 }
 

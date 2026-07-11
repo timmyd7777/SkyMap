@@ -291,12 +291,23 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
       <tr id="info-set-row"><td>Sets</td><td id="info-set">—</td></tr>
     </table>
     <button id="centerBtn" onclick="centerOnSelected()" disabled style="margin-top:8px;width:100%">Center Object in Sky Map</button>
+    <div id="frameControls" style="display:none">
+      <label style="font-size:13px"><input type="checkbox" id="frameObject" autocomplete="off"> Frame selected object</label>
+      <div id="frameSliders" style="margin-top:4px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px"><span>Width</span><span id="ifFovXVal">1.0°</span></div>
+        <input type="range" id="ifFovX" min="0.1" max="3" step="0.01" value="1" autocomplete="off" style="width:100%">
+        <div style="display:flex; justify-content:space-between; font-size:12px"><span>Height</span><span id="ifFovYVal">1.0°</span></div>
+        <input type="range" id="ifFovY" min="0.1" max="3" step="0.01" value="1" autocomplete="off" style="width:100%">
+        <div style="display:flex; justify-content:space-between; font-size:12px"><span>Orientation</span><span id="ifOrientVal">0.0°</span></div>
+        <input type="range" id="ifOrient" min="0" max="360" step="0.1" value="0" autocomplete="off" style="width:100%">
+      </div>
+    </div>
   </div>
 </div>
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=26"></script>
+<script src="astromath.js?v=27"></script>
 <script src="vsop87.js?v=1"></script>
 <script src="planets.js?v=17"></script>
 <script src="mpc.js?v=1"></script>
@@ -304,7 +315,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="satmag.js?v=5"></script>
 <script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=39"></script>
+<script src="skymap.js?v=40"></script>
 <script src="searchinfo.js?v=29"></script>
 <script>
 
@@ -608,6 +619,17 @@ function updateSliderLabels() {
 }
 
 // ---- Main draw (UI wrapper around skymapDraw) ----
+function getImageFrame() {
+  if (!document.getElementById('frameObject').checked || !selectedObject || selectedObject.jx === undefined) return null;
+  const [ra, dec] = uxyz2sph(selectedObject.jx, selectedObject.jy, selectedObject.jz);
+  return new ImageFrame(ra, dec,
+    parseFloat(document.getElementById('ifOrient').value) * DEG_TO_RAD,
+    1, 1,
+    parseFloat(document.getElementById('ifFovX').value) * DEG_TO_RAD,
+    parseFloat(document.getElementById('ifFovY').value) * DEG_TO_RAD
+  );
+}
+
 function draw() {
   const dt = getDateTimeFromFields();
   const loc = getLocation();
@@ -664,6 +686,7 @@ function draw() {
     comets: loadedComets,
     asteroids: loadedAsteroids,
     satellites: loadedSatellites,
+    imageFrame: getImageFrame(),
   });
   if (centerObject) { syncSlidersFromPrecise(); updateSliderLabels(); }
   searchPanelDraw();
@@ -813,6 +836,13 @@ function init() {
     viewFov = sliderToFov(parseFloat(document.getElementById('viewWidth').value));
     draw();
   });
+  document.getElementById('frameObject').addEventListener('change', () => draw());
+  for (const id of ['ifOrient','ifFovX','ifFovY']) {
+    document.getElementById(id).addEventListener('input', () => {
+      document.getElementById(id + 'Val').textContent = parseFloat(document.getElementById(id).value).toFixed(1) + '°';
+      draw();
+    });
+  }
 
   // Drag to pan
   let dragging = false, dragX = 0, dragY = 0;
