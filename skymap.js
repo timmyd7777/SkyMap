@@ -275,7 +275,7 @@ function skymapInit() {
 //   darkMode, showStars, showNames, showStarIds, showConst, showConstNames,
 //   showBounds, showPlanets, showPlanetNames, showDeepSky, showDeepSkyNames,
 //   showDeepSkyIds, showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
-//   showGrid, showHeader, showSelection, flipH, flipV: booleans
+//   showGrid, showMeridian, showHeader, showSelection, flipH, flipV: booleans
 // }
 //
 // Side effects: updates viewUnproject, drawnObjects, curMFrame globals.
@@ -289,7 +289,7 @@ function skymapDraw(canvas, params) {
     showSatellites, showSatelliteNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
     showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
-    showGrid, showHeader, showSelection, flipH, flipV,
+    showGrid, showMeridian, showHeader, showSelection, flipH, flipV,
   } = params;
   const showStarColors = true;
 
@@ -685,6 +685,17 @@ function skymapDraw(canvas, params) {
     // Latitude labels along a chosen meridian
     const POLE_NAMES = { horizon: ['Nadir','Zenith'], equatorial: ['SCP','NCP'], ecliptic: ['SEP','NEP'], galactic: ['SGP','NGP'] };
     const poles = POLE_NAMES[viewFrame];
+    // Pole labels (Zenith/Nadir, NCP/SCP, NEP/SEP, NGP/SGP) use the same bright
+    // color as the frame's own reference line — drawCardinals()'s N/E/S/W for
+    // Horizon, drawRefLines()'s ecliptic/celestial-equator/galactic-equator
+    // strokes otherwise — rather than the dim grid-label color used for the
+    // numeric latitude labels alongside them.
+    const poleColor = viewFrame === 'ecliptic' ? frameColor('ecliptic', 0.9) : frameColor(viewFrame);
+    // Pole labels also match drawCardinals()'s bold, slightly larger font
+    // (divisor 80 vs the regular grid labels' 85) rather than the plain font
+    // used for the numeric latitude labels alongside them.
+    const poleFont = `bold ${max(minFontSize, round(min(W, H) / 80))}px sans-serif`;
+    const gridFont = `${glfs}px sans-serif`;
     let poleVisible = false;
     for (const pz of [1, -1]) {
       const qx = mView[2]*pz, qy = mView[5]*pz, qz = mView[8]*pz;
@@ -720,7 +731,10 @@ function skymapDraw(canvas, params) {
       const d = 1 + qz;
       const pt = toScreen(2 * qx / d, -2 * qy / d);
       if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) continue;
+      const isPole = effLat === -90 || effLat === 90;
       const label = effLat === -90 ? poles[0] : effLat === 90 ? poles[1] : `${effLat >= 0 ? '+' : ''}${effLat}°`;
+      ctx.fillStyle = isPole ? poleColor : frameColor(viewFrame, 0.5);
+      ctx.font = isPole ? poleFont : gridFont;
       placeLabel(pt[0], pt[1], glfs * 0.5, label);
     }
   }
@@ -1815,6 +1829,45 @@ function skymapDraw(canvas, params) {
     drawGreatCircle(zenX, zenY, zenZ, PI/2 - REFRACTION_ALT);
   }
 
+  // Draw the local meridian (the N/S vertical circle through the zenith, part of
+  // the coordinate grid) in the same bold color as the horizon line, from the
+  // refracted horizon on the South side up through the zenith and back down to
+  // the refracted horizon on the North side — only the above-horizon portion,
+  // matching the horizon line's own extent. Gated on showMeridian (currently
+  // tied to the same checkbox as showGrid in the UI, but a separate param so a
+  // future "Draw Meridian" checkbox can control it independently) and only
+  // called in horizon frame; the regular (dim) grid meridian at this same
+  // great circle is still drawn by drawGrid() underneath (including its
+  // below-horizon half) whenever showGrid is on.
+  function drawHorizonMeridian() {
+    ctx.strokeStyle = frameColor('horizon');
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const refAltDeg = REFRACTION_ALT * RAD_TO_DEG;
+    const n = 18;  // ~5° steps from horizon to zenith
+    let prevPt = null, prevFront = false;
+    // lonDeg is internal (azimuth-style) longitude: 90° = North, 270° = South
+    // (see Key Conventions in CLAUDE.md). Walk North-horizon -> zenith -> South-horizon
+    // as one continuous path; both halves meet at the shared zenith point.
+    function walk(lonDeg, altFrom, altTo) {
+      const lonR = lonDeg * DEG_TO_RAD, cl = cos(lonR), sl = sin(lonR);
+      for (let i = 0; i <= n; i++) {
+        const altR = (altFrom + (altTo - altFrom) * i / n) * DEG_TO_RAD;
+        const cAlt = cos(altR);
+        const [qx, qy, qz] = mvmul(mView, cAlt * cl, cAlt * sl, sin(altR));
+        const front = qz > -1e-10;
+        const d = max(1 + qz, 0.1);
+        const pt = toScreen(2 * qx / d, -2 * qy / d);
+        if (prevPt && (front || prevFront)) ctx.lineTo(pt[0], pt[1]);
+        else ctx.moveTo(pt[0], pt[1]);
+        prevPt = pt; prevFront = front;
+      }
+    }
+    walk(90, refAltDeg, 90);
+    walk(270, 90, refAltDeg);
+    ctx.stroke();
+  }
+
   // Draw compass direction labels (N, NE, E, ...) just above the horizon line.
   // Only called in horizon frame. Drawn outside the clip region so labels
   // aren't cut off at the hemisphere edge.
@@ -1894,6 +1947,7 @@ function skymapDraw(canvas, params) {
   if (showStars) drawStars(starPositions);
   if (showPlanets || showComets || showAsteroids || showSatellites) drawSolarSystem();
   if (showHorizon) drawHorizon();
+  if (showMeridian && viewFrame === 'horizon') drawHorizonMeridian();
 
   ctx.restore();
 

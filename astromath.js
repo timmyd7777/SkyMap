@@ -540,8 +540,8 @@ function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY) {
   this.scaleY = height / fovY;
 
   // J2000 → image frame: rz(-ra) aligns center to xz plane,
-  // ry(dec - π/2) tips center to z-axis, rz(π/2 - orient) rotates about boresight.
-  this.m = mmul(rz(PI / 2 - orient), mmul(ry(decRad - PI / 2), rz(-raRad)));
+  // ry(dec - π/2) tips center to z-axis, rz(-π/2 - orient) rotates about boresight.
+  this.m = mmul(rz(-PI / 2 - orient), mmul(ry(decRad - PI / 2), rz(-raRad)));
   this.mt = mtranspose(this.m);
 }
 
@@ -628,9 +628,9 @@ function solveImageFrame(stars, width, height) {
   for (let iter = 0; iter < 2; iter++) {
 
     // Build a rotation matrix from J2000 to the tangent plane at the current boresight.
-    // Same decomposition as ImageFrame with orient=0: rz(π/2) · ry(dec-π/2) · rz(-ra).
+    // Same decomposition as ImageFrame with orient=0: rz(-π/2) · ry(dec-π/2) · rz(-ra).
     const [bRA, bDec] = uxyz2sph(bx, by, bz);
-    const mBore = mmul(rz(PI / 2), mmul(ry(bDec - PI / 2), rz(-bRA)));
+    const mBore = mmul(rz(-PI / 2), mmul(ry(bDec - PI / 2), rz(-bRA)));
 
     // Project each star onto the tangent plane via gnomonic projection.
     // Rotate into the boresight frame, then divide by iz to get

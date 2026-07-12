@@ -197,8 +197,8 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
     </div>
     <input type="range" id="viewWidth" min="1" max="209" value="209" autocomplete="off" style="width:100%">
     <div style="display:flex; gap:12px; margin-top:4px;">
-      <label><input type="checkbox" id="flipH" autocomplete="off"> Flip Horizontal</label>
-      <label><input type="checkbox" id="flipV" autocomplete="off"> Flip Vertical</label>
+      <label style="white-space:nowrap"><input type="checkbox" id="flipH" autocomplete="off"> Flip Horizontal</label>
+      <label style="white-space:nowrap"><input type="checkbox" id="flipV" autocomplete="off"> Flip Vertical</label>
     </div>
   </div>
   <div>
@@ -213,14 +213,11 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
         <label><input type="checkbox" id="showSatellites" autocomplete="off"> Satellites</label><span></span><label style="margin:0"><input type="checkbox" id="showSatelliteNames" autocomplete="off"> Names</label>
       </div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showConst" checked autocomplete="off"> Constellations</label><label><input type="checkbox" id="showConstNames" checked autocomplete="off"> Names</label></div>
-      <label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label>
-      <label><input type="checkbox" id="showMilkyWay" checked autocomplete="off"> Milky Way</label>
-      <label><input type="checkbox" id="showEcliptic" checked autocomplete="off"> Ecliptic</label>
-      <label><input type="checkbox" id="showCelEq" autocomplete="off"> Celestial Equator</label>
-      <label><input type="checkbox" id="showGalEq" autocomplete="off"> Galactic Equator</label>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label><label><input type="checkbox" id="showMilkyWay" checked autocomplete="off"> Milky Way</label></div>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showCelEq" autocomplete="off"> Celestial Equator</label><label><input type="checkbox" id="showEcliptic" checked autocomplete="off"> Ecliptic</label></div>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showGalEq" autocomplete="off"> Galactic Equator</label><label><input type="checkbox" id="showMeridian" autocomplete="off"> Meridian</label></div>
       <label><input type="checkbox" id="showGrid" autocomplete="off"> Coordinate Grid</label>
-      <label><input type="checkbox" id="showHeader" checked autocomplete="off"> Header</label>
-      <label><input type="checkbox" id="showSelection" checked autocomplete="off"> Selection</label>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showHeader" checked autocomplete="off"> Header</label><label><input type="checkbox" id="showSelection" checked autocomplete="off"> Selection</label></div>
       <label><input type="checkbox" id="darkToggle" checked autocomplete="off"> Dark Mode</label>
     </div>
   </div>
@@ -308,7 +305,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="constellations.js?v=6"></script>
 <script src="milkyway.js?v=4"></script>
 <script src="cities.js?v=5"></script>
-<script src="astromath.js?v=27"></script>
+<script src="astromath.js?v=28"></script>
 <script src="vsop87.js?v=1"></script>
 <script src="planets.js?v=17"></script>
 <script src="mpc.js?v=1"></script>
@@ -316,7 +313,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="satmag.js?v=5"></script>
 <script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
-<script src="skymap.js?v=40"></script>
+<script src="skymap.js?v=44"></script>
 <script src="searchinfo.js?v=29"></script>
 <script>
 
@@ -680,6 +677,7 @@ function draw() {
     showSatelliteNames: document.getElementById('showSatelliteNames').checked,
     showGrid: document.getElementById('showGrid').checked,
     showPlanetGrid: document.getElementById('showGrid').checked,
+    showMeridian: document.getElementById('showMeridian').checked,
     showHeader: document.getElementById('showHeader').checked,
     showSelection: document.getElementById('showSelection').checked,
     flipH: document.getElementById('flipH').checked,
@@ -808,7 +806,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showHeader','showSelection','darkToggle','flipH','flipV']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showMeridian','showHeader','showSelection','darkToggle','flipH','flipV']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {
