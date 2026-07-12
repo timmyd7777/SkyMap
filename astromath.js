@@ -528,7 +528,10 @@ function frameMatrix(frame, jd, latRad, lonRad, j2000) {
 // orient: position angle of image "up" at center (radians, 0 = toward NCP, increasing through east).
 // width, height: image dimensions in pixels.
 // fovX, fovY: angular field of view corresponding to width/height (radians).
-function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY) {
+// mirror: if true, the image is horizontally flipped (East increases to the right in pixel coords,
+//   as produced by some telescope/camera configurations). Default false (standard: East = left).
+//   Encoded as a negative scaleX so the projection formulas work unchanged.
+function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY, mirror) {
   this.ra = raRad;
   this.dec = decRad;
   this.orient = orient;
@@ -536,8 +539,9 @@ function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY) {
   this.height = height;
   this.fovX = fovX;
   this.fovY = fovY;
-  this.scaleX = width / fovX;
+  this.scaleX = width / fovX * (mirror ? -1 : 1);
   this.scaleY = height / fovY;
+  this.mirror = mirror || false;
 
   // J2000 → image frame: rz(-ra) aligns center to xz plane,
   // ry(dec - π/2) tips center to z-axis, rz(-π/2 - orient) rotates about boresight.
@@ -547,16 +551,17 @@ function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY) {
 
 // Project J2000 mean equatorial unit vector to image pixel coordinates.
 // Returns [px, py] with (0,0) at top-left, or null if behind the tangent plane.
+// X is negated so East maps to decreasing pixel X (left); a negative scaleX (mirror) cancels this.
 ImageFrame.prototype.skyXYZtoPixelXY = function(jx, jy, jz) {
   const [ix, iy, iz] = mvmul(this.m, jx, jy, jz);
   if (iz <= 0) return null;
-  return [this.width / 2 + ix / iz * this.scaleX, this.height / 2 - iy / iz * this.scaleY];
+  return [this.width / 2 - ix / iz * this.scaleX, this.height / 2 - iy / iz * this.scaleY];
 };
 
 // Unproject image pixel coordinates to J2000 mean equatorial unit vector.
 // Returns [jx, jy, jz].
 ImageFrame.prototype.pixelXYtoSkyXYZ = function(px, py) {
-  const tx = (px - this.width / 2) / this.scaleX;
+  const tx = (this.width / 2 - px) / this.scaleX;
   const ty = (this.height / 2 - py) / this.scaleY;
   const [x, y, z] = mvmul(this.mt, tx, ty, 1);
   const r = sqrt(x * x + y * y + z * z);
@@ -597,10 +602,12 @@ ImageFrame.prototype.pixelXYtoRADec = function(px, py) {
 //      px = a*xi + b*eta + e
 //      py = c*xi + d*eta + f
 //    using the normal equations (A^T A x = A^T b) where A is the Nx3 matrix [xi, eta, 1].
-// 4. Extract plate scale and orientation from the affine coefficients:
-//      scaleX = sqrt(a^2 + c^2)   pixels per radian in the image-x direction
-//      scaleY = sqrt(b^2 + d^2)   pixels per radian in the image-y direction
-//      orient = atan2(-b, d)      position angle of image "up"
+// 4. Detect mirroring from the sign of the affine determinant (a·d - b·c):
+//      positive = standard (East = left), negative = mirrored (East = right).
+//    Extract plate scale and orientation from the affine coefficients:
+//      scaleX = sqrt(a^2 + b^2)   pixels per radian in the image-x direction
+//      scaleY = sqrt(c^2 + d^2)   pixels per radian in the image-y direction
+//      orient = atan2(-b, -a) for standard, atan2(b, a) for mirrored
 // 5. Refine the boresight: the affine offsets (e, f) give the pixel position where the
 //    tangent point (initial boresight estimate) projects. The true image center is at
 //    (width/2, height/2), so the offset tells us how far off the initial estimate was.
@@ -624,7 +631,7 @@ function solveImageFrame(stars, width, height) {
   // solve the affine mapping, refine the boresight from the affine offset, and repeat.
   // The first pass uses the mean-direction estimate; subsequent passes use the refined
   // center. Two iterations converge to sub-milliarcsecond / sub-millipixel accuracy.
-  let refRA, refDec, orient, scaleX, scaleY;
+  let refRA, refDec, orient, scaleX, scaleY, mirror;
   for (let iter = 0; iter < 2; iter++) {
 
     // Build a rotation matrix from J2000 to the tangent plane at the current boresight.
@@ -688,13 +695,17 @@ function solveImageFrame(stars, width, height) {
 
     // Extract plate scale and orientation from affine coefficients.
     // The affine matrix [[a, b], [c, d]] maps tangent-plane (ξ, η) to pixels.
-    // Given the boresight frame convention (mBore with rz(π/2)):
-    //   a = cos(orient) · scaleX,  b = sin(orient) · scaleX
-    //   c = sin(orient) · scaleY,  d = -cos(orient) · scaleY
+    // For standard images (East = left, affDet > 0):
+    //   a = -cos(orient) · scaleX,  b = -sin(orient) · scaleX
+    // For mirrored images (East = right, affDet < 0):
+    //   a =  cos(orient) · scaleX,  b =  sin(orient) · scaleX
+    const affDet = a * d - b * c;
+    if (abs(affDet) < 1e-30) return null;
+    mirror = affDet < 0;
     scaleX = sqrt(a * a + b * b);
     scaleY = sqrt(c * c + d * d);
     if (scaleX < 1e-10 || scaleY < 1e-10) return null;
-    orient = atan2pi(b, a);
+    orient = mirror ? atan2pi(b, a) : atan2pi(-b, -a);
 
     // Refine the boresight.
     // The affine offset (e, f) is where the current boresight estimate lands in pixel space.
@@ -702,8 +713,6 @@ function solveImageFrame(stars, width, height) {
     // the tangent-plane coordinates of the true center, then rotate back to J2000.
     const ctrPx = width / 2 - e;
     const ctrPy = height / 2 - f;
-    const affDet = a * d - b * c;
-    if (abs(affDet) < 1e-30) return null;
     const ctrXi  = ( d * ctrPx - b * ctrPy) / affDet;
     const ctrEta = (-c * ctrPx + a * ctrPy) / affDet;
 
@@ -720,7 +729,7 @@ function solveImageFrame(stars, width, height) {
   // Build the final ImageFrame and compute per-star residuals.
   const fovX = width / scaleX;
   const fovY = height / scaleY;
-  const frame = new ImageFrame(refRA, refDec, orient, width, height, fovX, fovY);
+  const frame = new ImageFrame(refRA, refDec, orient, width, height, fovX, fovY, mirror);
 
   const residuals = new Array(n);
   for (let i = 0; i < n; i++) {

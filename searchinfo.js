@@ -593,6 +593,8 @@ function refreshInfoPanel() {
   }
 
   document.getElementById('centerBtn').disabled = false;
+  // frameControls: uncomment to show "Frame selected object" UI (hidden, testing only)
+  // document.getElementById('frameControls').style.display = '';
   document.getElementById('info-type').textContent = obj.typeLabel;
   document.getElementById('info-name').textContent = obj.name || '—';
 
@@ -770,6 +772,8 @@ function clearInfoPanel() {
   document.getElementById('info-transit-row').style.display = '';
   document.getElementById('info-set-row').style.display = '';
   document.getElementById('centerBtn').disabled = true;
+  document.getElementById('frameControls').style.display = 'none';
+  document.getElementById('frameObject').checked = false;
 }
 
 function centerOnSelected() {

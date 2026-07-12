@@ -2024,6 +2024,10 @@ function skymapDraw(canvas, params) {
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i <= 4; i++) ctx.lineTo(pts[i % 4][0], pts[i % 4][1]);
     ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath();
+    ctx.arc(pts[0][0], pts[0][1], 4, 0, TAU);
+    ctx.fill();
   }
 
   if (params.imageFrame) drawImageFrame(params.imageFrame);
