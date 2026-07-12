@@ -9,6 +9,7 @@ import csv, math, os, sys, re, urllib.request
 DOWNLOAD_FILES = {
     'brightest.csv': 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/Stars/Brightest.csv',
     'sky2000.csv': 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/Stars/SKY2000.csv',
+    'doubles.csv': 'https://raw.githubusercontent.com/timmyd7777/SSCore/master/SSData/Stars/Doubles.csv',
 }
 
 if len(sys.argv) != 3:
@@ -199,5 +200,56 @@ with open('stars.js', 'w', encoding='utf-8') as out:
         out.write(f"[{js_str(s['type'])},{s['ra']:.5f},{s['dec']:.5f},{s['mag']:.2f},{s['bmv']:.2f},{dist},{js_str(s['spec'])},"
                   f"{s['hr']},{s['hd']},{s['hip']},{js_str(s['dm'])},{js_str(s['bayer'])},{js_str(s['flamsteed'])},{js_str(s['name'])}],\n")
     out.write('];\n')
+
+    # Append DOUBLES index if Doubles.csv is available
+    doubles_file = 'Doubles.csv'
+    if not os.path.exists(doubles_file) and doubles_file.lower() in DOWNLOAD_FILES:
+        url = DOWNLOAD_FILES[doubles_file.lower()]
+        print(f"Downloading {url} -> {doubles_file}", file=sys.stderr)
+        try:
+            urllib.request.urlretrieve(url, doubles_file)
+        except Exception as e:
+            print(f"Could not download {doubles_file}: {e}", file=sys.stderr)
+
+    if os.path.exists(doubles_file):
+        hr_to_idx = {}
+        hd_to_idx = {}
+        hip_to_idx = {}
+        for idx, s in enumerate(stars):
+            if s['hr']:
+                hr_to_idx[s['hr']] = idx
+            if s['hd'] and s['hd'] not in hd_to_idx:
+                hd_to_idx[s['hd']] = idx
+            if s['hip'] and s['hip'] not in hip_to_idx:
+                hip_to_idx[s['hip']] = idx
+
+        doubles_indices = []
+        doubles_missing = 0
+        with open(doubles_file, newline='') as df:
+            reader = csv.reader(df)
+            next(reader)
+            for parts in reader:
+                results = parse_star_line(parts)
+                if not results:
+                    continue
+                entry = results[0]
+                idx = None
+                if entry['hr']:
+                    idx = hr_to_idx.get(entry['hr'])
+                if idx is None and entry['hd']:
+                    idx = hd_to_idx.get(entry['hd'])
+                if idx is None and entry['hip']:
+                    idx = hip_to_idx.get(entry['hip'])
+                if idx is not None:
+                    doubles_indices.append(idx)
+                else:
+                    doubles_missing += 1
+
+        out.write('// DOUBLES: indices into STARS[] identifying curated showpiece double stars (from Doubles.csv).\n')
+        out.write(f'var DOUBLES=[{",".join(str(i) for i in doubles_indices)}];\n')
+        print(f"Doubles: {len(doubles_indices)} indexed, {doubles_missing} not in catalog", file=sys.stderr)
+    else:
+        out.write('// DOUBLES: indices into STARS[] identifying curated showpiece double stars (from Doubles.csv).\n')
+        out.write('var DOUBLES=[];\n')
 
 print("Wrote stars.js", file=sys.stderr)

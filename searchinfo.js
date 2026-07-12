@@ -439,6 +439,19 @@ function getObjectList(category) {
         return parseInt(a.label.substring(2)) - parseInt(b.label.substring(2));
       });
       break;
+
+    case 'doubles':
+      if (typeof DOUBLES !== 'undefined') {
+        for (var k = 0; k < DOUBLES.length; k++) {
+          var i = DOUBLES[k];
+          var s = STARS[i];
+          var desig = s[S_BAYER] || s[S_FLAM] || (s[S_HR] ? 'HR ' + s[S_HR] : s[S_HD] ? 'HD ' + s[S_HD] : 'HIP ' + s[S_HIP]);
+          var label = s[S_NAME] ? desig + ' - ' + s[S_NAME] : desig;
+          items.push({ src: 'star', idx: i, label: label, mag: s[S_MAG] });
+        }
+      }
+      items.sort(function(a, b) { return a.label.localeCompare(b.label); });
+      break;
   }
 
   return items;
