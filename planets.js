@@ -12,7 +12,6 @@ const PLANET_DIAM1AU = {
   Saturn: 165.6, Uranus: 65.8, Neptune: 62.2, Pluto: 2.07
 };
 const SUN_DIAM1AU = 1919.26;        // arcseconds at 1 AU
-const SUN_RADIUS_AU = 0.00465047;   // solar radius in AU (696,000 km)
 const MOON_DIAM_FACTOR = 1873.7 * 60; // arcseconds × Earth-radii (divide by dist in ER)
 
 // Orbital elements for each planet. elems(d) returns Schlyter elements in degrees:
@@ -263,7 +262,6 @@ function eclLonJ2000Corr(d) {
 // ---- Asteroid & Comet orbit computation ----
 // Reference: Schlyter, ppcomp.html sections 6, 7, 16-20
 
-const GAUSS_K = 0.01720209895;
 
 // Parabolic orbit solver (e = 1). ppcomp section 18.
 // dT = days since perihelion, q = perihelion distance (AU).
@@ -410,10 +408,10 @@ function cometMagnitude(H, k, r, R) {
 function solSysObjPosition(target, jd, latRad, lonRad) {
   // Position formulae need JDE (dynamical time); sidereal time (below, for the
   // Moon's topocentric correction) uses JD (UT) instead, per codebase convention.
-  const decYear = 2000 + (jd - 2451545.0) / 365.25;
+  const decYear = 2000 + (jd - JD2000) / 365.25;
   const jde = jd + deltaT(decYear) / 86400;
   const d = jde - 2451543.5;
-  const T = (jde - 2451545.0) / 36525;
+  const T = (jde - JD2000) / 36525;
   const eps = obliquity(T);
   const sun = sunPosition(d);
 
@@ -449,7 +447,7 @@ function solSysObjPosition(target, jd, latRad, lonRad) {
 }
 
 // Meeus "Astronomical Algorithms" ch.47 — truncated ELP2000 lunar theory (~10" accuracy).
-// d = days since J2000.0 (JDE - 2451545.0) in dynamical time.
+// d = days since J2000.0 (JDE - JD2000) in dynamical time.
 // Returns {lon, lat, dist}: ecliptic of date in radians, distance in Earth radii.
 function moonPositionMeeus(d) {
   const T = d / 36525;
@@ -619,14 +617,14 @@ function moonPositionMeeus(d) {
   const lonDeg = mod360(Lp + Sl * 1e-6);
   const lon = lonDeg * DEG_TO_RAD;
   const lat = Sb * 1e-6 * DEG_TO_RAD;
-  const dist = (385000.56 + Sr * 0.001) / 6378.14;
+  const dist = (385000.56 + Sr * 0.001) / EARTH_RADIUS_KM;
 
   return { lon, lat, dist };
 }
 
 // ---- VSOP87 planetary positions (Meeus, Astronomical Algorithms ch.32) ----
 // Evaluates the truncated VSOP87 series from vsop87.js.
-// tau = Julian millennia from J2000: (JDE - 2451545.0) / 365250.
+// tau = Julian millennia from J2000: (JDE - JD2000) / 365250.
 // Returns {L, B, R}: heliocentric ecliptic of-date, L/B in radians, R in AU.
 function vsop87Position(planet, tau) {
   const data = VSOP87[planet];
@@ -648,7 +646,7 @@ function vsop87Position(planet, tau) {
     for (const t of s) sum += t[0] * cos(t[1] + t[2] * tau);
     R += sum * tp; tp *= tau;
   }
-  L = ((L % TAU) + TAU) % TAU;
+  L = mod2pi(L);
   return { L, B, R };
 }
 
@@ -675,7 +673,7 @@ const PLANET_PHYS = {
     poleRA: () => 272.76,
     poleDec: () => 67.16,
     W: (t) => 160.20 - 1.4813688*t },
-  Earth: { radius: 6378.14, flattening: 0.00335364,
+  Earth: { radius: EARTH_RADIUS_KM, flattening: 0.00335364,
     poleRA: (T) => 0.00 - 0.641*T,
     poleDec: (T) => 90.00 - 0.557*T,
     W: (t) => 190.147 + 360.9856235*t },
@@ -773,7 +771,7 @@ function planetOrientation(name, d, jx, jy, jz) {
   const ra = phys.poleRA(T) * DEG_TO_RAD, dec = phys.poleDec(T) * DEG_TO_RAD;
   const poleJ2k = [cos(dec)*cos(ra), cos(dec)*sin(ra), sin(dec)];
   const subObsLat = asin(-dot(poleJ2k[0], poleJ2k[1], poleJ2k[2], jx, jy, jz));
-  const nodeRA = ra + PI/2;
+  const nodeRA = ra + HALFPI;
   const eNx = cos(nodeRA), eNy = sin(nodeRA);
   const [ePx, ePy, ePz] = cross(poleJ2k[0], poleJ2k[1], poleJ2k[2], eNx, eNy, 0);
   const Wrad = phys.W(d) * DEG_TO_RAD;
@@ -782,9 +780,8 @@ function planetOrientation(name, d, jx, jy, jz) {
   const pmZ =                 ePz*sin(Wrad);
   const [secX, secY, secZ] = cross(pmX, pmY, pmZ, poleJ2k[0], poleJ2k[1], poleJ2k[2]);
   const obsX = -jx, obsY = -jy, obsZ = -jz;
-  const lon = atan2(dot(obsX,obsY,obsZ, secX,secY,secZ),
-                    dot(obsX,obsY,obsZ, pmX,pmY,pmZ));
-  const subObsLon = ((lon % TAU) + TAU) % TAU;
+  const subObsLon = atan2pi(dot(obsX,obsY,obsZ, secX,secY,secZ),
+                            dot(obsX,obsY,obsZ, pmX,pmY,pmZ));
   const polePA = posAng(jx, jy, jz, poleJ2k[0], poleJ2k[1], poleJ2k[2]);
   return { subObsLat, subObsLon, polePA };
 }

@@ -1,19 +1,32 @@
 // ---- Constants ----
 const {PI, sin, cos, tan, atan2, sqrt, abs, max, min, round, floor, ceil, asin, pow} = Math;
-const TAU = 2 * PI;
-const DEG_TO_RAD = PI / 180;       // multiply degrees by this to get radians
-const RAD_TO_DEG = 180 / PI;       // multiply radians by this to get degrees
+const TWOPI = 2 * PI;                          // tau = 6.283185307180
+const HALFPI = PI / 2;                         // pi/2 = 1.570796326795
+const DEG_TO_RAD = PI / 180;                   // multiply degrees by this to get radians
+const RAD_TO_DEG = 180 / PI;                   // multiply radians by this to get degrees
 const REFRACTION_ALT = -34 / 60 * DEG_TO_RAD;  // standard atmospheric refraction at horizon (radians)
-const AU_PER_PC  = 206264.806247;
-const AU_PER_LY  = 63241.077084;
-const KM_PER_AU  = 149597870.7;
-const LY_PER_PC  = AU_PER_PC / AU_PER_LY;  // 1 parsec in light years (≈3.26156)
-const PC_PER_LY  = AU_PER_LY / AU_PER_PC;  // 1 light year in parsecs (≈0.306601)
+const JD2000 = 2451545.0;                      // Julian Date of J2000.0 epoch (1.5 Jan 2000 UTC)
+const SIDEREAL_DAY = 1 / 1.00273790935;        // sidereal day in solar days (~0.99727)
+const AU_PER_PC  = 206264.806247;              // 1 parsec in astronomical units
+const AU_PER_LY  = 63241.077084;               // 1 light year in astronomical units
+const KM_PER_AU  = 149597870.7;                // 1 astronomical unit in kilometers
+const LY_PER_PC  = 3.26156377718;              // 1 parsec in light years
+const PC_PER_LY  = 0.306601393784;             // 1 light year in parsecs
+const GAUSS_K = 0.01720209895;                 // Gaussian gravitational constant (rad/day)
+const EARTH_RADIUS_KM = 6378.14;               // Earth equatorial radius in km (IAU/ESAA)
+const EARTH_RADIUS_AU = EARTH_RADIUS_KM / KM_PER_AU;
+const SUN_RADIUS_AU = 0.00465047;              // solar radius in AU (696,000 km)
+const LIGHT_TIME_AU = 0.0057755183;            // light travel time per AU in days (499.005 s)
+const NGP_RA  = 192.85948 * DEG_TO_RAD;        // north galactic pole RA (J2000)
+const NGP_DEC = 27.12825 * DEG_TO_RAD;         // north galactic pole Dec (J2000)
+const GCEN_RA  = 266.405 * DEG_TO_RAD;         // galactic center RA (J2000)
+const GCEN_DEC = -28.936 * DEG_TO_RAD;         // galactic center Dec (J2000)
+const OBLIQUITY_J2000 = 23.439291 * DEG_TO_RAD; // mean obliquity of ecliptic at J2000
 
 const pad2 = v => String(v).padStart(2, '0');  // zero-pad a number to 2 digits
 
 function mod360(deg) { return ((deg % 360) + 360) % 360; }
-function mod2pi(rad) { return ((rad % TAU) + TAU) % TAU; }
+function mod2pi(rad) { return ((rad % TWOPI) + TWOPI) % TWOPI; }
 function atan2pi(y, x) { return mod2pi(atan2(y, x)); }
 
 /* ----------------------------------------------------------------
@@ -295,8 +308,8 @@ function deltaT(y) {
 
 // Greenwich Mean Sidereal Time from Julian Date. Returns radians [0, 2π).
 function gmst(jd) {
-  const T = (jd - 2451545.0) / 36525.0;
-  let g = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
+  const T = (jd - JD2000) / 36525.0;
+  let g = 280.46061837 + 360.98564736629 * (jd - JD2000) + 0.000387933 * T * T - T * T * T / 38710000;
   return mod360(g) * DEG_TO_RAD;
 }
 
@@ -344,15 +357,14 @@ function riseTransitSet(raRad, decRad, jd, latRad, lonRad, h0Rad, rtsFlag) {
     HA = Math.acos(cosHA);
   }
 
-  const SRATE = TAU * 1.00273790935;
-  const SID_DAY = TAU / SRATE;
-  let m0 = (raRad - lonRad - gmst(jd)) / SRATE;
+  const SIDEREAL_RATE = TWOPI / SIDEREAL_DAY;
+  let m0 = (raRad - lonRad - gmst(jd)) / SIDEREAL_RATE;
   // Wrap to the transit nearest `jd` (within half a sidereal day) rather than to
   // some fixed reference, so repeated calls converge on the occurrence closest
   // to the current guess instead of snapping to an arbitrary cycle.
-  m0 = ((m0 + SID_DAY / 2) % SID_DAY + SID_DAY) % SID_DAY - SID_DAY / 2;
+  m0 = ((m0 + SIDEREAL_DAY / 2) % SIDEREAL_DAY + SIDEREAL_DAY) % SIDEREAL_DAY - SIDEREAL_DAY / 2;
 
-  return { status: 'normal', jd: jd + m0 + rtsFlag * HA / SRATE };
+  return { status: 'normal', jd: jd + m0 + rtsFlag * HA / SIDEREAL_RATE };
 }
 
 // Iteratively refine a rise/transit/set time by re-evaluating the object's
@@ -372,7 +384,6 @@ function riseTransitSet(raRad, decRad, jd, latRad, lonRad, h0Rad, rtsFlag) {
 // for "does not occur within this local calendar day".
 function riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, iterations) {
   if (iterations === undefined) iterations = 3;
-  const SID_DAY = 1 / 1.00273790935;
   let t = jd0 + 0.5;
   let result;
   for (let pass = 0; pass < 2; pass++) {
@@ -386,7 +397,7 @@ function riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, 
     // Nearest-transit heuristic locked onto the adjacent sidereal cycle.
     // Shift toward the day and re-iterate; for genuinely absent events (Moon)
     // the second pass also lands outside the day.
-    t = result.jd + (result.jd < jd0 ? SID_DAY : -SID_DAY);
+    t = result.jd + (result.jd < jd0 ? SIDEREAL_DAY : -SIDEREAL_DAY);
   }
   return { status: 'none', jd: null };
 }
@@ -419,7 +430,7 @@ function precessStar(ra0, dec0, pp) {
 
 // Mean obliquity of the ecliptic for century T. Returns radians.
 function obliquity(T) {
-  return (23.439291 - 0.013004 * T) * DEG_TO_RAD;
+  return OBLIQUITY_J2000 - 0.013004 * T * DEG_TO_RAD;
 }
 
 // IAU 1980 nutation, 3 dominant terms (~arcsecond accuracy).
@@ -468,15 +479,13 @@ function eqToAltAz(ra, dec, lstRad, latRad) {
   const cosHA = cos(ha), sinHA = sin(ha);
   const alt = asin(sinLat * sinDec + cosLat * cosDec * cosHA);
   const az = atan2(-cosDec * sinHA, sinDec * cosLat - cosDec * sinLat * cosHA);
-  return [alt, ((az + TAU) % TAU)];
+  return [alt, ((az + TWOPI) % TWOPI)];
 }
 
 // 3×3 rotation matrix (row-major flat array) from J2000 equatorial to galactic coordinates.
-// Galactic north pole: RA 192.85948°, Dec +27.12825° (J2000)
-// Galactic center:     RA 266.405°,   Dec -28.936°  (J2000)
 const mGalactic = (function() {
-  const pRA = 192.85948 * DEG_TO_RAD, pDec = 27.12825 * DEG_TO_RAD;
-  const cRA = 266.405 * DEG_TO_RAD, cDec = -28.936 * DEG_TO_RAD;
+  const pRA = NGP_RA, pDec = NGP_DEC;
+  const cRA = GCEN_RA, cDec = GCEN_DEC;
   const pz = [cos(pDec)*cos(pRA), cos(pDec)*sin(pRA), sin(pDec)];
   const gc = [cos(cDec)*cos(cRA), cos(cDec)*sin(cRA), sin(cDec)];
   const d = dot(pz[0],pz[1],pz[2], gc[0],gc[1],gc[2]);
@@ -496,8 +505,8 @@ const mGalactic = (function() {
 // Returns a 3×3 rotation matrix (9-element row-major array).
 function frameMatrix(frame, jd, latRad, lonRad, j2000) {
   if (j2000 && frame === 'equatorial') return [1,0,0, 0,1,0, 0,0,1];
-  if (j2000 && frame === 'ecliptic')   return rx(-obliquity(0));
-  const T = (jd - 2451545.0) / 36525.0;
+  if (j2000 && frame === 'ecliptic')   return rx(-OBLIQUITY_J2000);
+  const T = (jd - JD2000) / 36525.0;
   const pp = precessAngles(T);
   const nut = nutation(T);
   const epsMean = obliquity(T);
@@ -510,7 +519,7 @@ function frameMatrix(frame, jd, latRad, lonRad, j2000) {
   const mNut = mmul(rx(-epsTrue), mmul(rz(-nut.dPsi), rx(epsMean)));
   const mPrecess = mmul(mNut, mPrecOnly);
   if (frame === 'horizon') {
-    const mEqAz = mmul(rx(latRad - PI/2), rz(-PI/2 - lstR));
+    const mEqAz = mmul(rx(latRad - HALFPI), rz(-HALFPI - lstR));
     return mmul(mEqAz, mPrecess);
   } else if (frame === 'equatorial') {
     return mPrecess;
@@ -545,7 +554,7 @@ function ImageFrame(raRad, decRad, orient, width, height, fovX, fovY, mirror) {
 
   // J2000 → image frame: rz(-ra) aligns center to xz plane,
   // ry(dec - π/2) tips center to z-axis, rz(-π/2 - orient) rotates about boresight.
-  this.m = mmul(rz(-PI / 2 - orient), mmul(ry(decRad - PI / 2), rz(-raRad)));
+  this.m = mmul(rz(-HALFPI - orient), mmul(ry(decRad - HALFPI), rz(-raRad)));
   this.mt = mtranspose(this.m);
 }
 
@@ -637,7 +646,7 @@ function solveImageFrame(stars, width, height) {
     // Build a rotation matrix from J2000 to the tangent plane at the current boresight.
     // Same decomposition as ImageFrame with orient=0: rz(-π/2) · ry(dec-π/2) · rz(-ra).
     const [bRA, bDec] = uxyz2sph(bx, by, bz);
-    const mBore = mmul(rz(-PI / 2), mmul(ry(bDec - PI / 2), rz(-bRA)));
+    const mBore = mmul(rz(-HALFPI), mmul(ry(bDec - HALFPI), rz(-bRA)));
 
     // Project each star onto the tangent plane via gnomonic projection.
     // Rotate into the boresight frame, then divide by iz to get

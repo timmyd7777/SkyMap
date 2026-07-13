@@ -688,8 +688,14 @@ function refreshInfoPanel() {
   document.getElementById('info-sublon-row').style.display = hasSub ? '' : 'none';
   document.getElementById('info-sublat-row').style.display = hasSub ? '' : 'none';
   if (hasSub) {
-    document.getElementById('info-sublon').textContent = ss.subObsLon.toFixed(1) + '°';
-    document.getElementById('info-sublat').textContent = (ss.subObsLat >= 0 ? '+' : '') + ss.subObsLat.toFixed(1) + '°';
+    // ESAA eq 10.24 uses a left-handed body frame (sec = pm × pole), which gives
+    // longitude increasing westward. This matches IAU convention for prograde
+    // rotators, but retrograde rotators (Venus) and the Moon (selenographic
+    // longitude increases eastward) need negation.
+    var lonDeg = ss.subObsLon * RAD_TO_DEG;
+    if (ss.type === 'moon' || ss.name === 'Venus') lonDeg = mod360(-lonDeg);
+    document.getElementById('info-sublon').textContent = lonDeg.toFixed(1) + '°';
+    document.getElementById('info-sublat').textContent = (ss.subObsLat >= 0 ? '+' : '') + (ss.subObsLat * RAD_TO_DEG).toFixed(1) + '°';
   }
 
   // Rise / Transit / Set. Not shown for satellites: a LEO satellite crosses

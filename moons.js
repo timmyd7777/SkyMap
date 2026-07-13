@@ -41,7 +41,7 @@ function marsMoons(jd) {
     const P = ((278.96 + 0.43526 * d) % 360) * DEG_TO_RAD;
     const l = ((232.41 + 1128.844556 * d + 0.00124 * yr * yr) % 360) * DEG_TO_RAD;
     const M = l - P;
-    const E = solveKepler(((M % TAU) + TAU) % TAU, e);
+    const E = solveKepler(mod2pi(M), e);
     const f = trueAnomaly(E, e);
     const r = a * (1 - e * e) / (1 + e * cos(f));
     const u = f + P - na;
@@ -65,7 +65,7 @@ function marsMoons(jd) {
     const P = ((111.7 + 0.01798 * d) % 360) * DEG_TO_RAD;
     const l = ((28.96 + 285.161888 * d - 0.27 * sin(h)) % 360) * DEG_TO_RAD;
     const M = l - P;
-    const E = solveKepler(((M % TAU) + TAU) % TAU, e);
+    const E = solveKepler(mod2pi(M), e);
     const f = trueAnomaly(E, e);
     const r = a * (1 - e * e) / (1 + e * cos(f));
     const u = f + P - na;
@@ -105,7 +105,7 @@ function jupiterMoons(jd) {
   const p2a = 52.14459693 * DEG_TO_RAD;
 
   // Rotation matrix: Jupiter equatorial → B1950 equatorial (Eq. 9.54)
-  const eps = 23.4457889 * DEG_TO_RAD;
+  const eps = epsB1950;
   const omega = 99.99754 * DEG_TO_RAD;
   const j = 1.30691 * DEG_TO_RAD;
   const phi = 316.500101 * DEG_TO_RAD - omega;
@@ -279,7 +279,7 @@ function saturnMoons(jd) {
 
   // ecliptic elements → J2000 equatorial XYZ (full spherical trig)
   function eclipticMoon(a, e, inc, w, node, M) {
-    M = ((M % TAU) + TAU) % TAU;
+    M = mod2pi(M);
     const E = solveKepler(M, e);
     const f = trueAnomaly(E, e);
     const r = a * (1 - e*e) / (1 + e * cos(f));
@@ -304,7 +304,7 @@ function saturnMoons(jd) {
     const P1 = ((107.0 + 365.560 * y) % 360) * DEG_TO_RAD;
     const Padj = P1 - neEcl + ab;
     const M = l1 - P1;
-    const E2 = solveKepler(((M % TAU) + TAU) % TAU, 0.01986);
+    const E2 = solveKepler(mod2pi(M), 0.01986);
     const f = trueAnomaly(E2, 0.01986);
     const r = 0.00124171 * (1 - 0.01986*0.01986) / (1 + 0.01986 * cos(f));
     const u = f + Padj;
@@ -319,7 +319,7 @@ function saturnMoons(jd) {
     const P1 = ((312.7 + 123.42 * y) % 360) * DEG_TO_RAD;
     const Padj = P1 - neEcl + ab;
     const M = l1 - P1;
-    const E2 = solveKepler(((M % TAU) + TAU) % TAU, 0.00532);
+    const E2 = solveKepler(mod2pi(M), 0.00532);
     const f = trueAnomaly(E2, 0.00532);
     const r = 0.00158935 * (1 - 0.00532*0.00532) / (1 + 0.00532 * cos(f));
     const u = f + Padj;
@@ -335,7 +335,7 @@ function saturnMoons(jd) {
     const Padj = P1 - neEcl + ab;
     const ec = 0.000212;
     const M = l1 - P1;
-    const E2 = solveKepler(((M % TAU) + TAU) % TAU, ec);
+    const E2 = solveKepler(mod2pi(M), ec);
     const f = trueAnomaly(E2, ec);
     const r = 0.00197069 * (1 - ec*ec) / (1 + ec * cos(f));
     const u = f + Padj;
@@ -353,7 +353,7 @@ function saturnMoons(jd) {
     const Padj = P1 - neEcl + ab;
     const ec = 0.001715;
     const M = l1 - P1;
-    const E2 = solveKepler(((M % TAU) + TAU) % TAU, ec);
+    const E2 = solveKepler(mod2pi(M), ec);
     const f = trueAnomaly(E2, ec);
     const r = 0.00252413 * (1 - ec*ec) / (1 + ec * cos(f));
     const u = f + Padj;
@@ -641,7 +641,7 @@ function neptuneMoons(jd) {
   // Triton (Harris 1984, §9.11.1)
   // J2000 frame with time-dependent pole. γ=159° requires full formula.
   {
-    const Tc = (jd - 2451545.0) / 36525.0;
+    const Tc = (jd - JD2000) / 36525.0;
     const N = ((359.28 + 54.308*Tc) % 360) * DEG_TO_RAD;
     const ap = 298.72 + 2.58*sin(N) - 0.04*sin(2*N);
     const dp = 42.63 - 1.90*cos(N) + 0.01*cos(2*N);
@@ -672,7 +672,7 @@ function neptuneMoons(jd) {
     const theta = ((329.3 - 2.4*Tc + 19.7*sin(2*psi) - 3.3*sin(4*psi)) % 360) * DEG_TO_RAD;
     const P = psi - (19.25*sin(2*psi) + 3.23*sin(4*psi))*DEG_TO_RAD;
     const M = ((358.91 + 0.999552*t) % 360) * DEG_TO_RAD;
-    const E = solveKepler(((M % TAU) + TAU) % TAU, e);
+    const E = solveKepler(mod2pi(M), e);
     const f = trueAnomaly(E, e);
     const r = a * (1 - e*e) / (1 + e * cos(f));
 

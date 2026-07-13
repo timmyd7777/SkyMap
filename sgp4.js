@@ -15,7 +15,7 @@ function parseSatellites(text) {
 // Parse classic 3-line TLE format: name line + line 1 + line 2.
 function parseSatTLE(lines) {
   const sats = [];
-  const temp = TAU / 1440 / 1440;
+  const temp = TWOPI / 1440 / 1440;
   let i = 0;
   while (i < lines.length) {
     if (!lines[i].trim()) { i++; continue; }
@@ -64,7 +64,7 @@ function parseSatTLE(lines) {
     }
 
     // Convert to SGP4 units (radians, rad/min)
-    const xno = mm * TAU / 1440;
+    const xno = mm * TWOPI / 1440;
     const period = mm > 0 ? 1440 / mm : 1e6;
 
     sats.push({
@@ -87,7 +87,7 @@ function parseSatTLE(lines) {
 // Parse CelesTrak OMM CSV format (header + data rows).
 function parseSatCSV(lines) {
   const sats = [];
-  const temp = TAU / 1440 / 1440;
+  const temp = TWOPI / 1440 / 1440;
   const header = lines[0].split(',').map(h => h.trim());
 
   for (let i = 1; i < lines.length; i++) {
@@ -109,7 +109,7 @@ function parseSatCSV(lines) {
     if (!em) continue;
     const epoch = julianDate(+em[1], +em[2], +em[3], +em[4] + +em[5]/60 + parseFloat(em[6])/3600);
 
-    const xno = mm * TAU / 1440;
+    const xno = mm * TWOPI / 1440;
     const ndot = parseFloat(row.MEAN_MOTION_DOT) || 0;
     const nddot = parseFloat(row.MEAN_MOTION_DDOT) || 0;
     const period = 1440 / mm;
@@ -188,14 +188,14 @@ const ROOT52 = 1.1428639e-7;
 const ROOT54 = 2.1765803e-9;
 
 function sgp4Fmod2p(x) {
-  let r = x % TAU;
-  if (r < 0) r += TAU;
+  let r = x % TWOPI;
+  if (r < 0) r += TWOPI;
   return r;
 }
 
 function sgp4Actan(sinx, cosx) {
   const a = atan2(sinx, cosx);
-  return a < 0 ? a + TAU : a;
+  return a < 0 ? a + TWOPI : a;
 }
 
 // Initialize SGP4 model parameters. Stores them on sat._sgp4.
@@ -407,8 +407,8 @@ function sgp4Propagate(sat, tsince) {
 function sdp4Thetag(jdepoch) {
   const ds50 = jdepoch - 2433281.5;
   let theta = 1.72944494 + 6.3003880987 * ds50;
-  theta = theta % TAU;
-  if (theta < 0) theta += TAU;
+  theta = theta % TWOPI;
+  if (theta < 0) theta += TWOPI;
   return { thgr: theta, ds50 };
 }
 
@@ -879,7 +879,7 @@ function sdp4Periodic(dp, sat) {
     const xnoh = dp.xnode;
     dp.xnode = sgp4Actan(alfdp, betdp);
     if (abs(xnoh - dp.xnode) > PI) {
-      dp.xnode += dp.xnode < xnoh ? TAU : -TAU;
+      dp.xnode += dp.xnode < xnoh ? TWOPI : -TWOPI;
     }
     dp.xll = dp.xll + dp.pl;
     dp.omgadf = xls + dls - dp.xll - cos(dp.xinc)*dp.xnode;

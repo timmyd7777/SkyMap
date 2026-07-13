@@ -247,7 +247,7 @@ function skymapInit() {
     dsContours[i] = nebulaContourMap[DEEPSKY[i][DS_MC]] || nebulaContourMap[DEEPSKY[i][DS_NGC]]
       || nebulaContourMap[DEEPSKY[i][DS_NGC2]] || nebulaContourMap[DEEPSKY[i][DS_NAME]] || null;
   // Precess constellation boundary vertices from B1875 to J2000
-  const T1875 = (2405889.25 - 2451545.0) / 36525.0;
+  const T1875 = (2405889.25 - JD2000) / 36525.0;
   const pp1875 = precessAngles(T1875);
   const cosT1875 = cos(pp1875.thetaA), sinT1875 = sin(pp1875.thetaA);
   const mPrecY1875 = [cosT1875,0,-sinT1875, 0,1,0, sinT1875,0,cosT1875];
@@ -299,8 +299,8 @@ function skymapDraw(canvas, params) {
   // ---- Astronomical parameters for current instant ----
   const utHours = dt.h + dt.mi / 60 + dt.s / 3600;
   const jd = julianDate(dt.y, dt.m, dt.d, utHours);
-  const T = (jd - 2451545.0) / 36525.0;           // Julian centuries from J2000
-  const daysSinceJ2000 = jd - 2451545.0;
+  const T = (jd - JD2000) / 36525.0;           // Julian centuries from J2000
+  const daysSinceJ2000 = jd - JD2000;
   const nut = nutation(T);
   const epsTrue = obliquity(T) + nut.dEps;
   const lstR = localSiderealTime(jd, loc.lonRad) + nut.dPsi * cos(epsTrue);
@@ -335,7 +335,7 @@ function skymapDraw(canvas, params) {
   // other frames store RA/ecliptic-lon/galactic-lon, which is 90° off from that.
   const vLon = (viewFrame === 'horizon' ? viewLon : mod360(90 - viewLon)) * DEG_TO_RAD;
   const vLat = viewLat * DEG_TO_RAD, vWidth = viewFov * DEG_TO_RAD;
-  const vTheta = PI / 2 - vLat;                      // co-latitude of view center
+  const vTheta = HALFPI - vLat;                      // co-latitude of view center
   const rEdge = 2 * tan(vWidth / 4);                 // stereographic radius at FOV edge
   const scale = chartR / rEdge;                      // pixels per unit stereographic radius
   const magBoost = min(5, Math.log2(180 / viewFov));
@@ -445,7 +445,7 @@ function skymapDraw(canvas, params) {
     ctx.beginPath();
     const i0 = round((90 - maxLat) / 5), i1 = 36 - i0;
     for (let i = i0; i <= i1; i++) {
-      const lat = PI/2 - i * 5 * DEG_TO_RAD;
+      const lat = HALFPI - i * 5 * DEG_TO_RAD;
       const cLat = cos(lat);
       const [qx, qy, qz] = mvmul(mV, cLat * cl, cLat * sl, sin(lat));
       const front = qz > -1e-10;
@@ -460,7 +460,7 @@ function skymapDraw(canvas, params) {
 
   // Draw a small circle at angular distance `colat` from pole (px,py,pz) in view coords.
   // Used for latitude parallels and reference circles (equator, ecliptic, galactic plane).
-  // colat in radians (PI/2 for a great circle). Strokes the current path style.
+  // colat in radians (HALFPI for a great circle). Strokes the current path style.
   function drawGreatCircle(px, py, pz, colat) {
     let ux, uy, uz;
     if (abs(pz) < 0.9) { ux = -py; uy = px; uz = 0; }
@@ -637,7 +637,7 @@ function skymapDraw(canvas, params) {
     const lonStep = viewFov < 20 ? 5 : viewFov < 60 ? 15 : 45;
     // Latitude parallels
     for (let lat = -90 + latStep; lat <= 90 - latStep; lat += latStep) {
-      drawGreatCircle(gridPoleX, gridPoleY, gridPoleZ, PI/2 - lat * DEG_TO_RAD);
+      drawGreatCircle(gridPoleX, gridPoleY, gridPoleZ, HALFPI - lat * DEG_TO_RAD);
     }
     // Longitude meridians (cardinal meridians extend pole-to-pole)
     const merMaxLat = 90 - latStep;
@@ -746,27 +746,25 @@ function skymapDraw(canvas, params) {
       ctx.strokeStyle = frameColor('ecliptic', 0.9);
       ctx.lineWidth = 2;
       // Ecliptic pole: rotate equatorial pole (0,0,1) by obliquity around X
-      const epsRef = j2000 ? obliquity(0) : epsTrue;
+      const epsRef = j2000 ? OBLIQUITY_J2000 : epsTrue;
       const se = sin(epsRef), ce = cos(epsRef);
       const ejx = mPrecess[3]*(-se) + mPrecess[6]*ce;
       const ejy = mPrecess[4]*(-se) + mPrecess[7]*ce;
       const ejz = mPrecess[5]*(-se) + mPrecess[8]*ce;
-      drawGreatCircle(...mvmul(M, ejx, ejy, ejz), PI/2);
+      drawGreatCircle(...mvmul(M, ejx, ejy, ejz), HALFPI);
     }
     if (showCelEq) {
       ctx.strokeStyle = frameColor('equatorial');
       ctx.lineWidth = 1.5;
       // Celestial pole (of date) = third row of precession matrix
       const cpx = mPrecess[6], cpy = mPrecess[7], cpz = mPrecess[8];
-      drawGreatCircle(...mvmul(M, cpx, cpy, cpz), PI/2);
+      drawGreatCircle(...mvmul(M, cpx, cpy, cpz), HALFPI);
     }
     if (showGalEq) {
       ctx.strokeStyle = frameColor('galactic');
       ctx.lineWidth = 1.5;
-      // Galactic north pole (J2000): RA 192.85948°, Dec +27.12825°
-      const gRA = 192.85948 * DEG_TO_RAD, gDec = 27.12825 * DEG_TO_RAD;
-      const [gx0, gy0, gz0] = sph2uxyz(gRA, gDec);
-      drawGreatCircle(...mvmul(M, gx0, gy0, gz0), PI/2);
+      const [gx0, gy0, gz0] = sph2uxyz(NGP_RA, NGP_DEC);
+      drawGreatCircle(...mvmul(M, gx0, gy0, gz0), HALFPI);
     }
   }
 
@@ -909,11 +907,11 @@ function skymapDraw(canvas, params) {
       ctx.strokeStyle = dsColor;
       if (typ === 'OC') {
         ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TWOPI); ctx.stroke();
         ctx.setLineDash([]);
         if (dsContours[dsi]) dObj.contourPts = drawDSContours(dsContours[dsi]);
       } else if (typ === 'GC') {
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TWOPI); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0] - r, pt[1]); ctx.lineTo(pt[0] + r, pt[1]); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0], pt[1] - r); ctx.lineTo(pt[0], pt[1] + r); ctx.stroke();
       } else if (typ === 'BN') {
@@ -928,7 +926,7 @@ function skymapDraw(canvas, params) {
           ctx.closePath(); ctx.stroke();
         }
       } else if (typ === 'PN') {
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TWOPI); ctx.stroke();
         const t = 2 * r;
         ctx.beginPath(); ctx.moveTo(pt[0] - t, pt[1]); ctx.lineTo(pt[0] - r, pt[1]); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pt[0] + r, pt[1]); ctx.lineTo(pt[0] + t, pt[1]); ctx.stroke();
@@ -942,13 +940,13 @@ function skymapDraw(canvas, params) {
           const [gvx, gvy, gvz] = mvmul(M, ds[DS_X], ds[DS_Y], ds[DS_Z]);
           const rot0 = pa != null ? j2kPAToScreen(pa * DEG_TO_RAD, gvx, gvy, gvz, pt[0], pt[1]) : 0;
           const rot = atan2(fY * sin(rot0), fX * cos(rot0));
-          ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.ellipse(pt[0], pt[1], r, rMinor, rot, 0, TWOPI); ctx.stroke();
           dObj.rMinor = rMinor; dObj.rot = rot;
         } else {
-          ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TWOPI); ctx.stroke();
         }
       } else {
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(pt[0], pt[1], r, 0, TWOPI); ctx.stroke();
       }
       drawnObjects.push(dObj);
     }
@@ -1004,7 +1002,7 @@ function skymapDraw(canvas, params) {
       if (mag > starMagLimit) continue;
       const r = max(0.5, (5.5 + magBoost - mag) * min(W, H) / 1000);
       ctx.fillStyle = darkMode && showStarColors ? bmvToRGB(bmv) : darkMode ? '#fff' : '#000';
-      ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, TWOPI); ctx.fill();
       drawnObjects.push({x: p.sx, y: p.sy, r, type: 'star', hr, data: {name: s[S_NAME], star: s}, jx: s[S_X], jy: s[S_Y], jz: s[S_Z]});
     }
     if (showNames || showStarIds) {
@@ -1038,7 +1036,7 @@ function skymapDraw(canvas, params) {
     // use JDE; sidereal time uses JD (UT). Delta-T is TDT - UT in seconds.
     const decYear = 2000 + daysSinceJ2000 / 365.25;
     const jde = jd + deltaT(decYear) / 86400;
-    const d = jde - 2451545.0;                     // days since J2000.0 in dynamical time
+    const d = jde - JD2000;                     // days since J2000.0 in dynamical time
     const tau = d / 365250;                        // Julian millennia from J2000 (VSOP87)
 
     // Three rotation matrices convert solar system positions to J2000 equatorial:
@@ -1064,7 +1062,7 @@ function skymapDraw(canvas, params) {
     const mP = mmul(rz(sspp.zA), mmul(mPY, rz(sspp.zetaA)));
     const mEcl2J2000 = mmul(mtranspose(mP), rx(epsMean));
     const mNP = mmul(mmul(rx(-epsTrue), mmul(rz(-nut.dPsi), rx(epsMean))), mP);
-    const mJ2kEcl2Eq = rx(obliquity(0));
+    const mJ2kEcl2Eq = rx(OBLIQUITY_J2000);
 
     // Sun position from VSOP87 Earth
     const earth = vsop87Position('EARTH', tau);
@@ -1085,7 +1083,6 @@ function skymapDraw(canvas, params) {
 
     // Light-time correction: compute geometric geocentric distance, then recompute
     // body position at retarded time (t - Δ/c). One iteration is sufficient.
-    const LIGHT_TIME_AU = 0.0057755183;  // days per AU (499.005 seconds)
 
     // VSOP87 planets (Mercury through Neptune)
     // Schlyter index used for cheap first-pass distance estimate (light-time)
@@ -1163,7 +1160,7 @@ function skymapDraw(canvas, params) {
     const moonFV = abs(PI - moonElong);
     const moonEntry = { type:'moon', name:'Moon', x:mx, y:my, z:mz,
       mag: moonMag(sunR, moonPos.dist, moonFV * RAD_TO_DEG),
-      angRad: moonAngArcmin / 60 * DEG_TO_RAD / 2, dist: topoDistER * 6378.14, phaseAngle: moonFV };
+      angRad: moonAngArcmin / 60 * DEG_TO_RAD / 2, dist: topoDistER * EARTH_RADIUS_KM, phaseAngle: moonFV };
     const moonOri = planetOrientation('Moon', d, mx, my, mz);
     if (moonOri) {
       moonEntry.subObsLat = moonOri.subObsLat;
@@ -1173,10 +1170,9 @@ function skymapDraw(canvas, params) {
 
     // Earth's shadow on the Moon (only when Moon is near the antisolar point)
     if (dot(mx, my, mz, sx, sy, sz) < -0.9) {
-      const EARTH_RAD_AU = 6378.14 / KM_PER_AU;
-      const moonGeoDistAU = moonPos.dist * EARTH_RAD_AU;
+      const moonGeoDistAU = moonPos.dist * EARTH_RADIUS_AU;
       // Umbral/penumbral radii (AU) at Moon's geocentric distance
-      const shadow = shadowRadii(EARTH_RAD_AU, moonGeoDistAU, sunR);
+      const shadow = shadowRadii(EARTH_RADIUS_AU, moonGeoDistAU, sunR);
       // Angular radii (radians) as seen from Earth
       moonEntry.umbraAngRad = shadow.umbra / moonGeoDistAU;
       moonEntry.penumbraAngRad = shadow.penumbra / moonGeoDistAU;
@@ -1259,8 +1255,7 @@ function skymapDraw(canvas, params) {
           // share the same generic name (e.g. multiple "SL-16 R/B" from
           // different launches), so name+type alone is ambiguous for satellites.
           ssCache.push({ type:'satellite', name:sat.name, norad:sat.norad, mag,
-            // WGS72 radius (6378.135 km), not WGS84 — SGP4 assumes WGS72; using WGS84 shifts positions by tens of meters at GEO range.
-            x:jx, y:jy, z:jz, dist:satTopoER * 6378.135 });
+            x:jx, y:jy, z:jz, dist:satTopoER * SGP4_ER });
         } catch(e) {}
       }
     }
@@ -1376,7 +1371,7 @@ function skymapDraw(canvas, params) {
     }
     const backIsTop = subObsLat > 0;
     const drawTop = front !== backIsTop;
-    const startA = drawTop ? 0 : PI, endA = drawTop ? PI : TAU;
+    const startA = drawTop ? 0 : PI, endA = drawTop ? PI : TWOPI;
     const steps = 32;
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.7;
@@ -1423,19 +1418,19 @@ function skymapDraw(canvas, params) {
       toSun = toSunAngle;
     }
     ctx.fillStyle = darkMode ? '#333' : '#555';
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TWOPI); ctx.fill();
     if (FVrad < PI - 0.05) {
       const cs = cos(toSun), sn = sin(toSun), k = -cos(FVrad);
       ctx.fillStyle = litColor;
       ctx.beginPath();
       for (let i = 0; i <= 24; i++) {
-        const t = PI/2 - i*PI/24;
+        const t = HALFPI - i*PI/24;
         const bx = r*cos(t), by = r*sin(t);
         const px = bx*cs - by*sn, py = -bx*sn - by*cs;
         if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
       }
       for (let i = 0; i <= 24; i++) {
-        const t = -PI/2 + i*PI/24;
+        const t = -HALFPI + i*PI/24;
         const bx = r*k*cos(t), by = r*sin(t);
         const px = bx*cs - by*sn, py = -bx*sn - by*cs;
         ctx.lineTo(px,py);
@@ -1443,7 +1438,7 @@ function skymapDraw(canvas, params) {
       ctx.closePath(); ctx.fill();
     }
     ctx.strokeStyle = darkMode ? '#666' : '#888'; ctx.lineWidth = ob > 0 ? 0.5 / yScale : 0.5;
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TWOPI); ctx.stroke();
     ctx.restore();
   }
 
@@ -1539,16 +1534,16 @@ function skymapDraw(canvas, params) {
     if (centerDist >= penR + bodyR) return;
     ctx.save();
     ctx.beginPath();
-    ctx.arc(bx, by, bodyR, 0, TAU);
+    ctx.arc(bx, by, bodyR, 0, TWOPI);
     ctx.clip();
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath();
-    ctx.arc(shx, shy, penR, 0, TAU);
+    ctx.arc(shx, shy, penR, 0, TWOPI);
     ctx.fill();
     if (umbR > 0 && centerDist < umbR + bodyR) {
       ctx.fillStyle = umbraColor;
       ctx.beginPath();
-      ctx.arc(shx, shy, umbR, 0, TAU);
+      ctx.arc(shx, shy, umbR, 0, TWOPI);
       ctx.fill();
     }
     ctx.restore();
@@ -1608,7 +1603,7 @@ function skymapDraw(canvas, params) {
           ctx.fillText(PLANET_SYMBOLS.Sun, sx, sy);
         } else {
           ctx.fillStyle = '#fd0';
-          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
         }
         drawnObjects.push({x:sx, y:sy, r, type:'sun', data:{name:'Sun', mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
@@ -1627,7 +1622,7 @@ function skymapDraw(canvas, params) {
           ? phys.flattening * cos(obj.subObsLat) : 0;
         let polePA = 0;
         if (obj.polePA !== undefined && discR > starR)
-          polePA = PI/2 - j2kPAToScreen(obj.polePA, vx, vy, vz, sx, sy);
+          polePA = HALFPI - j2kPAToScreen(obj.polePA, vx, vy, vz, sx, sy);
         if (showPlanetSymbols) {
           ctx.fillStyle = pColor; ctx.font = symFontSize;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1648,7 +1643,7 @@ function skymapDraw(canvas, params) {
           drawMoonShadows(obj, sx, sy, discR);
         } else {
           ctx.fillStyle = pColor;
-          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
         }
         const hitR = obj.name === 'Saturn' && discR > starR ? discR * 2.27 : r;
         drawnObjects.push({x:sx, y:sy, r:hitR, type:'planet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, phaseAngle:obj.phaseAngle}, jx:obj.x, jy:obj.y, jz:obj.z});
@@ -1667,7 +1662,7 @@ function skymapDraw(canvas, params) {
         } else {
           drawPhaseDisc(sx, sy, phaseR, obj.phaseAngle, toSunAngle, 'rgba(187,187,187,0.95)');
           if (showPlanetGrid && phaseR >= 10 && obj.polePA !== undefined && obj.subObsLat !== undefined)
-            drawPlanetGrid(sx, sy, phaseR, PI/2 - j2kPAToScreen(obj.polePA, vx, vy, vz, sx, sy), 0, obj.subObsLat, obj.subObsLon);
+            drawPlanetGrid(sx, sy, phaseR, HALFPI - j2kPAToScreen(obj.polePA, vx, vy, vz, sx, sy), 0, obj.subObsLat, obj.subObsLon);
           // Earth's shadow on Moon
           if (obj.shadowX !== undefined) {
             const sp = skyProject(obj.shadowX, obj.shadowY, obj.shadowZ);
@@ -1688,7 +1683,7 @@ function skymapDraw(canvas, params) {
         const drawMag = min(magLimit, obj.mag);
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         ctx.fillStyle = '#4de';
-        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'comet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showCometNames) {
           ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
@@ -1701,7 +1696,7 @@ function skymapDraw(canvas, params) {
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const astColor = darkMode ? '#ff0' : '#996600';
         ctx.fillStyle = astColor;
-        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'asteroid', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showAsteroidNames) {
           ctx.fillStyle = astColor; ctx.font = labelFont;
@@ -1714,7 +1709,7 @@ function skymapDraw(canvas, params) {
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const satColor = darkMode ? '#0f0' : '#060';
         ctx.fillStyle = satColor;
-        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
         drawnObjects.push({x:sx, y:sy, r, type:'satellite', data:{name:obj.name, norad:obj.norad, mag:obj.mag, dist:obj.dist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showSatelliteNames) {
           ctx.fillStyle = satColor; ctx.font = labelFont;
@@ -1750,10 +1745,10 @@ function skymapDraw(canvas, params) {
         const pmColor = darkMode ? '#bbb' : '#555';
         if (discR > starR) {
           ctx.fillStyle = pmColor;
-          ctx.beginPath(); ctx.arc(sx, sy, discR, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx, sy, discR, 0, TWOPI); ctx.fill();
         } else {
           ctx.fillStyle = pmColor;
-          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
         }
         drawnObjects.push({x:sx, y:sy, r, type:'planetmoon', data:{name:obj.name, parent:obj.parent, mag:obj.mag, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showPlanetNames) {
@@ -1826,7 +1821,7 @@ function skymapDraw(canvas, params) {
     ctx.strokeStyle = frameColor('horizon');
     ctx.lineWidth = 1.5;
     const zenX = mView[2], zenY = mView[5], zenZ = mView[8];
-    drawGreatCircle(zenX, zenY, zenZ, PI/2 - REFRACTION_ALT);
+    drawGreatCircle(zenX, zenY, zenZ, HALFPI - REFRACTION_ALT);
   }
 
   // Draw the local meridian (the N/S vertical circle through the zenith, part of
@@ -1933,9 +1928,9 @@ function skymapDraw(canvas, params) {
 
   // Clip to 180° hemisphere circle
   ctx.fillStyle = darkMode ? '#000' : '#fff';
-  ctx.beginPath(); ctx.arc(cx, cy, min(clipR, max(W, H)), 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, min(clipR, max(W, H)), 0, TWOPI); ctx.fill();
   ctx.save();
-  ctx.beginPath(); ctx.arc(cx, cy, clipR + 1, 0, TAU); ctx.clip();
+  ctx.beginPath(); ctx.arc(cx, cy, clipR + 1, 0, TWOPI); ctx.clip();
 
   // Inside clip: sky layers in z-order (back to front)
   if (showMilkyWay) drawMilkyWay();
@@ -1955,7 +1950,7 @@ function skymapDraw(canvas, params) {
   if (clipR < max(W, H)) {
     ctx.strokeStyle = darkMode ? 'rgba(120,120,120,0.6)' : 'rgba(100,100,100,0.6)';
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(cx, cy, clipR, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, clipR, 0, TWOPI); ctx.stroke();
   }
 
   if (viewFrame === 'horizon') drawCardinals();
@@ -1993,13 +1988,13 @@ function skymapDraw(canvas, params) {
         ctx.closePath(); ctx.stroke();
       }
     } else if (drawn && drawn.rMinor !== undefined) { // galaxy ellipses
-      ctx.beginPath(); ctx.ellipse(smx, smy, drawn.r + 5, drawn.rMinor + 5, drawn.rot, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(smx, smy, drawn.r + 5, drawn.rMinor + 5, drawn.rot, 0, TWOPI); ctx.stroke();
     } else if (drawn && drawn.type === 'deepsky' && (drawn.data[DS_TYPE] === 'BN' || drawn.data[DS_TYPE] === 'DN')) { // nebulae without contours
       const mr = drawn.r + 5;
       ctx.strokeRect(smx - mr, smy - mr, 2 * mr, 2 * mr);
     } else { // stars, planets, clusters, etc.
       const mr = (drawn ? drawn.r : 0) + 5;
-      ctx.beginPath(); ctx.arc(smx, smy, mr, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(smx, smy, mr, 0, TWOPI); ctx.stroke();
     }
     const sfs = max(minFontSize, round(min(W, H) / 50));
     ctx.font = `${sfs}px sans-serif`;
@@ -2027,7 +2022,7 @@ function skymapDraw(canvas, params) {
     // debug: dot at (0,0) corner
     // ctx.fillStyle = ctx.strokeStyle;
     // ctx.beginPath();
-    // ctx.arc(pts[0][0], pts[0][1], 4, 0, TAU);
+    // ctx.arc(pts[0][0], pts[0][1], 4, 0, TWOPI);
     // ctx.fill();
   }
 
@@ -2090,7 +2085,7 @@ function changeFrame(newFrame, j2000, dt, loc) {
   if (curMFrame) {
     // Current view center → J2000 equatorial unit vector
     const lon = viewLon * DEG_TO_RAD, lat = viewLat * DEG_TO_RAD;
-    const [x, y, z] = sph2uxyz(viewFrame === 'horizon' ? PI/2 - lon : lon, lat);
+    const [x, y, z] = sph2uxyz(viewFrame === 'horizon' ? HALFPI - lon : lon, lat);
     const [jx, jy, jz] = mvmul(mtranspose(curMFrame), x, y, z);
     // Build new frame's rotation matrix
     const utH = dt.h + dt.mi / 60 + dt.s / 3600;
