@@ -1094,7 +1094,7 @@ function skymapDraw(canvas, params) {
       // Cheap Schlyter position for light-time estimate
       const s0 = planetHelioEcl(PLANETS[si].elems(d + 1.5));
       const [sx, sy, sz] = sph2xyz(s0.lon, s0.lat, s0.r);
-      const lt = vmag(sx-earthX, sy-earthY, sz-earthZ) * LIGHT_TIME_AU;
+      const lt = vmag(sx-earthX, sy-earthY, sz-earthZ) / LIGHT_SPEED_AU_PER_DAY;
       // Accurate VSOP87 position at retarded time
       const h = vsop87Position(vsopKey, tau - lt / 365250);
       const hx = h.R * cos(h.B) * cos(h.L);
@@ -1125,7 +1125,7 @@ function skymapDraw(canvas, params) {
     // Pluto via Schlyter (not in VSOP87)
     const plutoH0 = planetHelioEcl(PLANETS[7].elems(d + 1.5));
     const [p0x, p0y, p0z] = sph2xyz(plutoH0.lon, plutoH0.lat, plutoH0.r);
-    const plutoLt = vmag(p0x-earthX, p0y-earthY, p0z-earthZ) * LIGHT_TIME_AU;
+    const plutoLt = vmag(p0x-earthX, p0y-earthY, p0z-earthZ) / LIGHT_SPEED_AU_PER_DAY;
     const plutoH = planetHelioEcl(PLANETS[7].elems(d + 1.5 - plutoLt));
     const [phx, phy, phz] = sph2xyz(plutoH.lon, plutoH.lat, plutoH.r);
     const ppx = phx - earthX, ppy = phy - earthY, ppz = phz - earthZ;
@@ -1195,7 +1195,7 @@ function skymapDraw(canvas, params) {
       for (const c of params.comets) {
         const ch0 = cometPosition(c, d + 1.5, true);
         const [c0x, c0y, c0z] = mvmul(mJ2kEcl2Eq, ...sph2xyz(ch0.lon, ch0.lat, ch0.r));
-        const lt = vmag(c0x-earthEqX, c0y-earthEqY, c0z-earthEqZ) * LIGHT_TIME_AU;
+        const lt = vmag(c0x-earthEqX, c0y-earthEqY, c0z-earthEqZ) / LIGHT_SPEED_AU_PER_DAY;
         const h = cometPosition(c, d + 1.5 - lt, true);
         const [hEqX, hEqY, hEqZ] = mvmul(mJ2kEcl2Eq, ...sph2xyz(h.lon, h.lat, h.r));
         const gx = hEqX - earthEqX, gy = hEqY - earthEqY, gz = hEqZ - earthEqZ;
@@ -1212,7 +1212,7 @@ function skymapDraw(canvas, params) {
       for (const a of params.asteroids) {
         const ah0 = asteroidPosition(a, d + 1.5, true);
         const [a0x, a0y, a0z] = mvmul(mJ2kEcl2Eq, ...sph2xyz(ah0.lon, ah0.lat, ah0.r));
-        const lt = vmag(a0x-earthEqX, a0y-earthEqY, a0z-earthEqZ) * LIGHT_TIME_AU;
+        const lt = vmag(a0x-earthEqX, a0y-earthEqY, a0z-earthEqZ) / LIGHT_SPEED_AU_PER_DAY;
         const h = asteroidPosition(a, d + 1.5 - lt, true);
         const [hEqX, hEqY, hEqZ] = mvmul(mJ2kEcl2Eq, ...sph2xyz(h.lon, h.lat, h.r));
         const gx = hEqX - earthEqX, gy = hEqY - earthEqY, gz = hEqZ - earthEqZ;
@@ -1274,7 +1274,7 @@ function skymapDraw(canvas, params) {
       const pgx = primary.x * primary.geoDist;
       const pgy = primary.y * primary.geoDist;
       const pgz = primary.z * primary.geoDist;
-      const ltJde = jde - primary.geoDist * LIGHT_TIME_AU;
+      const ltJde = jde - primary.geoDist / LIGHT_SPEED_AU_PER_DAY;
       const pmoons = moonFunc(ltJde);
       const psx = sx * sunR - pgx, psy = sy * sunR - pgy, psz = sz * sunR - pgz;
       const psd = vmag(psx, psy, psz);
