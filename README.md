@@ -22,7 +22,7 @@ Getting your location from Wi-Fi will fail when opening the HTML file from local
 python3 -m http.server 8080
 ```
 
-Then browse to http://localhost:8080/skymap.html
+Then browse to http://localhost:8080/index.html
 
 ## Documentation
 

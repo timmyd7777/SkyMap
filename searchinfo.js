@@ -1,6 +1,6 @@
 // search.js — Object search, list, and info panel for SkyMap
 // Depends on: astromath.js, skymap.js (loaded before this file)
-// References at runtime (defined in skymap.html inline script):
+// References at runtime (defined in index.html inline script):
 //   getDateTimeFromFields(), getLocation(), sizeCanvas(), draw()
 
 // ---- Time formatting ----
