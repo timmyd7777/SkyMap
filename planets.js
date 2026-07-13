@@ -702,11 +702,14 @@ const PLANET_PHYS = {
         + 0.000050*cos(J1) + 0.000404*cos(J2) + 0.000617*cos(J3)
         - 0.000013*cos(J4) + 0.000926*cos(J5);
     },
-    W: (t) => 284.95 + 870.5360000*t },
+ // W: (t) => 67.10 + 877.9000000*t },   // System I (equatorial atmosphere)
+    W: (t) => 43.30 + 870.2700000*t },   // System II (non-equatorial atmosphere, includes GRS)
+ // W: (t) => 284.95 + 870.5360000*t },  // System III (radio/magnetic field)
   Saturn: { radius: 60268, flattening: 0.097962,
     poleRA: (T) => 40.589 - 0.036*T,
     poleDec: (T) => 83.537 - 0.004*T,
-    W: (t) => 38.90 + 810.7939024*t },
+    W: (t) => 227.2037 + 844.3000000*t },  // System I (atmospheric/visual)
+ // W: (t) => 38.90 + 810.7939024*t },     // System III (radio/magnetic field)
   Uranus: { radius: 25559, flattening: 0.022927,
     poleRA: () => 257.311,
     poleDec: () => -15.175,
