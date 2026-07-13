@@ -76,7 +76,7 @@ let ssCacheLon = null;  // observer longitude at last computation (Moon topocent
 // Drawing colors for solar system bodies (not from orbital element data).
 const PLANET_COLORS = {
   Mercury:'#b0b0b0', Venus:'#e8d060', Mars:'#e04020', Jupiter:'#d89040',
-  Saturn:'#c8a830', Uranus:'#40b8c0', Neptune:'#7090f0', Pluto:'#a07050'
+  Saturn:'#c8a830', Uranus:'#40c8a0', Neptune:'#7090f0', Pluto:'#a07050'
 };
 const PLANET_SYMBOLS = {
   Sun:'☉', Moon:'☽', Mercury:'☿', Venus:'♀', Mars:'♂',
@@ -2024,10 +2024,11 @@ function skymapDraw(canvas, params) {
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i <= 4; i++) ctx.lineTo(pts[i % 4][0], pts[i % 4][1]);
     ctx.stroke();
-    ctx.fillStyle = ctx.strokeStyle;
-    ctx.beginPath();
-    ctx.arc(pts[0][0], pts[0][1], 4, 0, TAU);
-    ctx.fill();
+    // debug: dot at (0,0) corner
+    // ctx.fillStyle = ctx.strokeStyle;
+    // ctx.beginPath();
+    // ctx.arc(pts[0][0], pts[0][1], 4, 0, TAU);
+    // ctx.fill();
   }
 
   if (params.imageFrame) drawImageFrame(params.imageFrame);

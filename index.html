@@ -206,17 +206,17 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
     <div style="line-height:1.8;">
       <div style="display:grid; grid-template-columns:1fr auto auto; gap:0 6px; align-items:center;">
         <label><input type="checkbox" id="showStars" checked autocomplete="off"> Stars</label><label style="margin:0"><input type="checkbox" id="showStarIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showNames" checked autocomplete="off"> Names</label>
-        <label><input type="checkbox" id="showDeepSky" autocomplete="off"> Deep Sky</label><label style="margin:0"><input type="checkbox" id="showDeepSkyIds" autocomplete="off"> IDs</label><label style="margin:0"><input type="checkbox" id="showDeepSkyNames" autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showDeepSky" autocomplete="off"> Deep Sky</label><label style="margin:0"><input type="checkbox" id="showDeepSkyIds" autocomplete="off" checked> IDs</label><label style="margin:0"><input type="checkbox" id="showDeepSkyNames" autocomplete="off"> Names</label>
         <label><input type="checkbox" id="showPlanets" checked autocomplete="off"> Planets</label><label style="margin:0"><input type="checkbox" id="showPlanetSymbols" autocomplete="off"> Sym</label><label style="margin:0"><input type="checkbox" id="showPlanetNames" checked autocomplete="off"> Names</label>
-        <label><input type="checkbox" id="showComets" autocomplete="off"> Comets</label><span></span><label style="margin:0"><input type="checkbox" id="showCometNames" autocomplete="off"> Names</label>
-        <label><input type="checkbox" id="showAsteroids" autocomplete="off"> Asteroids</label><span></span><label style="margin:0"><input type="checkbox" id="showAsteroidNames" autocomplete="off"> Names</label>
-        <label><input type="checkbox" id="showSatellites" autocomplete="off"> Satellites</label><span></span><label style="margin:0"><input type="checkbox" id="showSatelliteNames" autocomplete="off"> Names</label>
+        <label><input type="checkbox" id="showComets" autocomplete="off"> Comets</label><span></span><label style="margin:0"><input type="checkbox" id="showCometNames" autocomplete="off" checked> Names</label>
+        <label><input type="checkbox" id="showAsteroids" autocomplete="off"> Asteroids</label><span></span><label style="margin:0"><input type="checkbox" id="showAsteroidNames" autocomplete="off" checked> Names</label>
+        <label><input type="checkbox" id="showSatellites" autocomplete="off"> Satellites</label><span></span><label style="margin:0"><input type="checkbox" id="showSatelliteNames" autocomplete="off" checked> Names</label>
       </div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showConst" checked autocomplete="off"> Constellations</label><label><input type="checkbox" id="showConstNames" checked autocomplete="off"> Names</label></div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showBounds" autocomplete="off"> Boundaries</label><label><input type="checkbox" id="showMilkyWay" checked autocomplete="off"> Milky Way</label></div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showCelEq" autocomplete="off"> Celestial Equator</label><label><input type="checkbox" id="showEcliptic" checked autocomplete="off"> Ecliptic</label></div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showGalEq" autocomplete="off"> Galactic Equator</label><label><input type="checkbox" id="showMeridian" autocomplete="off"> Meridian</label></div>
-      <label><input type="checkbox" id="showGrid" autocomplete="off"> Coordinate Grid</label>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showGrid" autocomplete="off"> Coordinate Grid</label><label><input type="checkbox" id="showPlanetGrid" autocomplete="off" checked> Planet Grids</label></div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showHeader" checked autocomplete="off"> Header</label><label><input type="checkbox" id="showSelection" checked autocomplete="off"> Selection</label></div>
       <label><input type="checkbox" id="darkToggle" checked autocomplete="off"> Dark Mode</label>
     </div>
@@ -676,7 +676,7 @@ function draw() {
     showSatellites: document.getElementById('showSatellites').checked,
     showSatelliteNames: document.getElementById('showSatelliteNames').checked,
     showGrid: document.getElementById('showGrid').checked,
-    showPlanetGrid: document.getElementById('showGrid').checked,
+    showPlanetGrid: document.getElementById('showPlanetGrid').checked,
     showMeridian: document.getElementById('showMeridian').checked,
     showHeader: document.getElementById('showHeader').checked,
     showSelection: document.getElementById('showSelection').checked,
@@ -806,7 +806,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showMeridian','showHeader','showSelection','darkToggle','flipH','flipV']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showPlanetGrid','showMeridian','showHeader','showSelection','darkToggle','flipH','flipV']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {
