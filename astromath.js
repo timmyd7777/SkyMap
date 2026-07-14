@@ -12,9 +12,12 @@ const AU_PER_LY  = 63241.077084;               // 1 light year in astronomical u
 const KM_PER_AU  = 149597870.7;                // 1 astronomical unit in kilometers
 const LY_PER_PC  = 3.26156377718;              // 1 parsec in light years
 const PC_PER_LY  = 0.306601393784;             // 1 light year in parsecs
+const NEWTON_G = 6.67430e-11;                  // Newtonian gravitational constant (m³ kg⁻¹ s⁻²)
 const GAUSS_K = 0.01720209895;                 // Gaussian gravitational constant (rad/day)
 const EARTH_RADIUS_KM = 6378.14;               // Earth equatorial radius in km (IAU/ESAA)
 const EARTH_RADIUS_AU = EARTH_RADIUS_KM / KM_PER_AU;
+const EARTH_MASS_KG = 5.97217e24;              // Earth mass (kg)
+const SUN_MASS_KG = 1.98892e30;                // Solar mass (kg)
 const SUN_RADIUS_AU = 0.00465047;              // solar radius in AU (696,000 km)
 const LIGHT_SPEED_KM_PER_SEC = 299792.458;     // speed of light in km/s (exact, SI definition)
 const LIGHT_SPEED_AU_PER_DAY = 173.144632674;  // speed of light in AU/day (1 / 0.0057755183)
@@ -751,4 +754,30 @@ function solveImageFrame(stars, width, height) {
 
   return { frame, residuals };
 }
+
+// ---- Magnitude / brightness conversions ----
+// Based on the astronomical magnitude system where a difference of 5 magnitudes
+// corresponds to a brightness ratio of exactly 100. Lower magnitude = brighter.
+
+// Returns the brightness ratio corresponding to a magnitude difference.
+// E.g. deltaMag = -5 → 100 (5 mag brighter = 100× brighter),
+// deltaMag = 5 → 0.01 (5 mag fainter = 100× fainter).
+function brightnessRatio(deltaMag) { return pow(10, -deltaMag / 2.5); }
+
+// Returns the magnitude difference corresponding to a brightness ratio.
+// E.g. ratio = 100 → -5 (100× brighter = 5 mag brighter),
+// ratio = 0.01 → 5 (100× fainter = 5 mag fainter).
+function magnitudeDifference(ratio) { return -2.5 * Math.log10(ratio); }
+
+// Returns the combined apparent magnitude of two sources with magnitudes m1 and m2.
+// Sums their brightnesses and converts back to magnitude.
+function combinedMagnitude(m1, m2) { return -2.5 * Math.log10(pow(10, -m1/2.5) + pow(10, -m2/2.5)); }
+
+// Converts apparent magnitude to absolute magnitude (magnitude at 10 parsecs).
+// appMag = apparent magnitude, distPC = distance in parsecs.
+function absoluteMagnitude(appMag, distPC) { return appMag - 5 * Math.log10(distPC / 10); }
+
+// Converts absolute magnitude to apparent magnitude at a given distance.
+// absMag = absolute magnitude, distPC = distance in parsecs.
+function apparentMagnitude(absMag, distPC) { return absMag + 5 * Math.log10(distPC / 10); }
 
