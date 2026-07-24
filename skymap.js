@@ -1214,7 +1214,7 @@ function skymapDraw(canvas, params) {
         const cmag = cometMagnitude(c.H, c.k, h.r, geoDist);
         ssCache.push({ type:'comet', name:c.name,
           x:gx/geoDist, y:gy/geoDist, z:gz/geoDist,
-          mag:cmag, helioDist:h.r, geoDist });
+          mag:cmag, helioDist:h.r, geoDist, elements:c });
       }
     }
 
@@ -1232,7 +1232,7 @@ function skymapDraw(canvas, params) {
         const amag = asteroidMagnitude(a.H, a.G, h.r, geoDist, FV);
         ssCache.push({ type:'asteroid', name:a.name, num:a.num,
           x:gx/geoDist, y:gy/geoDist, z:gz/geoDist,
-          mag:amag, helioDist:h.r, geoDist, phaseAngle:FV });
+          mag:amag, helioDist:h.r, geoDist, phaseAngle:FV, elements:a });
       }
     }
 
@@ -1695,7 +1695,7 @@ function skymapDraw(canvas, params) {
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         ctx.fillStyle = '#4de';
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
-        drawnObjects.push({x:sx, y:sy, r, type:'comet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
+        drawnObjects.push({x:sx, y:sy, r, type:'comet', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, elements:obj.elements}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showCometNames) {
           ctx.fillStyle = darkMode ? '#ccc' : '#222'; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -1708,7 +1708,7 @@ function skymapDraw(canvas, params) {
         const astColor = darkMode ? '#ff0' : '#996600';
         ctx.fillStyle = astColor;
         ctx.beginPath(); ctx.arc(sx, sy, r, 0, TWOPI); ctx.fill();
-        drawnObjects.push({x:sx, y:sy, r, type:'asteroid', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist}, jx:obj.x, jy:obj.y, jz:obj.z});
+        drawnObjects.push({x:sx, y:sy, r, type:'asteroid', data:{name:obj.name, mag:obj.mag, helioDist:obj.helioDist, geoDist:obj.geoDist, elements:obj.elements}, jx:obj.x, jy:obj.y, jz:obj.z});
         if (showAsteroidNames) {
           ctx.fillStyle = astColor; ctx.font = labelFont;
           ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -2111,4 +2111,31 @@ function changeFrame(newFrame, j2000, dt, loc) {
   }
   viewFrame = newFrame;
   viewJ2000 = j2000;
+}
+
+// Fetch remote data with localStorage caching (24-hour TTL).
+function fetchCached(url, key, onSuccess) {
+  var cached = localStorage.getItem(key);
+  if (cached) {
+    try {
+      var parsed = JSON.parse(cached);
+      if (Date.now() - parsed.time < 86400000) {
+        onSuccess(parsed.data, true);
+        return;
+      }
+    } catch(e) {}
+  }
+  fetch(url)
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(function(data) {
+      try { localStorage.setItem(key, JSON.stringify({ time: Date.now(), data: data })); } catch(e) {}
+      onSuccess(data, false);
+    })
+    .catch(function(e) {
+      if (cached) {
+        try { onSuccess(JSON.parse(cached).data, true); } catch(ex) {}
+      } else {
+        console.warn(key + ' fetch failed:', e.message);
+      }
+    });
 }

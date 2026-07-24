@@ -27,6 +27,7 @@ class SkyObject {
     this.mag = opts.mag != null ? opts.mag : null;
     this.data = opts.data || null;
     this.norad = opts.norad;
+    this.elements = opts.elements || null;
   }
 
   get ra() { return atan2pi(this.jy, this.jx) * RAD_TO_DEG; }
@@ -128,7 +129,7 @@ class SkyObject {
   // ---- Serialization for Preferences persistence ----
 
   toJSON() {
-    return {
+    var o = {
       type: this.type,
       name: this.name,
       names: this.names,
@@ -138,6 +139,8 @@ class SkyObject {
       mag: this.mag,
       norad: this.norad
     };
+    if (this.elements) o.elements = this.elements;
+    return o;
   }
 
   static fromJSON(j) {
@@ -150,7 +153,8 @@ class SkyObject {
       jy: j.jy,
       jz: j.jz,
       mag: j.mag != null ? j.mag : null,
-      norad: j.norad
+      norad: j.norad,
+      elements: j.elements || null
     });
   }
 
@@ -186,7 +190,8 @@ class SkyObject {
   static fromSSEntry(entry) {
     return new SkyObject({
       type: entry.type, name: entry.name, names: [entry.name], norad: entry.norad,
-      jx: entry.x, jy: entry.y, jz: entry.z, mag: entry.mag, data: entry
+      jx: entry.x, jy: entry.y, jz: entry.z, mag: entry.mag, data: entry,
+      elements: entry.elements || null
     });
   }
 
@@ -217,7 +222,8 @@ class SkyObject {
     var mag = s ? s[S_MAG] : obj.type === 'deepsky' ? obj.data[DS_MAG] : (obj.data.mag != null ? obj.data.mag : null);
     return new SkyObject({
       type: obj.type, name: name, names: names, norad: obj.data ? obj.data.norad : undefined,
-      jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: s || obj.data
+      jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: s || obj.data,
+      elements: obj.data ? obj.data.elements : null
     });
   }
 }
