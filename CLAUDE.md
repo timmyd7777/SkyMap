@@ -10,7 +10,7 @@ SkyMap is a browser-based interactive sky map that renders stars, constellations
 
 ## Running
 
-Open `index.html` directly in a browser. On desktop it loads `stars.js` (~130K stars to mag 9) and `deepsky.js` (~12K NGC/IC objects); on mobile it loads `stars_hr.js` (~9000 stars to mag 9) and `deepsky_mc.js` (~229 Messier+Caldwell objects) — the choice is made at runtime via user-agent detection. Asteroid, comet, and satellite orbital elements are fetched from southernstars.com at init (cached in localStorage for 24 hours).
+Open `index.html` directly in a browser. On desktop it loads `stars.js` (~130K stars to mag 9) and `deepsky.js` (~12K NGC/IC objects); on mobile it loads `stars_hr.js` (~9000 stars to mag 9) and `deepsky_mc.js` (~223 Messier+Caldwell objects) — the choice is made at runtime via user-agent detection. Asteroid, comet, and satellite orbital elements are fetched from southernstars.com at init (cached in localStorage for 24 hours).
 
 ## Data Generation
 
@@ -37,57 +37,463 @@ Scripts auto-download source data (CSVs from [SSCore](https://github.com/timmyd7
 
 All code is vanilla JavaScript with no frameworks or bundling. The files load via `<script>` tags in `index.html`.
 
-### Code Modules
+---
 
-- **`astromath.js`** — Foundation layer. Math constants (`TWOPI`, `HALFPI`, `DEG_TO_RAD`, `RAD_TO_DEG`, `JD2000` = 2451545.0, `SIDEREAL_DAY`, `AU_PER_PC`, `AU_PER_LY`, `KM_PER_AU` = 149597870.7, `LY_PER_PC`, `PC_PER_LY`, `GAUSS_K`, `EARTH_RADIUS_KM` = 6378.14, `EARTH_RADIUS_AU`, `SUN_RADIUS_AU`, `LIGHT_SPEED_KM_PER_SEC` = 299792.458, `LIGHT_SPEED_AU_PER_DAY` = 173.144632674, `OBLIQUITY_J2000`, `NGP_RA`/`NGP_DEC`, `GCEN_RA`/`GCEN_DEC`), destructured `Math.*` functions, `mod360(deg)` and `mod2pi(rad)` for reducing angles to [0,360) or [0,2π), `atan2pi(y, x)` (same as `atan2(y, x)` but returns [0, 2π) instead of (-π, π]) so callers that need a positive-range angle don't have to wrap the result in `mod2pi()`/`mod360()` themselves — used internally by `eclToEq()` (whose returned RA is therefore already in [0, 2π)). Angle formatting/parsing (degree-based, moved here from searchinfo.js since they're broadly useful, not search-specific): `formatRA(raDeg)`/`formatDec(decDeg)` format RA as `HHh MMm SS.Ss` (0.1s precision) and signed Dec as `±DD° MM' SS"` (1" precision); `formatDMS(deg)` is the unsigned equivalent (NOT for declination — use `formatDec()` for signed values; callers with a sign, like `formatLonLat()`, take `Math.abs()` and prepend their own sign/hemisphere letter) and includes the rounding-carry guard (59.9999" → 1' 0.0", not an invalid "60"") that `formatDec()` avoids needing via a different construction (rounds total arcseconds once, then floors/mods the already-rounded value, rather than flooring degrees/minutes and rounding seconds last). `parseRA(str)`/`parseDec(str)`/`parseDMS(str)` parse the reverse (several formats: `H M S`/`H:M:S`/`HhMmSs` for RA, plus signed `D° M' S"`/`D:M:S`/bare degrees for Dec and `parseDMS`), returning `null` on an unparseable or out-of-range string. `formatLonLat(lonDeg, latDeg)` formats an observer position as `Lon D° M' S" E/W  Lat D° M' S" N/S`. Julian date/sidereal time (with Julian/Gregorian calendar switchover at Oct 15, 1582), `calendarDate()` inverse (JD→calendar), `deltaT(jd)` returning ΔT in seconds (Espenak & Meeus polynomial expressions, valid −1999 to +3000), `gmst(jd)` returning Greenwich Mean Sidereal Time in radians, `localSiderealTime(jd, lonRad)` returning LST in radians, `riseTransitSet(raRad, decRad, jd, latRad, lonRad, h0Rad, rtsFlag)` implementing Meeus Ch.15 rise/transit/set for a single event (`rtsFlag`: -1 rise, 0 transit, +1 set) at a given position; `jd` doubles as the sidereal-time reference and as the anchor the returned event is chosen nearest to (Newton-style — see below), letting repeated calls converge instead of snapping to an arbitrary sidereal cycle. Returns `{status, jd}`: `status` is `'normal'`, `'never-rises'`, or `'never-sets'` (circumpolar); `jd` is the event's JD (UT) or `null` unless `status` is `'normal'`. `riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, iterations)` refines this for fast movers (the Moon especially, whose RA/Dec can't be treated as fixed for a whole day): starts at local noon (`jd0 + 0.5`), and on each pass re-evaluates position via the `getRaDec(jd)` callback at the previous pass's result before calling `riseTransitSet()` again. Uses a two-pass approach: if the converged result falls outside `[jd0, jd0+1)`, shifts by one sidereal day toward the target day and re-iterates — this handles objects whose rise and set belong to different transit cycles (e.g. rises at 9pm, sets at 3am) without falsely reporting `'none'`. For genuinely absent events (the Moon can skip a rise or set on a given day due to the sidereal/solar day mismatch), the second pass also lands outside the day and `status: 'none'` is returned. Default `iterations` is 3 (near-instant convergence, verified numerically to sub-second residuals); pass 1 for near-fixed objects (stars, deep sky) where a single pass already converges. IAU 1976 precession (`precessAngles()` returns Lieske arcsecond-based zetaA/zA/thetaA in radians), IAU 1980 nutation (3 dominant terms), mean/true obliquity, refraction (Bennett true→apparent, Saemundsson apparent→true), coordinate transforms (ecliptic↔equatorial, equatorial↔horizon), 3×3 matrix operations (row-major flat arrays), spherical↔Cartesian conversions (`xyz2sph()`/`uxyz2sph()` return longitude via `atan2pi()`, so it's already in [0, 2π) like `eclToEq()`'s RA), vector helpers (`dot(x1,y1,z1, x2,y2,z2)` dot product, `cross(x1,y1,z1, x2,y2,z2)` cross product returning `[x,y,z]`, `vmag(x,y,z)` vector magnitude, `angSep(x1,y1,z1, x2,y2,z2)` angular separation between unit vectors (haversine-based, stable for small angles), `posAng(x1,y1,z1, x2,y2,z2)` position angle north through east), and `frameMatrix(frame, jd, latRad, lonRad, j2000)` which builds the J2000→target-frame rotation matrix. When `j2000` is true, equatorial returns identity and ecliptic returns `rx(-OBLIQUITY_J2000)`. The J2000-to-galactic rotation matrix `mGalactic` is computed from `NGP_RA`/`NGP_DEC`/`GCEN_RA`/`GCEN_DEC`. `ImageFrame(raRad, decRad, orient, width, height, fovX, fovY, mirror)` defines an image frame for astrometry using gnomonic/tangent-plane projection. Center RA/Dec are J2000 mean equatorial radians; `orient` is the position angle of image "up" (0 = toward NCP, increasing through east); `width`/`height` are pixel dimensions; `fovX`/`fovY` are the corresponding angular fields of view in radians; `mirror` (default false) indicates a horizontally flipped image (East = right in pixel coords), encoded as a negative `scaleX` so the projection formulas handle both cases. The constructor builds a 3×3 rotation matrix `m = rz(-π/2 - orient) · ry(dec - π/2) · rz(-ra)` (J2000 → image frame) and its transpose `mt` (inverse); the `-π/2` (not `+π/2`) is required for `orient = 0` to actually mean north-up as documented — `solveImageFrame()`'s boresight matrix uses the matching `rz(-π/2)` for its own `orient = 0` case, so the two stay consistent. Methods: `skyXYZtoPixelXY(jx, jy, jz)` projects a J2000 unit vector to `[px, py]` via `mvmul(m, ...)` then gnomonic division by `iz` with X negated (East = left, standard astronomical convention; the negative `scaleX` for mirrored images cancels this negation); returns null if behind tangent plane. `pixelXYtoSkyXYZ(px, py)` unprojects to a J2000 unit vector via `mvmul(mt, tx, ty, 1)` then normalization; `raDecToPixelXY(ra, dec)` and `pixelXYtoRADec(px, py)` are spherical wrappers using `sph2uxyz`/`uxyz2sph`. `solveImageFrame(stars, width, height)` fits an ImageFrame to N≥3 reference stars (each `{jx, jy, jz, px, py}`): estimates the boresight from the mean star direction, gnomonic-projects onto the tangent plane, solves the affine mapping via 3×3 normal equations (Cramer's rule), detects mirroring from the sign of the affine determinant (`a·d - b·c`: positive = standard, negative = mirrored), extracts scale/orientation from the affine coefficients (`scaleX = sqrt(a²+b²)`, `orient = atan2pi(-b, -a)` for standard or `atan2pi(b, a)` for mirrored), refines the boresight from the affine offset, and iterates twice for sub-milliarcsecond convergence. Returns `{frame, residuals}` (per-star pixel errors) or null on failure. `drawImageFrame(frame)` in skymap.js renders the frame as a quadrilateral on the sky map with a dot at the (0,0) pixel corner (currently hidden in the UI; controlled by `params.imageFrame`).
+### `astromath.js` — Foundation layer
 
-- **`vsop87.js`** — VSOP87 truncated planetary ephemeris data (Bretagnon & Francou 1988), truncated to the level in Meeus "Astronomical Algorithms" 2nd ed. Appendix III (~2430 terms across 8 planets). Heliocentric ecliptic-of-date spherical coordinates (L, B, R) from VSOP87D. Each term is `[A, B, C]` where contribution = `A * cos(B + C * τ)`, with τ in Julian millennia from J2000. Generated by `data/gen_vsop87.py`.
+**Constants:** `TWOPI`, `HALFPI`, `DEG_TO_RAD`, `RAD_TO_DEG`, `JD2000` = 2451545.0, `SIDEREAL_DAY`, `AU_PER_PC`, `AU_PER_LY`, `KM_PER_AU` = 149597870.7, `LY_PER_PC`, `PC_PER_LY`, `GAUSS_K`, `EARTH_RADIUS_KM` = 6378.14, `EARTH_RADIUS_AU`, `SUN_RADIUS_AU`, `LIGHT_SPEED_KM_PER_SEC` = 299792.458, `LIGHT_SPEED_AU_PER_DAY` = 173.144632674, `OBLIQUITY_J2000`, `REFRACTION_ALT` (−34 arcmin), `NGP_RA`/`NGP_DEC`, `GCEN_RA`/`GCEN_DEC`. Also destructured `Math.*` functions.
 
-- **`planets.js`** — Orbital mechanics. `vsop87Position(planet, tau)` evaluates the VSOP87 series for Sun (via Earth) and Mercury–Neptune; Schlyter elements are retained for Pluto only. `moonPositionMeeus(d)` implements Meeus ch.47 truncated ELP2000 lunar theory (`d` = days since J2000.0 in dynamical time). Also: Kepler equation solver (elliptical, parabolic, near-parabolic, hyperbolic), magnitude formulas (planets, asteroids via H/G system, comets via H/k), Saturn ring tilt, topocentric parallax in two forms — `geocentricXYZ(lstR, latRad)` returns observer WGS84 position in Earth-radii, `topocentricCorrectionXYZ(bx,by,bz, obsX,obsY,obsZ)` returns `[ra, dec, dist]` from Cartesian inputs (used for Moon and satellites to avoid redundant observer recomputation), and the legacy `topocentricCorrection(ra, dec, distER, lstR, latRad, mObs)` which wraps both — plus `asteroidPosition()`/`cometPosition()` from MPC orbital elements. Schlyter functions (`PLANETS[].elems()`, `planetHelioEcl()`, `saturnRingMagn()`) use day number `d = JD - 2451543.5` (Schlyter's epoch, 1.5 days before J2000); callers in `skymap.js` pass `d + 1.5` to convert from the J2000-based day number. `PLANET_PHYS` (ESAA 3rd Ed. Tables 10.1/10.2 + IAU WGCCRE 2009 for the Moon) provides physical parameters for Mercury–Pluto and the Moon: equatorial radius (km), geometric flattening, `poleRA(T)`/`poleDec(T)` returning north pole direction in degrees (with linear T terms for all planets, periodic terms for Jupiter's J₁–J₅, Neptune's N, and Moon's E₁–E₁₃), and `W(t)` returning prime meridian angle in degrees (with periodic terms for Mercury's M₁–M₅, Neptune's N, and Moon's E₁–E₁₃). Jupiter uses System II (non-equatorial atmosphere, includes GRS); Saturn uses System I (atmospheric/visual); alternate systems are retained as comments. T = Julian centuries, t = days from J2000. `planetOrientation(name, d, jx, jy, jz)` takes days since J2000.0 (dynamical time, light-time corrected) and observer-to-body J2000 unit vector; returns `{ subObsLat, subObsLon, polePA }` where `polePA` is the J2000 position angle of the pole (via `posAng()`). Uses ESAA 3rd Ed. left-handed body frame (`y = w × n`, eq 10.24) for the prime meridian and secondary axis; the resulting `subObsLon` is in the ESAA convention (longitude increasing westward), which must be negated for display of retrograde rotators (Venus) and the Moon (selenographic longitude increases eastward). `shadowRadii(R, D, dSun)` computes umbral and penumbral shadow radii (in AU) for a sphere of radius R casting a shadow at distance D, with the Sun at distance dSun; umbra is clamped to 0 when the cone has converged (annular shadow). `solSysObjPosition(target, jd, latRad, lonRad)`, at the end of the Schlyter section (right before `moonPositionMeeus`), computes of-date equatorial RA/Dec (radians) for any solar system body at an arbitrary JD using Schlyter formulae, accurate to about 1-2 arcminutes — Sun, Moon (with topocentric correction), and Mercury–Pluto by name string, plus asteroids and comets as an already-resolved element object (the caller looks it up once from `loadedAsteroids`/`loadedComets`, rather than this function searching either array on every call; the two are distinguished by an asteroid's `a` field vs. a comet's `q` field). Internally converts `jd` to JDE via `deltaT()` for the position formulae (day number `d = jde - 2451543.5`), matching the codebase-wide JDE convention; the Moon's topocentric correction still uses `gmst(jd)` (JD/UT), since sidereal time is always UT-based. Used by `searchinfo.js` for fast, iterative rise/transit/set computation without disturbing `ssCache`.
+**Angle utilities:**
+- `mod360(deg)` / `mod2pi(rad)` — reduce angles to [0,360) or [0,2π).
+- `atan2pi(y, x)` — like `atan2` but returns [0, 2π) instead of (−π, π]. Used internally by `eclToEq()` (whose returned RA is therefore already in [0, 2π)).
 
-- **`mpc.js`** — Parsers for MPC (Minor Planet Center) orbital element files. `parseMPCComets(text)` parses Soft00Cmt format (perihelion time, q, e, ω, Ω, i, H, k). `parseMPCAsteroids(text)` parses MPCORB format (packed epoch, M, ω, Ω, i, e, n, a, H, G). `mpcUnpackEpoch(s)` decodes MPC packed epoch strings (century code I/J/K, hex-encoded month/day).
+**Angle formatting/parsing** (degree-based, moved here from searchinfo.js since they're broadly useful):
+- `formatRA(raDeg)` / `formatDec(decDeg)` — format RA as `HHh MMm SS.Ss` (0.1s precision) and signed Dec as `±DD° MM' SS"` (1" precision).
+- `formatDMS(deg)` — unsigned equivalent (NOT for declination — use `formatDec()` for signed values; callers with a sign, like `formatLonLat()`, take `Math.abs()` and prepend their own sign/hemisphere letter). Includes the rounding-carry guard (59.9999" → 1' 0.0") that `formatDec()` avoids needing via a different construction (rounds total arcseconds once, then floors/mods the already-rounded value).
+- `parseRA(str)` / `parseDec(str)` / `parseDMS(str)` — parse the reverse (several formats: `H M S`/`H:M:S`/`HhMmSs` for RA, plus signed `D° M' S"`/`D:M:S`/bare degrees for Dec and `parseDMS`). Return `null` on unparseable or out-of-range input.
+- `formatLonLat(lonDeg, latDeg)` — formats observer position as `Lon D° M' S" E/W  Lat D° M' S" N/S`.
 
-- **`sgp4.js`** — TLE/CSV parser and SGP4/SDP4 orbit propagators. `parseSatellites(text)` auto-detects classic 3-line TLE vs CelesTrak OMM CSV format. SGP4 handles near-earth orbits (period < 225 min); SDP4 handles deep-space orbits (GEO, GPS, Molniya) with lunar/solar perturbations and geopotential resonance. `sgp4Propagate(sat, tsince)` dispatches automatically based on `sat.deep`. Output is TEME (True Equator Mean Equinox) position/velocity in WGS72 Earth-radii and Earth-radii/min. Satellite epochs are UTC — use JD not JDE (no Delta-T).
+**Time functions:**
+- `julianDate()` — with Julian/Gregorian calendar switchover at Oct 15, 1582.
+- `calendarDate()` — inverse (JD→calendar).
+- `deltaT(jd)` — ΔT in seconds (Espenak & Meeus polynomials, valid −1999 to +3000).
+- `gmst(jd)` — Greenwich Mean Sidereal Time in radians.
+- `localSiderealTime(jd, lonRad)` — LST in radians.
 
-- **`moons.js`** — Planetary moon positions from ESAA 3rd Ed. Chapter 9 analytical theories. `marsMoons(jde)` (Sinclair 1989: Phobos, Deimos), `jupiterMoons(jde)` (Lieske 1977/1987: Io, Europa, Ganymede, Callisto via ξ/ν/ζ perturbation method), `saturnMoons(jde)` (Kozai/Taylor & Shen for Mimas–Dione inner moons; Sinclair for Rhea, Titan, Hyperion, Iapetus; Zadunaisky for Phoebe — ESAA formula is inaccurate, JPL elements preferred), `uranusMoons(jde)` (Laskar & Jacobson 1987: Miranda, Ariel, Umbriel, Titania, Oberon via complex exponential elements), `neptuneMoons(jde)` (Harris 1984 for Triton, Jacobson 1990 for Nereid — ESAA formula is inaccurate, JPL elements preferred), `plutoMoons(jde)` (Tholen 1985 for Charon). Each function takes JDE (Julian Ephemeris Date in dynamical time) and returns an array of `{name, x, y, z}` where x,y,z are planetocentric J2000 equatorial coordinates in AU. Uses B1950→J2000 frame tie matrix (Standish 1982) for theories originally in B1950. Titan corrects a `sin(ns-ns)` bug present in the original C code; Triton and Nereid use the full spherical trig formula `orbitPosition()`. `MOON_DATA` provides JPL mean orbital elements and physical parameters (semi-major axis, eccentricity, inclination, argument of periapsis, mean anomaly, node, epoch, mean motion, precession periods, reference plane pole RA/Dec, radius, and absolute magnitude H) for the 24 moons with analytical theories; generated by `data/gen_moondata.py` from PDFs in `docs/jpl/`. `Pnode` sign encodes precession direction: negative for prograde orbits (i ≤ 90°, node regresses) and positive for retrograde orbits (i > 90°, node advances); `Pw` is the argument-of-periapsis period (not longitude of periapsis — e.g. the Moon's `Pw` ≈ 6.0 yr, vs the well-known 8.85-yr longitude-of-perigee period which includes nodal regression). The PDF's `n` column is mean longitude rate, converted to mean anomaly rate by `gen_moondata.py` accounting for the signed `Pnode`. `moonPositionKepler(name, jde)` computes planetocentric J2000 equatorial XYZ in AU from `MOON_DATA` Keplerian elements with secular node and periapsis precession; used by `skymap.js` for Phoebe and Nereid in place of their inaccurate ESAA analytical theories. `planetMoonMagnitude(name, helioDist, geoDist)` computes apparent magnitude from `MOON_DATA[name].H`.
+**Rise/transit/set:**
+- `riseTransitSet(raRad, decRad, jd, latRad, lonRad, h0Rad, rtsFlag)` — Meeus Ch.15 for a single event (`rtsFlag`: −1 rise, 0 transit, +1 set). `jd` doubles as sidereal-time reference and anchor for the returned event (Newton-style convergence). Returns `{status, jd}`: `status` is `'normal'`, `'never-rises'`, or `'never-sets'`; `jd` is the event's JD (UT) or `null`.
+- `riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0Rad, rtsFlag, iterations)` — for fast movers (especially the Moon). Starts at local noon (`jd0 + 0.5`), re-evaluates position via the `getRaDec(jd)` callback each pass. Two-pass approach: if the converged result falls outside `[jd0, jd0+1)`, shifts by one sidereal day and re-iterates (handles rise at 9pm / set at 3am across transit cycles). When the Moon skips a rise or set on a given day (sidereal/solar day mismatch), the second pass also lands outside the day and `status: 'none'` is returned. Default `iterations` = 3 (sub-second convergence, verified numerically to sub-second residuals); pass 1 for near-fixed objects.
 
-- **`satmag.js`** — McCants satellite standard magnitudes (`SATMAG` lookup by NORAD ID, at 1000 km range, half-phase) plus `satApparentMag()` which computes apparent magnitude from geocentric TEME position, observer TEME position, and Sun TEME direction. Includes cylindrical Earth-shadow eclipse test and diffuse-sphere phase-angle correction. Generated by `data/gen_satmag.py`; **`satApparentMag()` is hand-written code appended after the generated lookup table — do not overwrite it when regenerating**.
+**Precession & nutation:**
+- IAU 1976 precession (`precessAngles()` returns Lieske arcsecond-based zetaA/zA/thetaA in radians).
+- IAU 1980 nutation (3 dominant terms).
+- Mean/true obliquity.
 
-- **`skymap.js`** — Rendering engine. Pure Canvas 2D rendering with no DOM dependencies. The main function `skymapDraw(canvas, params)` calls `frameMatrix()` to get rotation matrices, computes nutation/obliquity/LST directly, then draws all layers in z-order. Params include `showHorizon` (boolean, controls horizon fill independently of frame — the HTML UI ties it to `viewFrame === 'horizon'` but external callers can set it independently), `showHorizonLabels` (boolean, controls cardinal direction labels N/NE/E/.../NW independently of frame — works in any frame via `horProject`/`horProjectRaw`), `showMeridian` (boolean, controls the bold horizon-frame meridian below, via its own "Meridian" checkbox independent of `showGrid`), `refraction` (boolean, when true the horizon line/mask/meridian endpoints sit at `REFRACTION_ALT` = −34 arcmin, when false they sit at exactly 0° altitude; computed once as `horizonAlt = refraction ? REFRACTION_ALT : 0`), `showSelection` (boolean, toggles the selected-object marker and label), and `flipH`/`flipV` (boolean, mirror the view horizontally/vertically). Flipping is implemented in `toScreen()` via sign factors `fX`/`fY`; the inverse `viewUnproject()` divides them out. Local drawing functions (`drawPhaseDisc`, `drawPlanetGrid`, `drawSaturnRing`) apply `ctx.scale(fX, fY)` in their canvas transform stack so phase shading, grids, and rings flip correctly. `j2kPAToScreen()` divides out the flip factors from its screen-space delta so it returns unflipped canvas-space angles for `ctx.rotate()`; galaxy ellipses apply `atan2(fY*sin(rot), fX*cos(rot))` to transform the angle for `ctx.ellipse()`. The `toSunAngle` Jacobian is unflipped — the `ctx.scale(fX, fY)` transform handles it. The horizon high-zoom fill hack fills upward when `flipV`. Drag deltas are negated per axis when flipped. Solar system positions (Sun, Moon, planets, planetary moons, asteroids, comets, satellites) are cached as J2000 equatorial unit vectors in `ssCache` and recomputed when JD or observer location changes; after rebuilding, `ssCache` is sorted by geocentric distance (farthest first) so `drawSolarSystem()` renders back-to-front for correct occlusion (painter's algorithm). `updateSSCache()` converts JD to JDE via `deltaT()` and builds three rotation matrices: `mEcl2J2000 = P^T · Rx(ε_mean)` (ecliptic of-date → J2000 equatorial, for VSOP87 planets/Sun/Pluto), `mNP = N · P` (its transpose converts true equatorial of-date → J2000, for Moon/satellites after topocentric correction), and `mJ2kEcl2Eq = rx(OBLIQUITY_J2000)` (J2000 ecliptic → J2000 equatorial, for asteroids/comets with MPC J2000 elements). Satellites are propagated via `sgp4Propagate()` using JD (UTC, not JDE), with observer TEME position computed from WGS84 ellipsoid for topocentric correction and magnitude estimation via `satApparentMag()`. Each satellite's `ssCache` entry carries `norad` (NORAD catalog ID) alongside `name`, since rocket-body/debris objects frequently reuse generic names (e.g. multiple distinct "SL-16 R/B") — `name` alone is not a reliable identity for satellites the way it is for every other SS type. Eclipsed (or backlit) satellites get `mag: Infinity` from `satApparentMag()` but are still pushed to `ssCache` — matching how planetary moons in shadow are handled — so the search panel can still find/list them; `drawSolarSystem()`'s existing `obj.mag > magLimit + 3` visibility check already keeps them off the map without a separate `=== Infinity` check. `NaN` (as opposed to `Infinity`) means the magnitude computation itself failed — most likely `sgp4Propagate()` returning a degenerate position for some orbits, since `sgp4.js` has no guards against decayed/invalid elements — and is explicitly skipped (`continue`, not pushed) rather than shown as eclipsed, because unlike `Infinity`, `NaN` compares false against every value (including other `NaN`s) and silently scrambles magnitude-sorted order wherever it lands. A satellite with no McCants standard-magnitude entry is unrelated to either case — `satApparentMag()` defaults it to a normal, finite +6.0 rather than `NaN`/`Infinity`. One-iteration light-time correction is applied to all planets, Pluto, asteroids, and comets: a cheap Schlyter first pass estimates geocentric distance, then the accurate position is computed at retarded time `t - Δ/c`. Topocentric parallax is applied to the Moon and satellites. Objects with a physical disc (Sun, planets/Pluto, Moon, planetary moons) also cache `angRad` — angular radius in radians, computed once in `updateSSCache()` from the same catalog constants (`SUN_DIAM1AU`/`PLANET_DIAM1AU`/`MOON_DIAM_FACTOR`/`MOON_DATA[name].radius`) used elsewhere; `drawSolarSystem()` reuses it both to size the on-screen disc (`radToPx(sx, sy, obj.angRad)`) and to enlarge the visibility-cull rectangle so a large disc isn't culled just because its center falls off-canvas (Saturn gets an extra ×2.27 for its ring). Comets, asteroids, and satellites have no `angRad` and are culled at the exact canvas bounds. During drag/zoom, cached positions are transformed through the frame matrix like stars. Object colors are hardcoded at draw time (not cached): `PLANET_COLORS` lookup for planets, fixed hex values for Sun/Moon/comets/asteroids, dark/light mode–aware colors for satellites (bright green/dark green), asteroids (bright yellow/dark yellow), and all moons including Earth's (`#bbb`/`#555` — light gray, distinct from parent planet colors). In dark mode with `showStarColors` on, stars are colored by B−V index via `bmvToRGB()` (piecewise linear: cyan for B−V < −0.5, white at 0, yellow at 1.0, red beyond 2.5; bmv=0 meaning missing data stays white). Star labels remain white regardless. Planets are drawn as phase-shaded discs when their apparent angular size (from `PLANET_DIAM1AU` in `planets.js`) exceeds the star-dot size; `drawPhaseDisc()` is shared by planets and the Moon, and accepts optional `oblateness` and `polePA` for oblate planets. Planet pole directions and sub-observer coordinates come from `planetOrientation()` in `planets.js`; flattening is looked up from `PLANET_PHYS` at draw time (not cached) and multiplied by `cos(subObsLat)` to get apparent oblateness (zero when viewed pole-on). `drawPlanetGrid()` overlays a planetographic lat/lon grid (latitude at 0/±30/±60°, longitude every 30°) via orthographic projection when `showPlanetGrid` is on and disc radius ≥ 10px; uses the same save/translate/rotate/scale canvas transform as `drawPhaseDisc`. For Saturn, the grid and moon shadows draw between back ring and front ring (four-layer: back ring → phase disc → grid → shadows → front ring). Saturn's ring is drawn as two filled half-ellipses (back half, then disc, then front half) using `drawSaturnRing()`, with tilt from `subObsLat`. `drawShadowDisc()` draws a penumbra (25% opaque black) and umbra circle clipped to a body's disc; skips sub-pixel shadows. `drawMoonShadows()` projects shadow center J2000 unit vectors to screen and calls `drawShadowDisc()` for each. Earth's shadow on the Moon is computed when `dot(moon, sun) < -0.9` (~154°+ elongation); umbra color is dark red (`rgba(64,0,0,0.5)`) for blood-moon effect. Moon shadows on Jupiter (Io, Europa, Ganymede, Callisto) and Saturn (Tethys, Dione, Rhea, Titan) are computed in `updateSSCache()` using `shadowRadii()`; shadow center = point in the same heliocentric direction as the moon, at the parent planet's heliocentric distance; skipped when the moon is farther from the Sun than its parent planet. Shadow angular radii = physical radius / parent geocentric distance. `j2kPAToScreen(j2kPA, vx, vy, vz, sx, sy)` converts any J2000 position angle to a screen angle by displacing the object ~1° toward the J2000 NCP, reprojecting, and taking the screen direction — used for both galaxy ellipse orientation and planet pole PA. Planet polePA for `ctx.rotate(-pa)` is derived as `HALFPI - j2kPAToScreen(obj.polePA, ...)`. `magBoost` (faint-star boost for zoom level) is capped at 5 to prevent oversized stars at extreme zoom. `radToPx(sx, sy, rad)` converts angular size in radians to pixels at a screen position, accounting for stereographic distortion (`rad * scale * (4 + r²) / 4`). `pointInPolygon(px, py, pts)` is a ray-casting point-in-polygon test used by both `pickObject()` and `drawMilkyWay()`. At high zoom (FOV < 5°), filled polygons (milky way, horizon) may have all vertices off-screen while enclosing the view; milky way uses `pointInPolygon` on the canvas center to detect this (guarded against false positives from vertices near the view anticenter), and the horizon uses `mHorizon` to compute the view center's altitude and fills the entire canvas when looking below the horizon. The grid's pole labels (Zenith/Nadir, NCP/SCP, NEP/SEP, NGP/SGP) use the same bright color as their frame's own reference line — `frameColor('horizon')` (matching `drawCardinals()`'s N/E/S/W) for Horizon, `frameColor('equatorial')`/`frameColor('ecliptic', 0.9)`/`frameColor('galactic')` (matching `drawRefLines()`'s celestial-equator/ecliptic/galactic-equator strokes) otherwise — rather than the dim color used for the numeric latitude labels alongside them, and likewise match `drawCardinals()`'s bold, slightly larger font (divisor 80 vs the regular grid labels' 85). `drawHorizonMeridian()` draws the local N/S meridian in the same bold horizon color, but only the above-horizon arc (`horizonAlt` → zenith → `horizonAlt`), on top of the regular (dim) grid meridian at that same great circle; shown only in Horizon frame, gated on its own `showMeridian` param (a "Meridian" checkbox in `index.html`, independent of `showGrid`). Contains stereographic projection, label collision avoidance, `formatCoords()` for frame-aware coordinate display, object hit-testing (`pickObject`), frame switching (`changeFrame`), and optional astrological symbol rendering for solar system bodies (`PLANET_SYMBOLS`). Global projection functions are assigned as closures near the top of `skymapDraw()` (after `M`, `toScreen`, and `scale` are set up) so all code inside and outside the function can use them: `skyProject(jx, jy, jz)` projects a J2000 mean equatorial unit vector to canvas `[sx, sy]` (or null if behind the hemisphere), `skyUnproject(sx, sy)` is the inverse (canvas pixels → J2000 unit vector `[jx, jy, jz]` or null), `skyIsVisible(jx, jy, jz)` tests hemisphere visibility, `radToPx(sx, sy, rad)` converts angular size in radians to pixels (accounting for stereographic distortion), and `pxToRad(sx, sy, px)` is its inverse. `viewProject(lat, lon)` projects current-frame coordinates to canvas pixels (the counterpart to `viewUnproject`). Both are thin wrappers: `viewProject` converts frame coords to J2000 via `mFrameT` then calls `skyProjectRaw`; `viewUnproject` calls `skyUnproject` then rotates back to frame coords via `mFrame`. `viewProjectRaw` is the non-null variant (clamps behind-hemisphere points to a large radius for continuous lines). `horProject(alt, az)` and `horProjectRaw(alt, az)` always project horizon az/alt to screen correctly regardless of the current view frame, using `mHorizonT` (= `mFrameT` when already in horizon frame, otherwise a separate horizon frame matrix). Used by `drawHorizon()`, `drawCardinals()`, and `drawHorizonMeridian()` so they work correctly in any coordinate frame. Internal drawing code uses `skyProject` directly for constellation centers, deep sky objects, and shadow projections rather than reimplementing the projection math. `drawSelectionMarker()` highlights the selected object with an orange marker and label, toggled by `showSelection`. The marker shape matches the object type: oriented ellipse for galaxies (5px larger than the drawn ellipse, using the already-flip-transformed `rot` from the `drawnObjects` entry), square for nebulae without contours, contour stroke for nebulae with contours, and circle (radius = drawn object's pixel radius + 5) for everything else. The `drawnObjects` entry for stars wraps the raw STARS array in `data: {name, star}` so that `data.name` is consistent across all object types (deep sky and solar system types already had `data.name`). Mutable view state (`viewLon`, `viewLat`, `viewFov`, `viewFrame`, `viewJ2000`, `viewRefraction`) is global so the HTML wrapper can read/write it. `viewRefraction` (boolean, default true) is set from the `refraction` param each `skymapDraw()` call; used by `refreshInfoPanel()` in `searchinfo.js` for apparent altitude display and rise/transit/set h0 computation. Object tracking: `centerObject` holds the tracked object (set by double-click); each frame, its J2000 coords are looked up from `ssCache` (for solar system objects — by `norad`+type for satellites, `name`+type otherwise) or stored directly (for stars/deep sky), transformed through `mFrame` to the current frame, and used to set `viewLon`/`viewLat`. `updateSSCache()` is called early when tracking to avoid one-frame lag. Tracking is cleared by dragging, using lon/lat sliders, clicking empty space, or selecting a different object. `fetchCached(url, key, onSuccess)` fetches remote data with a 24-hour `localStorage` cache TTL and stale-cache fallback on network failure; used by `index.html` to download asteroid, comet, and satellite orbital elements.
+**Refraction:**
+- `refractionTrue2App()` — Bennett true→apparent.
+- `refractionApp2True()` — Saemundsson apparent→true.
 
-- **`skyobject.js`** — `SkyObject` class wraps stars, deep sky objects, and solar system entries with uniform accessors: `ra`/`dec` (degrees), `raStr`/`decStr` (formatted), `displayName` (`name` if set, else first `ids` entry, else `'(unnamed)'`), `typeLabel`, `altAz(jd, latRad, lonRad)`, `distStr()`, `sizeStr()`, `phaseStr()`. Two name fields: `name` (common/proper name, empty string if none — e.g. `'Sirius'`, `'Orion Nebula'`, `'Jupiter'`) and `ids` (catalog identifier strings, excluding the common name — e.g. `['Alpha CMa', 'HR 2491', 'HD 48915']` for stars, `['M 42', 'NGC 1976']` for DSOs, `['25544']` (NORAD number) for satellites, `[]` for planets/Sun/Moon). Factory methods `fromStar(starArray)`, `fromDeepSky(dsArray)`, `fromSSEntry(ssCache entry)`, `fromDrawnObject(drawnObjects entry)`. Also stores `elements` (MPC orbital element object for asteroids/comets, null otherwise) for iterative rise/transit/set computation. Serialization: `toJSON()` persists type, name, ids, coordinates, magnitude, norad, and elements (but not `data`); `SkyObject.fromJSON(j)` reconstructs with `data: null` — accepts `ids` or legacy `names` field for backward compatibility. All getters that access `this.data[...]` (`typeLabel`, `distStr()`, `sizeStr()`) guard against null and return safe fallback strings ('Star'/'Deep Sky Object', '', ''). `typeLabel` for `'sun'` type returns `'Star'` (not `'Star (Sun)'`).
+**Coordinate transforms:** `eclToEq()` (ecliptic→equatorial), `eqToAltAz()` (equatorial→horizon). One-way only; inverse transforms use matrix operations.
 
-- **`searchinfo.js`** — Object search, list, and info panel. Search: `_buildSearchData()` lazily indexes all stars, deep sky objects, and ssCache entries; `searchObjects(query)` does case-insensitive substring matching with relevance sorting (exact > starts-with > contains, then by brightness). Object lists: `getObjectList(category, showTypes)` for 12 categories (Search Results, Planets, Moons, Asteroids, Comets, Satellites, Named Stars, Bright Stars, Double Stars, Named Deep Sky Objects, Messier Objects, Caldwell Objects) with category-specific sorting (alphabetical by default, planets by orbit order, asteroids by number, comets periodic-first then alphabetical, bright stars by Bayer designation, doubles alphabetical by Bayer/Flamsteed designation). Earth's Moon appears in the Moons list (not Planets). When `showTypes` is truthy, Messier/Caldwell/Named DSO labels append the object type in parentheses (e.g. `"M 1 - Crab Nebula (Bright Nebula)"`); SkyMap calls without `showTypes`, Pandora passes `true`. Star search labels show `"designation - name"` when both exist (e.g. `"Alpha CMa - Sirius"`). Lists can be re-sorted by magnitude via a radio button toggle. Panel functions: `toggleSearchPanel()`, `doSearch()`, `loadObjectList()`, `populateListBox()`, `onObjectListSelect()`, `searchPanelDraw()` (called each frame from `draw()` to detect map clicks and refresh live data), `refreshInfoPanel()`, `clearInfoPanel()`, `centerOnSelected()` (enters tracking mode on the selected object). SS objects are identified by name+type (not index) since ssCache is rebuilt each frame — except satellites, identified by NORAD ID+type (`SkyObject.norad`, undefined for every other type), since rocket-body/debris objects frequently reuse generic names across different launches (e.g. multiple distinct "SL-16 R/B"); a name-only match would silently resolve to whichever same-named entry happens to appear first in `ssCache`. `norad` is threaded from the `ssCache` satellite entry (skymap.js) through `drawnObjects` (map-click selection), list items (`ssNorad`) and search results, `centerObject` (tracking), and `SkyObject`/`ssData` itself; the Satellites list and search-result labels append `- norad` (e.g. "ISS (ZARYA) - 25544") so same-named entries are visually distinguishable too. `refreshInfoPanel()` computes `ssValid` — true for star/deepsky (fixed catalog position, never stale) or any other type currently found in `ssCache`; false only if a previously-selected SS object has since dropped out of `ssCache` entirely (e.g. a satellite whose TLE has gone stale, or one dropped from a reloaded catalog — not eclipse, since eclipsed satellites are still pushed to `ssCache` with `mag: Infinity`). When `!ssValid`, magnitude/coordinates/distance/size/phase all show `—` instead of the object's last (stale) values. Magnitude formatting itself distinguishes `null` (`ssValid` false → `—`) from non-finite (`Infinity`, eclipsed/backlit → `Eclipsed`) from a real number (formatted `±d.dd`). Info panel shows: type (with full star-type labels: Star, Double Star, Variable Star, Double Variable Star — used for both STARS entries and deep sky star-type entries like M 40), name (`obj.name`, common name only), catalog IDs (`obj.ids`, on separate lines via `<br>`) — relabeled "NORAD ID" and showing `obj.norad` for satellites, via the `info-catalog-label` element — coordinates in the currently-selected frame (updated dynamically when frame changes), magnitude, color index (B−V, stars only), distance, spectrum (stars and deep sky stars/globular clusters) or morphology (other deep sky types), angular size (hidden for point-source types: stars, asteroids, comets, satellites), illumination (planets/Moon), central longitude/latitude (planets/Moon with orientation data), and rise/transit/set times. `refreshInfoPanel()` applies `refractionTrue2App()` to the displayed altitude when in horizon frame and `viewRefraction` is on. `h0` (altitude of the body's center at rise/set, i.e. `riseTransitSet`'s `h0Rad`) respects `viewRefraction`: when on, `REFRACTION_ALT` (point objects), `REFRACTION_ALT - 16'` for the Sun, and `REFRACTION_ALT - angRad` for the Moon; when off, `0` / `-16'` / `-angRad` respectively. The Moon uses its actual current `ssData.angRad` (topocentric semidiameter, ~14.7'–16.8' with distance) rather than a fixed constant — because `solSysObjPosition()` already applies full topocentric correction to the Moon's RA/Dec, unlike Meeus's textbook shortcut `0.7275*parallax - 34'`, which substitutes for that correction; using the textbook constant here would trigger on the lower limb rather than the upper limb. Rise/transit/set calls `riseTransitSetIterative()` (astromath.js) three times, once per event (rise/transit/set), passing a `getRaDec(jd)` callback: for Sun, Moon, planets, asteroids, and comets the callback wraps `solSysObjPosition()` (`iterations` set to 2, since these objects move measurably during a day); planetary moons use their parent planet's RTS the same way; stars and deep sky objects pass a callback over their (essentially fixed) of-date frame-transformed position with `iterations` set to 1. For asteroids/comets, the element object is resolved once from `loadedAsteroids`/`loadedComets` before building the callback, not on every `solSysObjPosition()` call. Satellites hide the Rise/Transit/Set rows entirely (`info-rise-row`/`info-transit-row`/`info-set-row`) rather than showing a number, since a LEO satellite completes many passes per day and a single-instant "rises at X / sets at Y" would be meaningless rather than merely imprecise. `_rtsText(r)` formats a `riseTransitSetIterative()` result (`'never-rises'`/`'never-sets'`/`'none'`/formatted local time). `_formatJDLocal(jd)` formats a JD as local time using `Intl.DateTimeFormat` with `selectedTZ`.
+**3×3 matrix operations** (row-major flat arrays):
+- `mmul(a, b)` — matrix multiply.
+- `mvmul(m, x, y, z)` — matrix × vector.
+- `mtranspose(m)` — transpose (= inverse for rotation matrices).
+- `rz(a)`, `rx(a)`, `ry(a)` — rotation matrices.
 
-- **`index.html`** — UI wrapper. All DOM interaction, event handling (drag/pan/pinch-zoom/scroll-zoom/double-click tracking), time zone management via `Intl` (including historical LMT for pre-1884 dates), animation timer, sidebar controls, date stepping via Julian Date round-trip (correctly skips the Oct 5–14, 1582 Gregorian gap), data loading via `fetchCached()` (defined in `skymap.js`) for downloading and caching orbital elements and satellite TLEs from southernstars.com, and the `init()`/`draw()` loop. `getLocation()` returns `{latRad, lonRad}` — observer position in radians only (no degree fields). FOV slider is piecewise-linear via `fovToSlider()`/`sliderToFov()`: positions 1–30 map from 1' to 1° (~2'/step), positions 30–209 map from 1° to 180° (1°/step). Double-click (or double-tap on touch) enters tracking mode on the selected object; `draw()` syncs sliders after `skymapDraw()` when tracking is active. Display checkboxes include a Refraction toggle (checked by default) that reads into the `refraction` param of `skymapDraw()`. Calls `skymapDraw()` on every state change. Right-side search panel (visible by default, toggled by magnifying glass button) contains search input, object list dropdown with sortable listbox, object info table, and a "Center Object in Sky Map" button for tracking.
+**Spherical↔Cartesian:** `xyz2sph()` / `uxyz2sph()` return longitude via `atan2pi()` (already in [0, 2π)). `sph2xyz()` / `sph2uxyz()` for the reverse.
+
+**Vector helpers:** `dot()`, `cross()` (returns `[x,y,z]`), `vmag()`, `angSep()` (haversine-based, stable for small angles), `posAng()` (position angle north through east).
+
+**`frameMatrix(frame, jd, latRad, lonRad, j2000)`** — builds the J2000→target-frame rotation matrix. When `j2000` is true, equatorial returns identity and ecliptic returns `rx(-OBLIQUITY_J2000)`. The J2000-to-galactic matrix `mGalactic` is a file-level constant (IIFE) computed once from `NGP_RA`/`NGP_DEC`/`GCEN_RA`/`GCEN_DEC`.
+
+**`ImageFrame(raRad, decRad, orient, width, height, fovX, fovY, mirror)`** — image frame for astrometry using gnomonic/tangent-plane projection.
+- Center RA/Dec are J2000 mean equatorial radians; `orient` is position angle of image "up" (0 = toward NCP, increasing through east); `mirror` (default false) indicates horizontally flipped image, encoded as negative `scaleX`.
+- Constructor builds rotation matrix `m = rz(-π/2 - orient) · ry(dec - π/2) · rz(-ra)` (J2000 → image frame) and transpose `mt`. The `−π/2` (not `+π/2`) is required for `orient = 0` to mean north-up; `solveImageFrame()` uses matching `rz(−π/2)` for consistency.
+- `skyXYZtoPixelXY(jx, jy, jz)` — projects J2000 unit vector to `[px, py]` via gnomonic division with X negated (East = left, astronomical convention; negative `scaleX` cancels for mirrored images). Returns null if behind tangent plane.
+- `pixelXYtoSkyXYZ(px, py)` — unprojects to J2000 unit vector.
+- `raDecToPixelXY(ra, dec)` / `pixelXYtoRADec(px, py)` — spherical wrappers.
+- `solveImageFrame(stars, width, height)` — fits an ImageFrame to N≥3 reference stars (each `{jx, jy, jz, px, py}`). Gnomonic-projects star positions onto the tangent plane, estimates boresight from mean star direction, solves affine mapping via 3×3 normal equations (Cramer's rule), detects mirroring from affine determinant sign (`a*d - b*c`: positive = standard, negative = mirrored), extracts scale (`scaleX = sqrt(a^2+b^2)`) and orientation (`orient = atan2pi(-b, -a)` for standard, `atan2pi(b, a)` for mirrored), refines boresight using the affine offset, and iterates twice for sub-milliarcsecond convergence. Returns `{frame, residuals}` or null on failure.
+- `drawImageFrame(frame)` in skymap.js renders the frame as a quadrilateral (controlled by `params.imageFrame`).
+
+---
+
+### `vsop87.js` — Planetary ephemeris data
+
+VSOP87 truncated planetary ephemeris (Bretagnon & Francou 1988), truncated to the level in Meeus "Astronomical Algorithms" 2nd ed. Appendix III (~2430 terms across 8 planets). Heliocentric ecliptic-of-date spherical coordinates (L, B, R) from VSOP87D. Each term is `[A, B, C]` where contribution = `A * cos(B + C * τ)`, with τ in Julian millennia from J2000. Generated by `data/gen_vsop87.py`.
+
+---
+
+### `planets.js` — Orbital mechanics
+
+**Core position functions:**
+- `vsop87Position(planet, tau)` — evaluates VSOP87 series for Mercury–Neptune (Sun computed via Earth in the caller `updateSSCache()`). High-accuracy path used for rendering.
+- `moonPositionMeeus(d)` — Meeus ch.47 truncated ELP2000 lunar theory (`d` = days since J2000.0 in dynamical time).
+- `asteroidPosition()` / `cometPosition()` — from MPC orbital elements.
+
+**Schlyter position functions:**
+- `sunPosition(d)` — Schlyter Sun position.
+- `moonPosition(d, sunM, sunW)` — Schlyter Moon position with perturbation corrections, distinct from `moonPositionMeeus()`.
+- `planetPerturbations(name, d, lon, lat, r)` — mutual perturbation corrections for Jupiter/Saturn/Uranus.
+
+**Kepler equation solver:** elliptical, parabolic, near-parabolic, hyperbolic.
+
+**Magnitude formulas:** `planetMag()` for planets, `moonMag()` for the Moon, asteroids (H/G system), comets (H/k). `phaseElongation(s, R, r)` computes phase angle and elongation from three distances. `inUmbralShadow()` tests whether a point lies inside a conical shadow (used by `satApparentMag()`).
+
+**Saturn ring tilt** via `saturnRingMagn()`.
+
+**Topocentric parallax** (two forms):
+- `geocentricXYZ(lstR, latRad)` — observer WGS84 position in Earth-radii.
+- `topocentricCorrectionXYZ(bx,by,bz, obsX,obsY,obsZ)` — returns `[ra, dec, dist]` from Cartesian inputs (for Moon and satellites, avoids redundant observer recomputation).
+- `topocentricCorrection(ra, dec, distER, lstR, latRad, mObs)` — legacy wrapper.
+
+**Schlyter functions:** `PLANETS[].elems()`, `planetHelioEcl()`, `saturnRingMagn()` use day number `d = JD − 2451543.5` (Schlyter's epoch, 1.5 days before J2000); callers in `skymap.js` pass `d + 1.5`. Schlyter elements exist for ALL planets Mercury–Pluto and are used by `solSysObjPosition()` for fast lower-accuracy computation (~1–2 arcminute); VSOP87 is used by `skymap.js` for high-accuracy rendering.
+
+**`PLANET_PHYS`** (ESAA 3rd Ed. Tables 10.1/10.2 + IAU WGCCRE 2009 for the Moon) — physical parameters for Mercury–Pluto, Earth, and the Moon:
+- Equatorial radius (km), geometric flattening.
+- `poleRA(T)` / `poleDec(T)` — north pole direction in degrees (with periodic terms for Jupiter's J₁–J₅, Neptune's N, Moon's E₁–E₁₃).
+- `W(t)` — prime meridian angle in degrees (with periodic terms for Mercury's M₁–M₅, Neptune's N, Moon's E₁–E₁₃).
+- Jupiter uses System II (non-equatorial atmosphere, includes GRS); Saturn uses System I (atmospheric/visual); alternates retained as comments.
+- T = Julian centuries, t = days from J2000.
+
+**`planetOrientation(name, d, jx, jy, jz)`** — takes days since J2000.0 (dynamical time, light-time corrected) and observer-to-body J2000 unit vector. Returns `{ subObsLat, subObsLon, polePA }` where `polePA` is the J2000 position angle of the pole (via `posAng()`). Uses ESAA 3rd Ed. left-handed body frame (`y = w × n`, eq 10.24). The resulting `subObsLon` is in the ESAA convention (longitude increasing westward), which must be negated for display of retrograde rotators (Venus) and the Moon (selenographic longitude increases eastward).
+
+**`shadowRadii(R, D, dSun)`** — umbral and penumbral shadow radii (in AU) for a sphere of radius R at distance D with Sun at dSun; umbra clamped to 0 for annular shadow.
+
+**`solSysObjPosition(target, jd, latRad, lonRad)`** — computes of-date equatorial RA/Dec (radians) for any solar system body at an arbitrary JD using Schlyter formulae (~1–2 arcminute accuracy). Accepts Sun, Moon (with topocentric correction), Mercury–Pluto by name string, plus asteroids/comets as an already-resolved element object (distinguished by asteroid's `a` field vs. comet's `q`). Converts `jd` to JDE via `deltaT()` internally; Moon's topocentric correction uses `gmst(jd)` (UT-based). Used by `searchinfo.js` for fast iterative rise/transit/set computation without disturbing `ssCache`.
+
+---
+
+### `mpc.js` — MPC orbital element parsers
+
+- `parseMPCComets(text)` — parses Soft00Cmt format (perihelion time, q, e, ω, Ω, i, H, k).
+- `parseMPCAsteroids(text)` — parses MPCORB format (packed epoch, M, ω, Ω, i, e, n, a, H, G).
+- `mpcUnpackEpoch(s)` — decodes MPC packed epoch strings (century code I/J/K, hex-encoded month/day).
+
+---
+
+### `sgp4.js` — TLE/CSV parser and SGP4/SDP4 orbit propagators
+
+- `parseSatellites(text)` — auto-detects classic 3-line TLE vs CelesTrak OMM CSV format.
+- SGP4 handles near-earth orbits (period < 225 min); SDP4 handles deep-space (GEO, GPS, Molniya) with lunar/solar perturbations and geopotential resonance.
+- `sgp4Propagate(sat, tsince)` — dispatches automatically based on `sat.deep`. Output is TEME position/velocity in WGS72 Earth-radii and Earth-radii/min.
+- Satellite epochs are UTC — use JD not JDE (no Delta-T).
+
+---
+
+### `moons.js` — Planetary moon positions
+
+ESAA 3rd Ed. Chapter 9 analytical theories. Each function takes JDE (Julian Ephemeris Date in dynamical time) and returns an array of `{name, x, y, z}` where x,y,z are planetocentric J2000 equatorial coordinates in AU. Uses B1950→J2000 frame tie matrix (Standish 1982) for theories originally in B1950.
+
+- `marsMoons(jde)` — Sinclair 1989: Phobos, Deimos.
+- `jupiterMoons(jde)` — Lieske 1977/1987: Io, Europa, Ganymede, Callisto via ξ/ν/ζ perturbation method.
+- `saturnMoons(jde)` — Kozai/Taylor & Shen for Mimas–Dione inner moons; Sinclair for Rhea, Titan, Hyperion, Iapetus; Zadunaisky for Phoebe (ESAA formula inaccurate, JPL elements preferred).
+- `uranusMoons(jde)` — Laskar & Jacobson 1987: Miranda, Ariel, Umbriel, Titania, Oberon via complex exponential elements.
+- `neptuneMoons(jde)` — Harris 1984 for Triton, Jacobson 1990 for Nereid (ESAA formula inaccurate, JPL elements preferred).
+- `plutoMoons(jde)` — Tholen 1985 for Charon.
+
+**Corrections:** Titan corrects a `sin(ns-ns)` bug present in the original C code; Triton and Nereid use the full spherical trig formula `orbitPosition()`.
+
+**`MOON_DATA`** — JPL mean orbital elements and physical parameters (semi-major axis, eccentricity, inclination, argument of periapsis, mean anomaly, node, epoch, mean motion, precession periods, reference plane pole RA/Dec, radius, absolute magnitude H) for the 24 moons with analytical theories. Generated by `data/gen_moondata.py` from PDFs in `docs/jpl/`.
+- `Pnode` sign encodes precession direction: negative for prograde orbits (i ≤ 90°, node regresses), positive for retrograde orbits (i > 90°, node advances).
+- `Pw` is the argument-of-periapsis period (not longitude of periapsis — e.g. Moon's `Pw` ≈ 6.0 yr vs the well-known 8.85-yr longitude-of-perigee period which includes nodal regression).
+- The PDF's `n` column is mean longitude rate, converted to mean anomaly rate by `gen_moondata.py` accounting for signed `Pnode`.
+
+**`moonPositionKepler(name, jde)`** — computes planetocentric J2000 equatorial XYZ in AU from `MOON_DATA` Keplerian elements with secular node and periapsis precession; used by `skymap.js` for Phoebe and Nereid in place of their inaccurate ESAA theories.
+
+**`planetMoonMagnitude(name, helioDist, geoDist)`** — apparent magnitude from `MOON_DATA[name].H`.
+
+---
+
+### `satmag.js` — Satellite magnitudes
+
+McCants satellite standard magnitudes (`SATMAG` lookup by NORAD ID, at 1000 km range, half-phase) plus `satApparentMag()` which computes apparent magnitude from geocentric TEME position, observer TEME position, and Sun TEME direction. Includes cylindrical Earth-shadow eclipse test and diffuse-sphere phase-angle correction.
+
+Generated by `data/gen_satmag.py`. **`satApparentMag()` is hand-written code appended after the generated lookup table — do not overwrite it when regenerating.**
+
+---
+
+### `skymap.js` — Rendering engine
+
+Pure Canvas 2D rendering with no DOM dependencies.
+
+#### Main function: `skymapDraw(canvas, params)`
+
+Calls `frameMatrix()` to get rotation matrices, computes nutation/obliquity/LST directly, then draws all layers in z-order.
+
+**Key params:**
+- `showHorizon` — controls horizon fill independently of frame (the HTML UI ties it to `viewFrame === 'horizon'` but external callers can set it independently).
+- `showHorizonLabels` — cardinal direction labels N/NE/E/.../NW, works in any frame via `horProject`/`horProjectRaw`.
+- `showMeridian` — bold horizon-frame meridian, via its own checkbox independent of `showGrid`.
+- `refraction` — when true, horizon line/mask/meridian endpoints sit at `REFRACTION_ALT` = −34 arcmin; when false, at exactly 0°. Computed once as `horizonAlt = refraction ? REFRACTION_ALT : 0`.
+- `showSelection` — toggles selected-object marker and label.
+- `flipH` / `flipV` — mirror the view. Implemented in `toScreen()` via sign factors `fX`/`fY`; inverse `viewUnproject()` divides them out.
+
+#### Flipping
+
+Local drawing functions (`drawPhaseDisc`, `drawPlanetGrid`, `drawSaturnRing`) apply `ctx.scale(fX, fY)` in their canvas transform stack. `j2kPAToScreen()` divides out flip factors from its screen-space delta. Galaxy ellipses apply `atan2(fY*sin(rot), fX*cos(rot))`. The `toSunAngle` Jacobian is unflipped — `ctx.scale(fX, fY)` handles it.
+
+#### Global view state
+
+Mutable view state (`viewLon`, `viewLat`, `viewFov`, `viewFrame`, `viewJ2000`, `viewRefraction`) is global so the HTML wrapper can read/write it.
+- `viewRefraction` (boolean, default true) is set from the `refraction` param each `skymapDraw()` call; used by `refreshInfoPanel()` in `searchinfo.js` for apparent altitude and rise/transit/set h0.
+
+#### Global projection closures
+
+Assigned near the top of `skymapDraw()` (after `M`, `toScreen`, and `scale` are set up):
+- `skyProject(jx, jy, jz)` — J2000 unit vector → canvas `[sx, sy]` (or null if behind hemisphere).
+- `skyUnproject(sx, sy)` — canvas pixels → J2000 unit vector (or null).
+- `skyIsVisible(jx, jy, jz)` — hemisphere visibility test.
+- `radToPx(sx, sy, rad)` — angular size to pixels (accounts for stereographic distortion: `rad * scale * (4 + r²) / 4`).
+- `pxToRad(sx, sy, px)` — inverse.
+- `viewProject(lat, lon)` — frame coords → canvas pixels (converts to J2000 via `mFrameT` then `skyProjectRaw`).
+- `viewUnproject(sx, sy)` — canvas → frame coords (calls `skyUnproject` then rotates via `mFrame`).
+- `horProject(alt, az)` / `horProjectRaw(alt, az)` — local (not global) functions that always project horizon az/alt to screen correctly regardless of current view frame, using `mHorizonT`. Used by `drawHorizon()`, `drawCardinals()`, and `drawHorizonMeridian()`.
+
+#### Solar system cache (`ssCache`)
+
+Positions cached as J2000 equatorial unit vectors, recomputed when JD or observer location changes. After rebuilding, sorted by geocentric distance (farthest first) for painter's algorithm occlusion.
+
+**`updateSSCache()`** converts JD to JDE via `deltaT()` and builds three rotation matrices:
+- `mEcl2J2000 = P^T · Rx(ε_mean)` — ecliptic of-date → J2000 equatorial (for VSOP87 planets/Sun/Pluto).
+- `mNP = N · P` — its transpose converts true equatorial of-date → J2000 (for Moon/satellites after topocentric correction).
+- `mJ2kEcl2Eq = rx(OBLIQUITY_J2000)` — J2000 ecliptic → J2000 equatorial (for asteroids/comets with MPC J2000 elements).
+
+**Light-time correction:** One-iteration for all planets, Pluto, asteroids, comets. Body position is recomputed at retarded time (`t − Δ/LIGHT_SPEED_AU_PER_DAY`) with Earth held at current time. Cheap Schlyter first pass estimates geocentric distance to avoid doubling the expensive VSOP87 series evaluation.
+
+**Topocentric parallax:** Applied to Moon and satellites.
+
+**Angular sizes:** Objects with a physical disc (Sun, planets/Pluto, Moon, planetary moons) cache `angRad` (angular radius in radians), computed once in `updateSSCache()` from the same catalog constants (`SUN_DIAM1AU`/`PLANET_DIAM1AU`/`MOON_DIAM_FACTOR`/`MOON_DATA[name].radius`) used elsewhere. `drawSolarSystem()` reuses `angRad` both to size the on-screen disc (`radToPx(sx, sy, obj.angRad)`) and to enlarge the visibility-cull rectangle so large discs aren't culled when their center falls off-canvas (Saturn gets extra ×2.27 for its ring). Comets, asteroids, and satellites have no `angRad` and are culled at the exact canvas bounds.
+
+**Satellites:** Propagated via `sgp4Propagate()` using JD (UTC, not JDE). Observer TEME position computed from WGS84 ellipsoid. Each entry carries `norad` alongside `name` since rocket-body/debris objects frequently reuse generic names. Eclipsed satellites get `mag: Infinity` but are still pushed to `ssCache` (search panel can still find them, matching how planetary moons in shadow are handled); the `obj.mag > magLimit + 3` check keeps them off the map without a separate `=== Infinity` check. Satellites fainter than `magLimit` draw at faintest-star size. `NaN` magnitudes (`sgp4Propagate()` returning degenerate positions for decayed/invalid elements, since `sgp4.js` has no guards) are explicitly skipped (not pushed) — unlike `Infinity`, `NaN` compares false against every value and silently scrambles magnitude-sorted order. Satellites with no McCants entry default to a normal, finite +6.0 (unrelated to the `Infinity`/`NaN` cases).
+
+#### Object tracking
+
+`centerObject` holds the tracked object (set by double-click or `centerOnSelected()`). Each frame, its J2000 coords are looked up from `ssCache` (by `norad`+type for satellites, `name`+type otherwise) or stored directly (for stars/deep sky), transformed through `mFrame`, and used to set `viewLon`/`viewLat`. `updateSSCache()` is called early when tracking to avoid one-frame lag. Tracking is cleared by dragging, using lon/lat sliders, clicking empty space, or selecting a different object.
+
+#### Star rendering
+
+In dark mode with `showStarColors` on, stars are colored by B−V index via `bmvToRGB()` (piecewise linear: cyan for B−V < −0.3, white at 0, yellow at 1.0, red beyond 3.0; bmv=0 meaning missing data stays white). Star labels remain white regardless. `magBoost` is capped at 5 to prevent oversized stars at extreme zoom.
+
+#### Planet rendering
+
+Planets are drawn as phase-shaded discs when their apparent angular size exceeds the star-dot size. `drawPhaseDisc()` is shared by planets and the Moon; accepts optional `oblateness` and `polePA` for oblate planets. Oblateness = `flattening * cos(subObsLat)` (zero when viewed pole-on); flattening is looked up from `PLANET_PHYS` at draw time (not cached). Planet pole directions and sub-observer coordinates come from `planetOrientation()`.
+
+**Planetographic grids:** `drawPlanetGrid()` overlays lat/lon grid (0/±30/±60° latitude, 30° longitude spacing) via orthographic projection when `showPlanetGrid` is on and disc radius ≥ 10px. Uses the same save/translate/rotate/scale canvas transform as `drawPhaseDisc`.
+
+**Phase terminator:** `toSunAngle` is computed per-object via the stereographic projection Jacobian — the Sun's view-space direction is projected onto the tangent plane at the object's position, then transformed through the Jacobian for the correct screen-space angle (`atan2(jsDy, jsDx)` — note positive `jsDy`, because the chart Y axis (`-2*vy/d`) is inverted relative to canvas Y by `toScreen()`). This is frame-invariant. `phaseElongation()` produces the Sun-body-Earth angle stored for planets and asteroids.
+
+**Saturn's ring:** Drawn as two filled half-ellipses (back half → disc → grid → shadows → front half) using `drawSaturnRing()`, with tilt from `subObsLat`. When `|sin(B)| < 0.003` (near edge-on), drawn as a single horizontal line on the front pass only (so it renders on top of the planet disc). Outer edge at 2.27 Saturn radii, inner edge at 1.24 Saturn radii.
+
+**`j2kPAToScreen(j2kPA, vx, vy, vz, sx, sy)`** — converts any J2000 position angle to a screen angle by displacing the object ~1° toward the NCP, reprojecting, and taking the screen direction. Used for galaxy ellipse orientation and planet pole PA.
+
+#### Moon shadows
+
+`drawShadowDisc()` draws penumbra (25% opaque black) and umbra circle clipped to a body's disc; skips sub-pixel shadows. Shadow angular radii = physical radius / parent geocentric distance. `drawMoonShadows()` projects shadow center J2000 unit vectors to screen.
+
+- **Earth's shadow on Moon:** Computed when `dot(moon, sun) < −0.9` (~154°+ elongation); umbra color is dark red (`rgba(64,0,0,0.5)`) for blood-moon effect.
+- **Moon shadows on Jupiter** (Io, Europa, Ganymede, Callisto) and **Saturn** (Tethys, Dione, Rhea, Titan) are computed in `updateSSCache()` using `shadowRadii()`; shadow center = point in the same heliocentric direction as the moon at the parent's heliocentric distance; skipped when moon is farther from Sun than parent.
+
+#### Planetary moons
+
+Rendered as `type:'planetmoon'` in light gray (`#bbb`/`#555`). Shown automatically when `showPlanets` is on and FOV < 10°; labels follow `showPlanetNames`. When angular diameter exceeds star-dot size, drawn as a filled disc. Moons behind their parent's disc are skipped (occlusion check accounts for apparent oblateness via the ellipse equation). Moons in their parent's umbral shadow cone get `mag = Infinity` and are not rendered.
+
+#### Horizon and grid rendering
+
+At high zoom (FOV < 5°), filled polygons (milky way, horizon) may have all vertices off-screen while enclosing the view. Milky way uses `pointInPolygon` on the canvas center; horizon uses `mHorizon` to compute the view center's altitude and fills the entire canvas when looking below the horizon.
+
+Grid pole labels (Zenith/Nadir, NCP/SCP, NEP/SEP, NGP/SGP) use the same bright color as their frame's reference line (via `frameColor('horizon')`, `frameColor('equatorial')`, `frameColor('ecliptic', 0.9)`, `frameColor('galactic')`) rather than the dim color used for numeric latitude labels, and match `drawCardinals()`'s bold font (divisor 80 vs regular grid labels' 85). `drawHorizonMeridian()` draws the local N/S meridian arc from `horizonAlt` through zenith to `horizonAlt` above the horizon only, in the same bold horizon color, on top of the regular (dim) grid meridian at the same great circle. Gated on its own `showMeridian` param (a checkbox in `index.html`, independent of `showGrid`).
+
+#### Object colors
+
+Hardcoded at draw time (not cached): `PLANET_COLORS` for planets, fixed hex values for Sun/Moon/comets/asteroids, dark/light mode–aware colors for satellites (bright green/dark green), asteroids (bright yellow/dark yellow), and all moons including Earth's (`#bbb`/`#555`).
+
+#### Selection marker
+
+`drawSelectionMarker()` highlights the selected object with an orange marker and label, toggled by `showSelection`. Marker shape matches object type: oriented ellipse for galaxies (5px larger than the drawn ellipse, using the already-flip-transformed `rot` from the `drawnObjects` entry), square for nebulae without contours, contour stroke for nebulae with contours, circle for everything else (radius = drawn object's pixel radius + 5).
+
+The `drawnObjects` entry for stars wraps the raw STARS array in `data: {name, star}` so `data.name` is consistent across all object types.
+
+#### Initialization: `skymapInit()`
+
+Computes J2000 unit vectors for all star and deep-sky catalog entries (appended at `S_X`/`S_Y`/`S_Z` and `DS_X`/`DS_Y`/`DS_Z`), precesses constellation boundaries from B1875 to J2000, converts Milky Way polygons from galactic lon/lat to xyz `Float32Array`s, and builds `nebulaContourMap` / `dsContours[]` from `NEBULA_CONTOURS` / `NEBULA_INDEX`.
+
+#### Other utilities
+
+- `formatCoords()` — frame-aware coordinate display.
+- `pickObject()` — object hit-testing.
+- `changeFrame()` — frame switching.
+- `viewProjectRaw(lat, lon)` — non-null variant of `viewProject`; clamps behind-hemisphere points to a large radius for continuous lines. Currently unused (dead code).
+- `pointInPolygon(px, py, pts)` — ray-casting test (used by `pickObject()` and `drawMilkyWay()`). Milky way's canvas-center check is guarded against false positives from vertices near the view anticenter.
+- `fetchCached(url, key, onSuccess)` — fetches remote data with 24-hour localStorage cache TTL and stale-cache fallback on network failure.
+- `PLANET_SYMBOLS` — optional astrological symbol rendering.
+
+---
+
+### `skyobject.js` — SkyObject class
+
+Wraps stars, deep sky objects, and solar system entries with uniform accessors.
+
+**Two name fields:**
+- `name` — common/proper name (empty string if none). E.g. `'Sirius'`, `'Orion Nebula'`, `'Jupiter'`.
+- `ids` — catalog identifier strings, excluding the common name. E.g. `['Alpha CMa', 'HR 2491', 'HD 48915']` for stars, `['M 42', 'NGC 1976']` for DSOs, `['25544']` (NORAD number) for satellites, `[]` for planets/Sun/Moon.
+
+**Getters:**
+- `ra` / `dec` — J2000 degrees.
+- `raStr` / `decStr` — formatted strings.
+- `displayName` — `name` if set, else first `ids` entry, else `'(unnamed)'`.
+- `typeLabel` — human-readable type (e.g. `'Globular Cluster'`, `'Planet'`). Sun returns `'Star'` (not `'Star (Sun)'`). Uses `STAR_TYPE_NAMES` / `DS_TYPE_NAMES` lookup tables.
+- `ssData` — looks up matching entry in `ssCache` (by type + name or norad) for live ephemeris data.
+
+**Methods:** `altAz(jd, latRad, lonRad)`, `distStr()`, `sizeStr()`, `phaseStr()`.
+
+**Factory methods:**
+- `fromStar(s)` — from a `STARS[]` array entry.
+- `fromDeepSky(ds)` — from a `DEEPSKY[]` array entry.
+- `fromSSEntry(entry)` — from an `ssCache` entry.
+- `fromDrawnObject(obj)` — from a `drawnObjects` entry (click-to-select result).
+
+**Serialization:**
+- `toJSON()` — persists type, name, ids, coordinates, magnitude, norad, and elements (but not `data`).
+- `fromJSON(j)` — reconstructs with `data: null`. Accepts `ids` or legacy `names` field for backward compatibility.
+- All getters that access `this.data[...]` guard against null and return safe fallback strings.
+
+Also stores `elements` (MPC orbital element object for asteroids/comets, null otherwise) for iterative rise/transit/set computation.
+
+---
+
+### `searchinfo.js` — Search, lists, and info panel
+
+#### Search
+
+- `_buildSearchData()` — lazily indexes all stars and deep sky objects (not ssCache; solar system objects are searched dynamically in `searchObjects()` since `ssCache` changes over time).
+- `searchObjects(query)` — case-insensitive substring matching with relevance sorting (exact > starts-with > contains, then by brightness).
+- Star search labels show `"designation - name"` when both exist (e.g. `"Alpha CMa - Sirius"`).
+
+#### Object lists
+
+`getObjectList(category, showTypes)` for 11 categories: Planets, Moons, Asteroids, Comets, Satellites, Named Stars, Bright Stars, Double Stars, Named Deep Sky Objects, Messier Objects, Caldwell Objects. (Search results come from `searchObjects()`, not `getObjectList()`.) 
+
+- Category-specific sorting: alphabetical by default, planets by orbit order, asteroids by number, comets periodic-first then alphabetical, bright stars by Bayer designation, doubles alphabetical by Bayer/Flamsteed.
+- Earth's Moon appears in the Moons list (not Planets).
+- When `showTypes` is truthy, Messier/Caldwell/Named DSO labels append the object type in parentheses (e.g. `"M 1 - Crab Nebula (Bright Nebula)"`); SkyMap calls without `showTypes`, Pandora passes `true`.
+- Lists can be re-sorted by magnitude via a radio button toggle.
+
+#### Satellite identification
+
+SS objects are identified by name+type since ssCache is rebuilt each frame — except satellites, identified by NORAD ID+type, since rocket-body/debris objects frequently reuse generic names. `norad` is threaded from `ssCache` through `drawnObjects`, list items (`ssNorad`), search results, `centerObject`, and `SkyObject`/`ssData`. Satellite list and search labels append `- norad` (e.g. "ISS (ZARYA) - 25544") for visual distinction.
+
+#### Panel functions
+
+`toggleSearchPanel()`, `doSearch()`, `loadObjectList()`, `populateListBox()`, `onObjectListSelect()`, `searchPanelDraw()` (called each frame from `draw()` to detect map clicks and refresh live data), `refreshInfoPanel()`, `clearInfoPanel()`, `centerOnSelected()` (enters tracking mode on the selected object), `skyObjectFromItem(item)` (converts search/list result items into SkyObject instances).
+
+#### Info panel display
+
+- **Staleness:** `ssValid` is true for star/deepsky (fixed catalog position, never stale) or any SS type currently found in `ssCache`; false only if an SS object has dropped from `ssCache` entirely (e.g. a satellite whose TLE has gone stale, or one dropped from a reloaded catalog — not eclipse, since eclipsed satellites are still pushed to `ssCache` with `mag: Infinity`). When `!ssValid`, magnitude/coordinates/distance/size/phase show `—`.
+- **Magnitude formatting:** `null` → `—`, `Infinity` (eclipsed/backlit) → `Eclipsed`, real number → `±d.dd`.
+- **Fields shown:** type, name (`obj.name`), catalog IDs (`obj.ids`, on separate lines; `info-catalog-label` is relabeled "NORAD ID" for satellites showing `obj.norad`), coordinates (in current frame, updated dynamically), magnitude, color index (B−V, stars only), distance, spectrum/morphology, angular size (hidden for point sources), illumination (planets/Moon), central lon/lat (planets/Moon with orientation data), rise/transit/set times.
+
+#### Refraction in info panel
+
+`refreshInfoPanel()` applies `refractionTrue2App()` to displayed altitude when in horizon frame and `viewRefraction` is on. Rise/transit/set `h0` respects `viewRefraction`:
+- Refraction on: `REFRACTION_ALT` for point objects, `REFRACTION_ALT − 16'` for Sun, `REFRACTION_ALT − angRad` for Moon.
+- Refraction off: `0` / `−16'` / `−angRad` respectively.
+- Moon uses actual `ssData.angRad` (topocentric semidiameter, ~14.7'–16.8') rather than a fixed constant or Meeus's textbook shortcut (`0.7275*parallax − 34'`), because `solSysObjPosition()` already applies full topocentric correction. Using the textbook constant here would trigger on the lower limb rather than the upper limb.
+
+#### Rise/transit/set computation
+
+Calls `riseTransitSetIterative()` three times (once per event), passing a `getRaDec(jd)` callback:
+- Sun, Moon, planets, asteroids, comets: callback wraps `solSysObjPosition()`, `iterations` = 2.
+- Planetary moons: use parent planet's RTS.
+- Stars and deep sky: callback over fixed of-date position, `iterations` = 1.
+- Asteroids/comets: element object resolved once from `loadedAsteroids`/`loadedComets` before building callback.
+- Satellites: Rise/Transit/Set rows (`info-rise-row`/`info-transit-row`/`info-set-row`) hidden entirely — LEO completes many passes/day, making single-instant values meaningless rather than merely imprecise.
+
+`_rtsText(r)` formats results. `_formatJDLocal(jd)` formats JD as local time via `Intl.DateTimeFormat` with `selectedTZ`.
+
+---
+
+### `index.html` — UI wrapper
+
+All DOM interaction, event handling (drag/pan/pinch-zoom/scroll-zoom/double-click tracking), time zone management via `Intl` (including historical LMT for pre-1884 dates), animation timer, sidebar controls, date stepping via Julian Date round-trip (correctly skips Oct 5–14, 1582 Gregorian gap), and the `init()`/`draw()` loop.
+
+- `getLocation()` returns `{latRad, lonRad}` — observer position in radians only (no degree fields).
+- FOV slider is piecewise-linear via `fovToSlider()`/`sliderToFov()`: positions 1–30 map from 1' to 1° (~2'/step), positions 30–209 map from 1° to 180° (1°/step).
+- Double-click (or double-tap) enters tracking mode; `draw()` syncs sliders after `skymapDraw()` when tracking is active.
+- Display checkboxes include a Refraction toggle (checked by default) that reads into the `refraction` param of `skymapDraw()`.
+- Data loading via `fetchCached()` (defined in `skymap.js`) for asteroid, comet, and satellite orbital elements.
+- Right-side search panel (visible by default, toggled by magnifying glass button) with search input, object list dropdown, sortable listbox, object info table, and "Center Object in Sky Map" tracking button.
+
+---
 
 ### Generated Data Files
 
-- **`stars.js` / `stars_hr.js`** — Star arrays with named index constants (`S_TYPE=0,S_RA=1,...,S_Z=16`): `[type, RA_rad, Dec_rad, mag, bmv, dist_pc, spec, HR, HD, HIP, dm, bayer, flamsteed, name]`. `type` is SSCore object type (SS=single star, DS=double star, VS=variable star, DV=double variable star). `spec` is spectral type string (e.g. `"A1Vm"`). `bmv` is B−V color index (0 if B magnitude missing). `dm` is Durchmusterung number (BD/CD/CP catalog, used as fallback identifier for stars with no other designation). `bayer` includes variable star designations (e.g. `"R And"`) detected via IAU constellation abbreviation suffix matching; Greek letter names are capitalized (e.g. `"Alpha Ori"`, `"Kappa1 Scl"`) while Latin single-letter designations remain lowercase (e.g. `"d Psc"`, `"p2 Cyg"`). Catalog numbers (HR, HD, SAO, BD, CD, CP prefixes) are filtered from common names. Unit vectors `[x,y,z]` appended at runtime by `skymapInit()` at indices [S_X,S_Y,S_Z] (14,15,16). Also contains `DOUBLES`, an array of indices into `STARS[]` identifying ~154 curated showpiece double stars (from SSCore's Doubles.csv, matched by HR/HD/HIP number); used by `getObjectList('doubles')` in `searchinfo.js` for the "Double Stars" list. `gen_stars.py` auto-downloads Doubles.csv from SSCore and appends the index after the STARS array. Desktop has 154 entries; mobile (`stars_hr.js`) has 153 (one star lacks an HR number and is absent from the bright catalog).
-- **`constellations.js`** — `CONSTELLATIONS` (stick figures by HR number pairs), `CON_CENTERS` (label positions), `BOUNDARIES` (IAU boundaries in B1875 RA/Dec, precessed to J2000 at init).
-- **`deepsky.js` / `deepsky_mc.js`** — Deep sky objects with named index constants (`DS_TYPE=0,DS_RA=1,...,DS_Z=15`): `[type, RA, Dec, mag, dist, major_arcmin, minor_arcmin, pa_deg, morph, M/C id, NGC/IC, NGC/IC2, name]`. `morph` is the morphology/classification string — spectral type for stars (SS/DS/VS/DV) and globular clusters (GC), Trumpler class for open clusters (OC), Hubble type for galaxies (GX). On desktop `deepsky.js` loads the full NGC/IC catalog (~12K objects); on mobile `deepsky_mc.js` loads Messier+Caldwell only (~223 objects) — the choice is made at runtime via user-agent detection, same as stars. Objects may have two NGC/IC identifiers (primary at DS_NGC, secondary at DS_NGC2); ~686 objects in the full catalog have a second identifier. The deep sky catalog includes ~1078 star-type entries (SS/DS/VS/DV) such as M 40. Nonexistent objects (type `NO`) are excluded. NGC/IC numbers may have extension letters (e.g. `IC 1318A`). Galaxies with both axes are rendered as oriented ellipses; those with only a major axis are drawn as circles. Galaxy PA orientation uses `j2kPAToScreen()` to convert catalog PA to screen angle — works correctly in all coordinate frames. Deep sky magnitude filtering: FOV > 45° shows M/C only; 10°–45° shows M/C + NGC/IC within `starMagLimit + 4`; < 10° shows all. Null-magnitude non-M/C objects treated as infinitely faint. BN objects with no contours, no magnitude, and size ≥ 60 arcmin are skipped. Deep sky labels: M/C and contour objects always labeled; others labeled if within `dsMagLimit - 2` or FOV < 3°. Visibility culling uses the object's own on-screen radius (major axis `ds[DS_MAJ]`, converted via `radToPx()`) computed before the canvas-bounds check, so large ellipses aren't culled just because their center is off-canvas.
-- **`cities.js`** — `[name, admin1, countryCode, lat, lon, timezone]` for ~4400 cities.
-- **`milkyway.js`** — Polygons in galactic lon/lat pairs, converted to xyz Float32Arrays at init. `COALSACK_INDEX` marks the Coal Sack dark nebula polygon.
-- **`nebulae.js`** — `NEBULA_CONTOURS` (array of 127 hand-drawn contour polygons as `[ra_rad, dec_rad]` pairs, converted to Float32Array xyz at init like milky way) and `NEBULA_INDEX` (parallel array of name arrays for each contour). At init, `nebulaContourMap` maps names → contour indices and `dsContours[]` maps each DEEPSKY index → its contour indices (or null). Bright nebulae with contours render as outlined polygons instead of squares; open clusters with contours get the contour in addition to their dashed circle. `skipContours` suppresses rendering of specific oversized contours (IC 434 extended, M 8 extended) while keeping them in the index for association. Hit testing for contour objects uses `pointInPolygon()` on each contour ring independently (inside any ring = hit); open clusters with contours also fall through to the radius-based circle check so clicking inside the dashed circle (e.g. Pleiades/M45) selects the object even outside the contour polygon; non-contour objects use radius-based distance check. Objects with contours always get labels regardless of magnitude. Generated by `data/gen_nebulae.py` from Contours.csv and Index.csv (downloaded from SSCore SSData/DeepSky/Nebulae/).
-- **`vsop87.js`** — VSOP87D truncated series: `VSOP87.MERCURY` through `VSOP87.NEPTUNE`, each with `{L, B, R}` arrays of series. ~2430 terms, ~149KB.
-- **`satmag.js`** — `SATMAG` object (NORAD ID → standard visual magnitude) from McCants `mcnames.txt`, plus hand-written `satApparentMag()` function. The generator (`data/gen_satmag.py`) only produces the lookup table; the function must be preserved across regeneration.
+**`stars.js` / `stars_hr.js`** — Star arrays with named index constants (`S_TYPE=0,S_RA=1,...,S_Z=16`):
+- Format: `[type, RA_rad, Dec_rad, mag, bmv, dist_pc, spec, HR, HD, HIP, dm, bayer, flamsteed, name]`.
+- `type` is SSCore object type (SS=single, DS=double, VS=variable, DV=double variable).
+- `spec` is spectral type string (e.g. `"A1Vm"`). `bmv` is B−V color index (0 if B magnitude missing).
+- `dm` is Durchmusterung number (BD/CD/CP catalog, fallback identifier).
+- `bayer` includes variable star designations (e.g. `"R And"`); Greek letters capitalized (e.g. `"Alpha Ori"`), Latin single-letter lowercase (e.g. `"d Psc"`). Catalog number prefixes (HR, HD, SAO, BD, CD, CP) are filtered from common names by `gen_stars.py`.
+- Unit vectors `[x,y,z]` appended at runtime by `skymapInit()` at indices [S_X,S_Y,S_Z].
+- `DOUBLES` — array of indices into `STARS[]` identifying ~154 curated showpiece doubles (from SSCore's Doubles.csv). Desktop 154 entries; mobile 153 (one lacks HR number).
+
+**`constellations.js`** — `CONSTELLATIONS` (stick figures by HR number pairs), `CON_CENTERS` (label positions), `BOUNDARIES` (IAU boundaries in B1875 RA/Dec, precessed to J2000 at init).
+
+**`deepsky.js` / `deepsky_mc.js`** — Deep sky objects with named index constants (`DS_TYPE=0,DS_RA=1,...,DS_Z=15`):
+- Format: `[type, RA, Dec, mag, dist, major_arcmin, minor_arcmin, pa_deg, morph, M/C id, NGC/IC, NGC/IC2, name]`.
+- `morph` is morphology/classification: spectral type for stars/GCs, Trumpler class for OCs, Hubble type for GXs.
+- Desktop loads full NGC/IC (~12K); mobile loads Messier+Caldwell only (~223).
+- Objects may have two NGC/IC identifiers (DS_NGC primary, DS_NGC2 secondary; ~686 objects). NGC/IC numbers may have extension letters (e.g. `IC 1318A`).
+- ~1078 star-type entries (SS/DS/VS/DV) such as M 40. Nonexistent objects (type `NO`) excluded.
+- Deep sky magnitude filtering: FOV > 45° shows M/C only; 10°–45° shows M/C + NGC/IC within `starMagLimit + 4`; < 10° shows all. Null-magnitude non-M/C treated as infinitely faint. BN objects with no contours, no magnitude, and size ≥ 60 arcmin are skipped.
+- Labels: M/C and contour objects always labeled; others if within `dsMagLimit − 2` or FOV < 3°.
+- Galaxies with both axes are rendered as oriented ellipses (PA via `j2kPAToScreen()`); those with only a major axis are drawn as circles. Visibility culling uses on-screen radius (major axis via `radToPx()`), so large ellipses aren't culled when their center is off-canvas.
+
+**`cities.js`** — `[name, admin1, countryCode, lat, lon, timezone]` for ~4400 cities.
+
+**`milkyway.js`** — Polygons in galactic lon/lat pairs, converted to xyz Float32Arrays at init. `COALSACK_INDEX` marks the Coal Sack dark nebula polygon.
+
+**`nebulae.js`** — `NEBULA_CONTOURS` (127 hand-drawn contour polygons as `[ra_rad, dec_rad]` pairs, converted to Float32Array xyz at init by `skymapInit()`) and `NEBULA_INDEX` (parallel array of name arrays). `nebulaContourMap` and `dsContours[]` are built in `skymapInit()` (in `skymap.js`, not `nebulae.js`). Bright nebulae with contours render as outlined polygons instead of squares; open clusters with contours get both the contour and dashed circle. `skipContours` suppresses specific oversized contours (IC 434 extended, M 8 extended). Hit testing for contour objects uses `pointInPolygon()` on each ring independently; open clusters with contours also fall through to radius-based check. Generated by `data/gen_nebulae.py` from SSCore.
+
+**`vsop87.js`** — VSOP87D truncated series: `VSOP87.MERCURY` through `VSOP87.NEPTUNE`, each with `{L, B, R}` arrays. ~2430 terms, ~149KB.
+
+**`satmag.js`** — `SATMAG` object (NORAD ID → standard visual magnitude) from McCants, plus hand-written `satApparentMag()`. Generator only produces the lookup table; the function must be preserved across regeneration.
+
+---
 
 ## Key Conventions
 
-- **Coordinate system**: `viewLon` always holds the *display* longitude — azimuth for Horizon, RA/ecliptic-lon/galactic-lon for the other three frames (`atan2(y, x)` of the frame's raw Cartesian axes, the same convention used everywhere else in the codebase, e.g. `xyz2sph`/`sph2xyz` in `astromath.js`). The stereographic projection math (`mView`, `viewProject`, `viewProjectRaw`, and `viewUnproject`'s internals) is written in the older azimuth-style `atan2(x, y)` convention (north-referenced); `skymapDraw()` derives the local `vLon` (radians) from `viewLon` once, near the top, via a frame-conditional: identity for Horizon (already azimuth), `90° - viewLon` otherwise. Every other reader/writer of `viewLon` — object tracking, `changeFrame()`, the selected-object coordinate readout, and `viewUnproject`'s return value — applies the same per-frame `atan2` argument order (swapped for Horizon vs. the other three) to convert to/from that convention.
-- **Angles**: All computation in radians. Schlyter orbital elements are in degrees, converted to radians immediately. `DEG_TO_RAD` = π/180, `RAD_TO_DEG` = 180/π (renamed from the old `DEG`/`RAD` — the shorter names were easy to mix up). Observer latitude and longitude are passed as radians (`latRad`, `lonRad`) throughout — `getLocation()` returns radians only. `gmst()` and `localSiderealTime()` return radians.
-- **Matrices**: 3×3 row-major flat arrays (9 elements). `mvmul(m, x, y, z)` multiplies matrix by vector. Transpose = inverse for rotation matrices.
-- **Delta-T**: `deltaT(jd)` converts UT (JD) to dynamical time (JDE = JD + ΔT/86400). VSOP87, Moon, and all solar system position computations use JDE; sidereal time uses JD (UT). Day number `d = jde - JD2000` (days since J2000.0 in dynamical time).
-- **Precession & Nutation**: IAU 1976 precession (Lieske 1979, arcsecond coefficients) + IAU 1980 nutation (3 dominant terms: Ω, 2L☉, 2L☽). In `updateSSCache()`, three rotation matrices handle all solar system coordinate conversions (see `skymap.js` description above). Equation of the equinoxes (Δψ·cos ε_true) is added to GMST for apparent sidereal time. Constellation boundaries are stored in B1875 and precessed to J2000 once at init; star positions are J2000 and precessed to date each frame via the combined rotation matrix `M`. J2000 frame options bypass precession/nutation entirely (identity matrix for equatorial, mean obliquity rotation for ecliptic).
-- **Light-time correction**: One-iteration correction for planets, Pluto, asteroids, and comets. Geometric geocentric distance estimates light travel time (`Δ / LIGHT_SPEED_AU_PER_DAY`); body position is recomputed at retarded time with Earth held at current time. VSOP87 planets use a cheap Schlyter first pass for the distance estimate to avoid doubling the expensive series evaluation. Planet pole directions and prime meridians from `PLANET_PHYS` are also evaluated at retarded time (`T - lt/36525`). Not applied to Sun, Moon, or satellites (negligible).
-- **Satellites**: SGP4 (near-earth, period < 225 min) and SDP4 (deep-space: GEO, GPS, Molniya) propagate TLE elements. Satellite epochs are UTC — use JD, not JDE (no Delta-T). Apparent magnitude uses McCants standard magnitudes (at 1000 km, half-phase) with topocentric slant range scaling and diffuse-sphere phase-angle correction; eclipsed satellites (cylindrical Earth-shadow model) are hidden. Satellites with no McCants entry default to +6.0 standard magnitude. Satellite magnitude filter is `magLimit + 3` (more generous than stars); satellites fainter than `magLimit` draw at faintest-star size.
-- **Phase angle**: All `phaseAngle` values in `ssCache` are in radians (0 = fully illuminated, π = fully dark). The Sun-body-Earth angle from `phaseElongation()` is stored directly for planets and asteroids. The Moon's phase angle is derived from elongation: `abs(π - elongation)`. `drawPhaseDisc()` renders phase shading for both Moon and planets using `k = -cos(FV)` for the terminator ellipse. Phase terminator orientation (`toSunAngle`) is computed per-object via the stereographic projection Jacobian: the Sun's view-space direction is projected onto the tangent plane at the object's position, then transformed through the Jacobian to get the correct screen-space angle. This is frame-invariant (unlike the old chord-direction approach). The result is `atan2(jsDy, jsDx)` — note positive `jsDy`, because the chart Y axis (`-2*vy/d`) is inverted relative to canvas Y by `toScreen()`.
-- **Planet apparent size**: `PLANET_DIAM1AU` in `planets.js` gives equatorial diameter at 1 AU in arcseconds. Angular size is computed on the fly during rendering (`PLANET_DIAM1AU[name] / geoDist / 60` arcminutes); planets are drawn as phase-shaded discs when their pixel radius exceeds the star-dot size. Any planet with nonzero flattening in `PLANET_PHYS` (Mars, Jupiter, Saturn, Uranus, Neptune) is drawn as an oblate ellipsoid with apparent oblateness = `flattening * cos(subObsLat)`. J2000 position angles are computed by `planetOrientation()` via `posAng()` and converted to screen angles at draw time by `j2kPAToScreen()`.
-- **Saturn's ring**: Ring tilt `B` = sub-observer latitude from `planetOrientation()`. Ring drawn as back half → planet disc → grid → moon shadows → front half (painter's algorithm). Outer edge at 2.27 Saturn radii, inner edge at 1.24 Saturn radii. When `|sin(B)| < 0.003` (near edge-on), the ring is drawn as a single horizontal line across the full ring diameter instead of filled half-ellipses; the line is drawn only on the front pass so it renders on top of the planet disc.
-- **Distance sorting**: `ssCache` is sorted farthest-first after rebuilding for painter's algorithm occlusion. Sort key `_d` is in AU: `geoDist` for planets/comets/asteroids/planetmoons, `dist` (AU) for Sun, `dist` (km) ÷ `KM_PER_AU` for Moon/satellites.
-- **Planetary moons**: ESAA 3rd Ed. ch.9 analytical theories for 23 moons (Mars 2, Jupiter 4, Saturn 9, Uranus 5, Neptune 2, Pluto 1). Moon functions take JDE and return planetocentric J2000 equatorial coordinates in AU. In `updateSSCache()`, offsets are added to the parent planet's geocentric J2000 Cartesian position and converted to unit vectors. Phoebe and Nereid are overridden with `moonPositionKepler()` (JPL mean elements) because their ESAA analytical theories are inaccurate. Rendered as `type:'planetmoon'` in light gray (`#bbb`/`#555`); shown automatically when `showPlanets` is on and FOV < 10°, labels follow `showPlanetNames`. When a moon's angular diameter (from `MOON_DATA[name].radius`) exceeds its star-dot size in pixels, it is drawn as a filled disc. Moons behind their parent planet's disc are explicitly skipped (occlusion check accounts for apparent oblateness via the ellipse equation using the pole position angle). Moons in their parent planet's umbral shadow cone get `mag = Infinity` and are not rendered; the conical shadow tapers from planet radius to zero at distance `L = R × D_sun / (R_sun - R)`.
-- **Calendar**: `julianDate()` and `calendarDate()` handle the Julian/Gregorian switchover at Oct 15, 1582 (JD 2299161). Date stepping uses JD round-trip so Oct 4→Oct 15 is one step.
-- **Projection**: Stereographic from antipode. Points within 90° of center → `r < 2` in normalized coords. `clipR = 2 * scale` clips to the visible hemisphere. `toScreen(cX, cY)` converts stereographic chart coords to canvas pixels (applying flip factors `fX`/`fY`). Global projection closures (`skyProject`/`skyUnproject`/`skyIsVisible`/`viewProject`/`viewUnproject`/`radToPx`/`pxToRad`) are assigned near the top of `skymapDraw()` so they're available to all drawing code and external callers.
+### Coordinates
+
+`viewLon` holds the *display* longitude — azimuth for Horizon, RA/ecliptic-lon/galactic-lon for the other frames. The projection math (`mView`, `viewProject`, `viewUnproject`) uses azimuth-style `atan2(x, y)` (north-referenced); `skymapDraw()` derives `vLon` via a frame-conditional: identity for Horizon, `90° − viewLon` otherwise. All readers/writers of `viewLon` apply the same per-frame `atan2` argument order.
+
+### Angles
+
+All computation in radians. Schlyter orbital elements are in degrees, converted immediately. `DEG_TO_RAD` = π/180, `RAD_TO_DEG` = 180/π (renamed from old `DEG`/`RAD` — shorter names were easy to mix up). Observer lat/lon passed as radians throughout. `gmst()` and `localSiderealTime()` return radians.
+
+### Matrices
+
+3×3 row-major flat arrays (9 elements). `mvmul(m, x, y, z)` multiplies matrix by vector. Transpose = inverse for rotation matrices.
+
+### Delta-T
+
+`deltaT(jd)` converts UT (JD) to dynamical time (JDE = JD + ΔT/86400). VSOP87, Moon, and all solar system computations use JDE; sidereal time uses JD (UT). Day number `d = jde − JD2000`.
+
+### Precession & Nutation
+
+IAU 1976 precession + IAU 1980 nutation (3 dominant terms: Ω, 2L☉, 2L☽). In `updateSSCache()`, three rotation matrices handle all coordinate conversions (see skymap.js section). Equation of the equinoxes added to GMST for apparent sidereal time. Constellation boundaries stored in B1875, precessed to J2000 once at init. J2000 frame options bypass precession/nutation entirely.
+
+### Light-time correction
+
+One-iteration for planets, Pluto, asteroids, comets. VSOP87 planets use a cheap Schlyter first pass for the distance estimate. Planet pole directions and prime meridians also evaluated at retarded time. Not applied to Sun, Moon, or satellites (negligible).
+
+### Satellites
+
+SGP4 (near-earth, period < 225 min) and SDP4 (deep-space). Epochs are UTC — use JD, not JDE. Apparent magnitude uses McCants standard magnitudes (at 1000 km range, half-phase) with topocentric scaling, diffuse-sphere phase-angle correction, and cylindrical Earth-shadow model; eclipsed satellites hidden. No McCants entry defaults to +6.0. Magnitude filter is `magLimit + 3`. Satellites fainter than `magLimit` draw at faintest-star size.
+
+### Phase angle
+
+All `phaseAngle` values in `ssCache` are radians (0 = fully illuminated, π = fully dark). Moon's phase angle derived from elongation: `abs(π − elongation)`. `drawPhaseDisc()` renders terminator via `k = −cos(FV)` for the ellipse.
+
+### Planet apparent size
+
+`PLANET_DIAM1AU` gives equatorial diameter at 1 AU in arcseconds. Angular size = `PLANET_DIAM1AU[name] / geoDist / 60` arcminutes. Nonzero-flattening planets drawn as oblate ellipsoids with apparent oblateness = `flattening * cos(subObsLat)`. J2000 PAs converted to screen angles by `j2kPAToScreen()`.
+
+### Planetary moons
+
+ESAA 3rd Ed. ch.9 analytical theories for 23 moons. Moon functions take JDE, return planetocentric J2000 equatorial AU. In `updateSSCache()`, offsets added to parent's geocentric position. Phoebe and Nereid overridden with `moonPositionKepler()` (JPL elements). Conical shadow tapers from planet radius to zero at `L = R × D_sun / (R_sun − R)`.
+
+### Distance sorting
+
+`ssCache` sorted farthest-first. Sort key `_d` is in AU: `geoDist` for planets/comets/asteroids/planetmoons, `dist` (AU) for Sun, `dist` (km) ÷ `KM_PER_AU` for Moon/satellites.
+
+### Calendar
+
+`julianDate()` and `calendarDate()` handle Julian/Gregorian switchover at Oct 15, 1582 (JD 2299161). Date stepping uses JD round-trip so Oct 4→Oct 15 is one step.
+
+### Projection
+
+Stereographic from antipode. Points within 90° of center → `r < 2` in normalized coords. `clipR = 2 * scale` clips to the visible hemisphere. `toScreen(cX, cY)` converts stereographic chart coords to canvas pixels (applying flip factors). Global projection closures (`skyProject`/`skyUnproject`/`skyIsVisible`/`viewProject`/`viewProjectRaw`/`viewUnproject`/`radToPx`/`pxToRad`) are assigned near the top of `skymapDraw()` so they're available to all drawing code and external callers. Internal drawing code uses `skyProject` directly for constellation centers, deep sky objects, and shadow projections rather than reimplementing the projection math. During drag/zoom, cached SS positions are transformed through the frame matrix like stars.
 
 ## License
 
