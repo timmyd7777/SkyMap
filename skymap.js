@@ -275,7 +275,7 @@ function skymapInit() {
 //   darkMode, showStars, showNames, showStarIds, showConst, showConstNames,
 //   showBounds, showPlanets, showPlanetNames, showDeepSky, showDeepSkyNames,
 //   showDeepSkyIds, showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
-//   showGrid, showMeridian, showHeader, showSelection, flipH, flipV: booleans
+//   showGrid, showMeridian, showHeader, showSelection, flipH, flipV, refraction: booleans
 // }
 //
 // Side effects: updates viewUnproject, drawnObjects, curMFrame globals.
@@ -288,10 +288,11 @@ function skymapDraw(canvas, params) {
     showComets, showCometNames, showAsteroids, showAsteroidNames,
     showSatellites, showSatelliteNames,
     showDeepSky, showDeepSkyNames, showDeepSkyIds,
-    showMilkyWay, showHorizon, showEcliptic, showCelEq, showGalEq,
-    showGrid, showMeridian, showHeader, showSelection, flipH, flipV,
+    showMilkyWay, showHorizon, showHorizonLabels, showEcliptic, showCelEq, showGalEq,
+    showGrid, showMeridian, showHeader, showSelection, flipH, flipV, refraction,
   } = params;
   const showStarColors = true;
+  const horizonAlt = refraction ? REFRACTION_ALT : 0;
 
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
@@ -310,6 +311,8 @@ function skymapDraw(canvas, params) {
   const mFrameT = mtranspose(mFrame);
   const mPrecess = frameMatrix('equatorial', jd, loc.latRad, loc.lonRad, j2000);
   const mPrecessT = mtranspose(mPrecess);
+  const mHorizon = viewFrame === 'horizon' ? mFrame : frameMatrix('horizon', jd, loc.latRad, loc.lonRad, false);
+  const mHorizonT = viewFrame === 'horizon' ? mFrameT : mtranspose(mHorizon);
   curMFrame = mFrame;
 
   // ---- Center on tracked object ----
@@ -426,6 +429,14 @@ function skymapDraw(canvas, params) {
   // lines across the hemisphere boundary, e.g. horizon shading).
   function viewProjectRaw(alt, az) {
     return skyProjectRaw(...mvmul(mFrameT, cos(alt) * sin(az), cos(alt) * cos(az), sin(alt)), true);
+  }
+
+  function horProject(alt, az) {
+    return skyProjectRaw(...mvmul(mHorizonT, cos(alt) * sin(az), cos(alt) * cos(az), sin(alt)), false);
+  }
+
+  function horProjectRaw(alt, az) {
+    return skyProjectRaw(...mvmul(mHorizonT, cos(alt) * sin(az), cos(alt) * cos(az), sin(alt)), true);
   }
 
   viewUnproject = function(sx, sy) {
@@ -1761,46 +1772,47 @@ function skymapDraw(canvas, params) {
   }
 
   // Fill below-horizon area with a semi-transparent overlay and draw the horizon line.
-  // Only called in horizon frame. The horizon is at alt = REFRACTION_ALT (standard
-  // atmospheric refraction of -34'). Below-horizon is filled in 5°×5° quad patches,
-  // using viewProjectRaw for continuous coverage across the hemisphere boundary.
+  // The horizon is at alt = horizonAlt (REFRACTION_ALT when refraction is on, 0 when off).
+  // Below-horizon is filled in 5°×5° quad patches, using horProjectRaw (which always
+  // projects horizon az/alt correctly regardless of the current view frame).
   function drawHorizon() {
     ctx.fillStyle = frameColor('horizon', 0.15);
-    // At high zoom (FOV < 5°), the 5°×5° quad patches may all project off-screen
-    // even though the view is below the horizon. Fill from the horizon line
-    // (or canvas top, if the horizon is above the canvas) down to the bottom.
-    const botAlt = viewLat - 2 * atan2(cy, 2 * scale) * RAD_TO_DEG;
-    if (viewFov < 5 && botAlt < REFRACTION_ALT * RAD_TO_DEG) {
-      const hp = viewProjectRaw(REFRACTION_ALT, vLon);
-      if (fY < 0) {
-        const bot = min(H, hp[1]);
-        ctx.fillRect(0, 0, W, bot);
-      } else {
-        const top = max(0, hp[1]);
-        ctx.fillRect(0, top, W, H - top);
+    // At high zoom, the 5°×5° quad patches may all project off-screen even
+    // though the view is entirely below the horizon. Detect this by computing
+    // the view center's altitude via the horizon frame matrix.
+    if (viewFov < 5) {
+      const [,, cenZ] = mvmul(mHorizon, MT[6], MT[7], MT[8]);
+      const cenAlt = asin(max(-1, min(1, cenZ)));
+      const halfFov = viewFov * DEG_TO_RAD / 2;
+      if (cenAlt + halfFov < horizonAlt) {
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = frameColor('horizon');
+        ctx.lineWidth = 1.5;
+        const zenX = mHorizonT[2], zenY = mHorizonT[5], zenZ2 = mHorizonT[8];
+        drawGreatCircle(...mvmul(M, zenX, zenY, zenZ2), HALFPI - horizonAlt);
+        return;
       }
-      return;
     }
     const hStep = 5;
     const hPatch = 30;
     for (let az0 = 0; az0 < 360; az0 += hPatch) {
       for (let alt0 = -90; alt0 < 0; alt0 += hPatch) {
-        const altTop = alt0 + hPatch >= 0 ? REFRACTION_ALT / DEG_TO_RAD : alt0 + hPatch;
+        const altTop = alt0 + hPatch >= 0 ? horizonAlt / DEG_TO_RAD : alt0 + hPatch;
         let anyVis = false;
         for (let a = az0; !anyVis && a <= az0 + hPatch; a += hStep) {
           for (let b = alt0; !anyVis && b < altTop; b += hStep) {
-            if (viewProject(b * DEG_TO_RAD, a * DEG_TO_RAD)) anyVis = true;
+            if (horProject(b * DEG_TO_RAD, a * DEG_TO_RAD)) anyVis = true;
           }
-          if (!anyVis && viewProject(altTop * DEG_TO_RAD, a * DEG_TO_RAD)) anyVis = true;
+          if (!anyVis && horProject(altTop * DEG_TO_RAD, a * DEG_TO_RAD)) anyVis = true;
         }
         if (!anyVis) continue;
         for (let a = az0; a < az0 + hPatch; a += hStep) {
           for (let b = alt0; b < altTop; b += hStep) {
             const bNext = min(b + hStep, altTop);
-            const p00 = viewProjectRaw(b * DEG_TO_RAD, a * DEG_TO_RAD);
-            const p10 = viewProjectRaw(bNext * DEG_TO_RAD, a * DEG_TO_RAD);
-            const p11 = viewProjectRaw(bNext * DEG_TO_RAD, (a + hStep) * DEG_TO_RAD);
-            const p01 = viewProjectRaw(b * DEG_TO_RAD, (a + hStep) * DEG_TO_RAD);
+            const p00 = horProjectRaw(b * DEG_TO_RAD, a * DEG_TO_RAD);
+            const p10 = horProjectRaw(bNext * DEG_TO_RAD, a * DEG_TO_RAD);
+            const p11 = horProjectRaw(bNext * DEG_TO_RAD, (a + hStep) * DEG_TO_RAD);
+            const p01 = horProjectRaw(b * DEG_TO_RAD, (a + hStep) * DEG_TO_RAD);
             const bnd = 2 * max(W, H);
             if (abs(p00[0]-cx) > bnd || abs(p00[1]-cy) > bnd ||
                 abs(p10[0]-cx) > bnd || abs(p10[1]-cy) > bnd ||
@@ -1820,14 +1832,15 @@ function skymapDraw(canvas, params) {
 
     ctx.strokeStyle = frameColor('horizon');
     ctx.lineWidth = 1.5;
-    const zenX = mView[2], zenY = mView[5], zenZ = mView[8];
-    drawGreatCircle(zenX, zenY, zenZ, HALFPI - REFRACTION_ALT);
+    // Zenith in J2000: mHorizonT * (0,0,1) = third column of mHorizonT
+    const zenX = mHorizonT[2], zenY = mHorizonT[5], zenZ = mHorizonT[8];
+    drawGreatCircle(...mvmul(M, zenX, zenY, zenZ), HALFPI - horizonAlt);
   }
 
   // Draw the local meridian (the N/S vertical circle through the zenith, part of
   // the coordinate grid) in the same bold color as the horizon line, from the
-  // refracted horizon on the South side up through the zenith and back down to
-  // the refracted horizon on the North side — only the above-horizon portion,
+  // horizon on the South side up through the zenith and back down to
+  // the horizon on the North side — only the above-horizon portion,
   // matching the horizon line's own extent. Gated on showMeridian (currently
   // tied to the same checkbox as showGrid in the UI, but a separate param so a
   // future "Draw Meridian" checkbox can control it independently) and only
@@ -1838,7 +1851,7 @@ function skymapDraw(canvas, params) {
     ctx.strokeStyle = frameColor('horizon');
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    const refAltDeg = REFRACTION_ALT * RAD_TO_DEG;
+    const refAltDeg = horizonAlt * RAD_TO_DEG;
     const n = 18;  // ~5° steps from horizon to zenith
     let prevPt = null, prevFront = false;
     // lonDeg is internal (azimuth-style) longitude: 90° = North, 270° = South
@@ -1864,8 +1877,8 @@ function skymapDraw(canvas, params) {
   }
 
   // Draw compass direction labels (N, NE, E, ...) just above the horizon line.
-  // Only called in horizon frame. Drawn outside the clip region so labels
-  // aren't cut off at the hemisphere edge.
+  // Uses horProject/horProjectRaw so labels are correct in any view frame.
+  // Drawn outside the clip region so labels aren't cut off at the hemisphere edge.
   function drawCardinals() {
     const dirs = [[0,'N'],[45,'NE'],[90,'E'],[135,'SE'],[180,'S'],[225,'SW'],[270,'W'],[315,'NW']];
     const dirFont = max(minFontSize, round(min(W, H) / 80));
@@ -1875,9 +1888,9 @@ function skymapDraw(canvas, params) {
     const dirAltOffset = dirFont * 0.8 * viewFov / min(W, H) * DEG_TO_RAD;
     for (const [azDeg, label] of dirs) {
       const azR = azDeg * DEG_TO_RAD;
-      const labelAlt = REFRACTION_ALT + dirAltOffset;
-      if (!viewProject(labelAlt, azR)) continue;
-      const pt = viewProjectRaw(labelAlt, azR);
+      const labelAlt = horizonAlt + dirAltOffset;
+      if (!horProject(labelAlt, azR)) continue;
+      const pt = horProjectRaw(labelAlt, azR);
       if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) continue;
       ctx.fillText(label, pt[0], pt[1]);
     }
@@ -1953,8 +1966,8 @@ function skymapDraw(canvas, params) {
     ctx.beginPath(); ctx.arc(cx, cy, clipR, 0, TWOPI); ctx.stroke();
   }
 
-  if (viewFrame === 'horizon') drawCardinals();
-  if (selectedObject && selectedObject.data.name) {
+  if (showHorizonLabels) drawCardinals();
+  if (selectedObject && selectedObject.data && selectedObject.data.name) {
     const sel = selectedObject;
     // Satellites: match by norad, the real unique id — many rocket-body/debris
     // objects share the same generic name across different launches.

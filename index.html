@@ -314,7 +314,8 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
 <script src="moons.js?v=3"></script>
 <script src="nebulae.js?v=1"></script>
 <script src="skymap.js?v=44"></script>
-<script src="searchinfo.js?v=29"></script>
+<script src="skyobject.js?v=1"></script>
+<script src="searchinfo.js?v=30"></script>
 <script>
 
 const minFovDeg = 1/60;
@@ -666,6 +667,8 @@ function draw() {
     showDeepSkyIds: document.getElementById('showDeepSkyIds').checked,
     showMilkyWay: document.getElementById('showMilkyWay').checked,
     showHorizon: viewFrame === 'horizon',
+    showHorizonLabels: viewFrame === 'horizon',
+    refraction: true,
     showEcliptic: document.getElementById('showEcliptic').checked,
     showCelEq: document.getElementById('showCelEq').checked,
     showGalEq: document.getElementById('showGalEq').checked,
