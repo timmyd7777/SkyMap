@@ -20,7 +20,7 @@ class SkyObject {
   constructor(opts) {
     this.type = opts.type;
     this.name = opts.name || '';
-    this.names = opts.names || [];
+    this.ids = opts.ids || [];
     this.jx = opts.jx;
     this.jy = opts.jy;
     this.jz = opts.jz;
@@ -34,7 +34,7 @@ class SkyObject {
   get dec() { return asin(max(-1, min(1, this.jz))) * RAD_TO_DEG; }
   get raStr() { return formatRA(this.ra); }
   get decStr() { return formatDec(this.dec); }
-  get displayName() { return this.name || (this.names.length ? this.names[0] : '(unnamed)'); }
+  get displayName() { return this.name || (this.ids.length ? this.ids[0] : '(unnamed)'); }
 
   get typeLabel() {
     switch (this.type) {
@@ -132,7 +132,7 @@ class SkyObject {
     var o = {
       type: this.type,
       name: this.name,
-      names: this.names,
+      ids: this.ids,
       jx: this.jx,
       jy: this.jy,
       jz: this.jz,
@@ -148,7 +148,7 @@ class SkyObject {
     return new SkyObject({
       type: j.type,
       name: j.name || '',
-      names: j.names || [],
+      ids: j.ids || j.names || [],
       jx: j.jx,
       jy: j.jy,
       jz: j.jz,
@@ -161,67 +161,65 @@ class SkyObject {
   // ---- Factory methods ----
 
   static fromStar(s) {
-    var names = [];
-    if (s[S_NAME]) names.push(s[S_NAME]);
-    if (s[S_BAYER]) names.push(s[S_BAYER]);
-    if (s[S_FLAM]) names.push(s[S_FLAM]);
-    if (s[S_HR]) names.push('HR ' + s[S_HR]);
-    if (s[S_HD]) names.push('HD ' + s[S_HD]);
-    if (s[S_HIP]) names.push('HIP ' + s[S_HIP]);
-    if (s[S_DM]) names.push(s[S_DM]);
+    var ids = [];
+    if (s[S_BAYER]) ids.push(s[S_BAYER]);
+    if (s[S_FLAM]) ids.push(s[S_FLAM]);
+    if (s[S_HR]) ids.push('HR ' + s[S_HR]);
+    if (s[S_HD]) ids.push('HD ' + s[S_HD]);
+    if (s[S_HIP]) ids.push('HIP ' + s[S_HIP]);
+    if (s[S_DM]) ids.push(s[S_DM]);
     return new SkyObject({
-      type: 'star', name: s[S_NAME] || '', names: names,
+      type: 'star', name: s[S_NAME] || '', ids: ids,
       jx: s[S_X], jy: s[S_Y], jz: s[S_Z], mag: s[S_MAG], data: s
     });
   }
 
   static fromDeepSky(ds) {
-    var names = [];
-    if (ds[DS_MC]) names.push(ds[DS_MC]);
-    if (ds[DS_NGC]) names.push(ds[DS_NGC]);
-    if (ds[DS_NGC2]) names.push(ds[DS_NGC2]);
-    if (ds[DS_NAME]) names.push(ds[DS_NAME]);
+    var ids = [];
+    if (ds[DS_MC]) ids.push(ds[DS_MC]);
+    if (ds[DS_NGC]) ids.push(ds[DS_NGC]);
+    if (ds[DS_NGC2]) ids.push(ds[DS_NGC2]);
     return new SkyObject({
-      type: 'deepsky', name: ds[DS_NAME] || '', names: names,
+      type: 'deepsky', name: ds[DS_NAME] || '', ids: ids,
       jx: ds[DS_X], jy: ds[DS_Y], jz: ds[DS_Z], mag: ds[DS_MAG], data: ds
     });
   }
 
   static fromSSEntry(entry) {
+    var ids = entry.norad != null ? [String(entry.norad)] : [];
     return new SkyObject({
-      type: entry.type, name: entry.name, names: [entry.name], norad: entry.norad,
+      type: entry.type, name: entry.name, ids: ids, norad: entry.norad,
       jx: entry.x, jy: entry.y, jz: entry.z, mag: entry.mag, data: entry,
       elements: entry.elements || null
     });
   }
 
   static fromDrawnObject(obj) {
-    var names = [];
+    var ids = [];
     var name = '';
     if (obj.type === 'star') {
       var d = obj.data.star;
-      if (d[S_NAME]) { names.push(d[S_NAME]); name = d[S_NAME]; }
-      if (d[S_BAYER]) names.push(d[S_BAYER]);
-      if (d[S_FLAM]) names.push(d[S_FLAM]);
-      if (d[S_HR]) names.push('HR ' + d[S_HR]);
-      if (d[S_HD]) names.push('HD ' + d[S_HD]);
-      if (d[S_HIP]) names.push('HIP ' + d[S_HIP]);
-      if (d[S_DM]) names.push(d[S_DM]);
+      name = d[S_NAME] || '';
+      if (d[S_BAYER]) ids.push(d[S_BAYER]);
+      if (d[S_FLAM]) ids.push(d[S_FLAM]);
+      if (d[S_HR]) ids.push('HR ' + d[S_HR]);
+      if (d[S_HD]) ids.push('HD ' + d[S_HD]);
+      if (d[S_HIP]) ids.push('HIP ' + d[S_HIP]);
+      if (d[S_DM]) ids.push(d[S_DM]);
     } else if (obj.type === 'deepsky') {
       var d = obj.data;
-      if (d[DS_MC]) names.push(d[DS_MC]);
-      if (d[DS_NGC]) names.push(d[DS_NGC]);
-      if (d[DS_NGC2]) names.push(d[DS_NGC2]);
-      if (d[DS_NAME]) names.push(d[DS_NAME]);
+      if (d[DS_MC]) ids.push(d[DS_MC]);
+      if (d[DS_NGC]) ids.push(d[DS_NGC]);
+      if (d[DS_NGC2]) ids.push(d[DS_NGC2]);
       name = d[DS_NAME] || '';
     } else {
       name = obj.data.name || '';
-      if (name) names.push(name);
+      if (obj.data.norad != null) ids.push(String(obj.data.norad));
     }
     var s = obj.type === 'star' ? obj.data.star : null;
     var mag = s ? s[S_MAG] : obj.type === 'deepsky' ? obj.data[DS_MAG] : (obj.data.mag != null ? obj.data.mag : null);
     return new SkyObject({
-      type: obj.type, name: name, names: names, norad: obj.data ? obj.data.norad : undefined,
+      type: obj.type, name: name, ids: ids, norad: obj.data ? obj.data.norad : undefined,
       jx: obj.jx, jy: obj.jy, jz: obj.jz, mag: mag, data: s || obj.data,
       elements: obj.data ? obj.data.elements : null
     });

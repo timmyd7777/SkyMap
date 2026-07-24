@@ -420,9 +420,8 @@ function refreshInfoPanel() {
     document.getElementById('info-catalog').textContent = obj.norad != null ? String(obj.norad) : '—';
   } else {
     catalogLabel.textContent = 'Catalog IDs';
-    var catalogs = obj.names.filter(function(n) { return n !== obj.name; });
-    document.getElementById('info-catalog').innerHTML = catalogs.length
-      ? catalogs.map(function(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }).join('<br>') : '—';
+    document.getElementById('info-catalog').innerHTML = obj.ids.length
+      ? obj.ids.map(function(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }).join('<br>') : '—';
   }
 
   // Coordinates in current frame. Label depends only on the frame, so it's
