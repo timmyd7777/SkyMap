@@ -205,6 +205,7 @@ Calls `frameMatrix()` to get rotation matrices, computes nutation/obliquity/LST 
 - `showHorizon` — controls horizon fill independently of frame (the HTML UI ties it to `viewFrame === 'horizon'` but external callers can set it independently).
 - `showHorizonLabels` — cardinal direction labels N/NE/E/.../NW, works in any frame via `horProject`/`horProjectRaw`.
 - `showMeridian` — bold horizon-frame meridian, via its own checkbox independent of `showGrid`.
+- `gridFrame` — optional string (`'horizon'`, `'equatorial'`, `'ecliptic'`, `'galactic'`). When set, the coordinate grid is drawn in this frame instead of `viewFrame`. If omitted, defaults to `viewFrame`. Respects the `j2000` param for precession.
 - `refraction` — when true, horizon line/mask/meridian endpoints sit at `REFRACTION_ALT` = −34 arcmin; when false, at exactly 0°. Computed once as `horizonAlt = refraction ? REFRACTION_ALT : 0`.
 - `showSelection` — toggles selected-object marker and label.
 - `flipH` / `flipV` — mirror the view. Implemented in `toScreen()` via sign factors `fX`/`fY`; inverse `viewUnproject()` divides them out.
@@ -215,7 +216,8 @@ Local drawing functions (`drawPhaseDisc`, `drawPlanetGrid`, `drawSaturnRing`) ap
 
 #### Global view state
 
-Mutable view state (`viewLon`, `viewLat`, `viewFov`, `viewFrame`, `viewJ2000`, `viewRefraction`) is global so the HTML wrapper can read/write it.
+Mutable view state (`viewLon`, `viewLat`, `viewFov`, `viewFrame`, `viewJ2000`, `viewRefraction`, `gridFrame`) is global so the HTML wrapper can read/write it.
+- `gridFrame` (string, default `'horizon'`) is set from the `gridFrame` param each `skymapDraw()` call; falls back to `viewFrame` when the param is omitted. Controls which coordinate frame the grid is drawn in, independently of the display frame.
 - `viewRefraction` (boolean, default true) is set from the `refraction` param each `skymapDraw()` call; used by `refreshInfoPanel()` in `searchinfo.js` for apparent altitude and rise/transit/set h0.
 
 #### Global projection closures

@@ -23,9 +23,14 @@
 let viewLon = 180, viewLat = 90, viewFov = 180;
 
 // Current coordinate frame: 'horizon', 'equatorial', 'ecliptic', or 'galactic'.
-// Equinox for equatorial and ecliptic frames is either mean J2000 or true JNow. 
+// Equinox for equatorial and ecliptic frames is either mean J2000 or true JNow.
 let viewFrame = 'horizon';
 let viewJ2000 = false;
+
+// Grid coordinate frame. The coordinate grid is drawn in this frame, which may
+// differ from viewFrame (e.g. equatorial grid on a horizon view).
+// Set via the gridFrame param in skymapDraw().
+let gridFrame = 'horizon';
 
 // Whether atmospheric refraction is applied. Set from the refraction param each
 // skymapDraw() call. Used by refreshInfoPanel() for apparent altitude and rise/set.
@@ -297,6 +302,7 @@ function skymapDraw(canvas, params) {
   } = params;
   const showStarColors = true;
   viewRefraction = !!refraction;
+  gridFrame = params.gridFrame || viewFrame;
   const horizonAlt = refraction ? REFRACTION_ALT : 0;
 
   const ctx = canvas.getContext('2d');
@@ -640,15 +646,18 @@ function skymapDraw(canvas, params) {
     drawMWPoly(MILKYWAY[COALSACK_INDEX]);
   }
 
-  // Draw the coordinate grid for the current frame: latitude parallels,
-  // longitude meridians, and labels for both. Grid spacing adapts to FOV.
-  // Longitude labels are placed along the equator (or nearest visible parallel).
-  // Latitude labels are placed along the prime meridian if a pole is visible,
-  // otherwise along the first meridian visible from the left screen edge.
+  // Draw the coordinate grid. When gridFrame differs from viewFrame, the grid
+  // is drawn in that alternate frame (e.g. equatorial grid on a horizon view).
+  // Grid spacing adapts to FOV. Longitude labels are placed along the equator
+  // (or nearest visible parallel). Latitude labels are placed along the prime
+  // meridian if a pole is visible, else along the first meridian from the left edge.
   function drawGrid() {
-    ctx.strokeStyle = frameColor(viewFrame, 0.5);
+    // mG: grid-frame coords → view coords. When gridFrame === viewFrame this equals mView.
+    const mG = gridFrame === viewFrame ? mView
+      : mmul(M, mtranspose(frameMatrix(gridFrame, jd, loc.latRad, loc.lonRad, j2000)));
+    ctx.strokeStyle = frameColor(gridFrame, 0.5);
     ctx.lineWidth = 1;
-    const gridPoleX = mView[2], gridPoleY = mView[5], gridPoleZ = mView[8];
+    const gridPoleX = mG[2], gridPoleY = mG[5], gridPoleZ = mG[8];
     const latStep = viewFov < 20 ? 5 : viewFov < 60 ? 10 : 30;
     const lonStep = viewFov < 20 ? 5 : viewFov < 60 ? 15 : 45;
     // Latitude parallels
@@ -658,22 +667,24 @@ function skymapDraw(canvas, params) {
     // Longitude meridians (cardinal meridians extend pole-to-pole)
     const merMaxLat = 90 - latStep;
     for (let lon = 0; lon < 360; lon += lonStep) {
-      drawMeridian(mView, lon * DEG_TO_RAD, lon % 90 === 0 ? 90 : merMaxLat);
+      drawMeridian(mG, lon * DEG_TO_RAD, lon % 90 === 0 ? 90 : merMaxLat);
     }
     // Longitude labels along the nearest visible parallel to the equator
     const glfs = max(minFontSize, round(min(W, H) / 85));
     ctx.font = `${glfs}px sans-serif`;
-    ctx.fillStyle = frameColor(viewFrame, 0.5);
+    ctx.fillStyle = frameColor(gridFrame, 0.5);
     const rTop = abs((0 - cy) / scale), rBot = abs((H - cy) / scale);
     const halfFovV = (atan2(rTop, 2) + atan2(rBot, 2)) / DEG_TO_RAD;
-    const lat = viewLat;
+    // Grid-frame latitude of the view center: mG^T * (0,0,1) = row 2 of mG
+    const refLat = gridFrame === viewFrame ? viewLat
+      : asin(max(-1, min(1, mG[8]))) * RAD_TO_DEG;
     let lonLabelLat;
-    if ((lat > 0 && lat - halfFovV < 0) || (lat < 0 && lat + halfFovV > 0) || lat === 0) {
+    if ((refLat > 0 && refLat - halfFovV < 0) || (refLat < 0 && refLat + halfFovV > 0) || refLat === 0) {
       lonLabelLat = 0;
-    } else if (lat > 0) {
-      lonLabelLat = ceil((lat - halfFovV) / latStep) * latStep;
+    } else if (refLat > 0) {
+      lonLabelLat = ceil((refLat - halfFovV) / latStep) * latStep;
     } else {
-      lonLabelLat = floor((lat + halfFovV) / latStep) * latStep;
+      lonLabelLat = floor((refLat + halfFovV) / latStep) * latStep;
     }
     {
       const llR = lonLabelLat * DEG_TO_RAD;
@@ -681,14 +692,14 @@ function skymapDraw(canvas, params) {
       for (let lon = 0; lon < 360; lon += lonStep) {
         const lonR = lon * DEG_TO_RAD;
         const cl = cos(lonR), sl = sin(lonR);
-        const [qx, qy, qz] = mvmul(mView, cLL * cl, cLL * sl, sLL);
+        const [qx, qy, qz] = mvmul(mG, cLL * cl, cLL * sl, sLL);
         if (qz < 0) continue;
         const d = 1 + qz;
         const pt = toScreen(2 * qx / d, -2 * qy / d);
         if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) continue;
-        const dispLon = viewFrame === 'horizon' ? mod360(90 - lon) : lon;
+        const dispLon = gridFrame === 'horizon' ? mod360(90 - lon) : lon;
         let label;
-        if (viewFrame === 'equatorial') {
+        if (gridFrame === 'equatorial') {
           const totalMin = dispLon * 4;
           const h = floor(totalMin / 60), m = totalMin % 60;
           label = m === 0 ? `${h}h` : `${h}h${pad2(m)}m`;
@@ -700,40 +711,39 @@ function skymapDraw(canvas, params) {
     }
     // Latitude labels along a chosen meridian
     const POLE_NAMES = { horizon: ['Nadir','Zenith'], equatorial: ['SCP','NCP'], ecliptic: ['SEP','NEP'], galactic: ['SGP','NGP'] };
-    const poles = POLE_NAMES[viewFrame];
-    // Pole labels (Zenith/Nadir, NCP/SCP, NEP/SEP, NGP/SGP) use the same bright
-    // color as the frame's own reference line — drawCardinals()'s N/E/S/W for
-    // Horizon, drawRefLines()'s ecliptic/celestial-equator/galactic-equator
-    // strokes otherwise — rather than the dim grid-label color used for the
-    // numeric latitude labels alongside them.
-    const poleColor = viewFrame === 'ecliptic' ? frameColor('ecliptic', 0.9) : frameColor(viewFrame);
-    // Pole labels also match drawCardinals()'s bold, slightly larger font
-    // (divisor 80 vs the regular grid labels' 85) rather than the plain font
-    // used for the numeric latitude labels alongside them.
+    const poles = POLE_NAMES[gridFrame];
+    const poleColor = gridFrame === 'ecliptic' ? frameColor('ecliptic', 0.9) : frameColor(gridFrame);
     const poleFont = `bold ${max(minFontSize, round(min(W, H) / 80))}px sans-serif`;
     const gridFont = `${glfs}px sans-serif`;
     let poleVisible = false;
     for (const pz of [1, -1]) {
-      const qx = mView[2]*pz, qy = mView[5]*pz, qz = mView[8]*pz;
+      const qx = mG[2]*pz, qy = mG[5]*pz, qz = mG[8]*pz;
       if (qz < 0) continue;
       const d = 1 + qz;
       const pt = toScreen(2 * qx / d, -2 * qy / d);
       if (pt[0] >= 0 && pt[0] <= W && pt[1] >= 0 && pt[1] <= H) poleVisible = true;
     }
     // Choose meridian: prime (0h / 0°) if pole visible, else first from left screen edge.
-    // For horizon frame, prime = 90° internal (= 0° azimuth display).
-    // For non-horizon, RA increases leftward so floor() picks first visible from left.
     let labelLonR;
     if (poleVisible) {
-      const primeLon = viewFrame === 'horizon' ? 90 : 0;
+      const primeLon = gridFrame === 'horizon' ? 90 : 0;
       labelLonR = primeLon * DEG_TO_RAD;
     } else {
-      const corner = viewUnproject(0, lat >= 0 ? H : 0);
-      const cornerDisp = corner ? corner[1] * RAD_TO_DEG : viewLon;
-      const nextDisp = viewFrame === 'horizon'
+      // Unproject screen corner into the grid frame to find visible meridian
+      const cornerJ2000 = skyUnproject(0, refLat >= 0 ? H : 0);
+      let cornerDisp;
+      if (cornerJ2000) {
+        const mGF = gridFrame === viewFrame ? mFrame : frameMatrix(gridFrame, jd, loc.latRad, loc.lonRad, j2000);
+        const [px, py, pz] = mvmul(mGF, cornerJ2000[0], cornerJ2000[1], cornerJ2000[2]);
+        const cornerLon = (gridFrame === 'horizon' ? atan2pi(px, py) : atan2pi(py, px)) * RAD_TO_DEG;
+        cornerDisp = cornerLon;
+      } else {
+        cornerDisp = gridFrame === viewFrame ? viewLon : 0;
+      }
+      const nextDisp = gridFrame === 'horizon'
         ? (ceil(cornerDisp / lonStep) * lonStep) % 360
         : (floor(cornerDisp / lonStep) * lonStep + 360) % 360;
-      const labelLon = viewFrame === 'horizon' ? mod360(90 - nextDisp) : nextDisp;
+      const labelLon = gridFrame === 'horizon' ? mod360(90 - nextDisp) : nextDisp;
       labelLonR = labelLon * DEG_TO_RAD;
     }
     // Walk from -90° to +90° (and wrap through the far pole) to label both hemispheres
@@ -742,14 +752,14 @@ function skymapDraw(canvas, params) {
       const effLat = lat > 90 ? 180 - lat : lat;
       const latR = lat * DEG_TO_RAD;
       const cLat = cos(latR), sLat = sin(latR);
-      const [qx, qy, qz] = mvmul(mView, cLat * cl, cLat * sl, sLat);
+      const [qx, qy, qz] = mvmul(mG, cLat * cl, cLat * sl, sLat);
       if (qz < 0) continue;
       const d = 1 + qz;
       const pt = toScreen(2 * qx / d, -2 * qy / d);
       if (pt[0] < 0 || pt[0] > W || pt[1] < 0 || pt[1] > H) continue;
       const isPole = effLat === -90 || effLat === 90;
       const label = effLat === -90 ? poles[0] : effLat === 90 ? poles[1] : `${effLat >= 0 ? '+' : ''}${effLat}°`;
-      ctx.fillStyle = isPole ? poleColor : frameColor(viewFrame, 0.5);
+      ctx.fillStyle = isPole ? poleColor : frameColor(gridFrame, 0.5);
       ctx.font = isPole ? poleFont : gridFont;
       placeLabel(pt[0], pt[1], glfs * 0.5, label);
     }
