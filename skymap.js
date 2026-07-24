@@ -161,10 +161,10 @@ function formatSelection(obj) {
   const ids = [];
   let type = '', name = '';
   if (obj.type === 'star') {
-    const s = d.star;
+    const s = d.star || d;
     const STAR_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
     type = STAR_TYPES[s[S_TYPE]] || 'Star';
-    name = d.name;
+    name = d.name || s[S_NAME] || '';
     if (s[S_BAYER]) ids.push(s[S_BAYER]);
     if (s[S_FLAM]) ids.push(s[S_FLAM]);
     if (obj.hr) ids.push(`HR ${obj.hr}`);
