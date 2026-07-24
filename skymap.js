@@ -1786,7 +1786,7 @@ function skymapDraw(canvas, params) {
     // though the view is entirely below the horizon. Detect this by computing
     // the view center's altitude via the horizon frame matrix.
     if (viewFov < 5) {
-      const [,, cenZ] = mvmul(mHorizon, MT[6], MT[7], MT[8]);
+      const [,, cenZ] = mvmul(mHorizon, MT[2], MT[5], MT[8]);
       const cenAlt = asin(max(-1, min(1, cenZ)));
       const halfFov = viewFov * DEG_TO_RAD / 2;
       if (cenAlt + halfFov < horizonAlt) {
