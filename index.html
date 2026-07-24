@@ -218,7 +218,7 @@ body.light #searchPanel select { background: #fff; color: #222; border: 1px soli
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showGalEq" autocomplete="off"> Galactic Equator</label><label><input type="checkbox" id="showMeridian" autocomplete="off"> Meridian</label></div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showGrid" autocomplete="off"> Coordinate Grid</label><label><input type="checkbox" id="showPlanetGrid" autocomplete="off" checked> Planet Grids</label></div>
       <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="showHeader" checked autocomplete="off"> Header</label><label><input type="checkbox" id="showSelection" checked autocomplete="off"> Selection</label></div>
-      <label><input type="checkbox" id="darkToggle" checked autocomplete="off"> Dark Mode</label>
+      <div style="display:flex; justify-content:space-between;"><label><input type="checkbox" id="darkToggle" checked autocomplete="off"> Dark Mode</label><label><input type="checkbox" id="showRefraction" checked autocomplete="off"> Refraction</label></div>
     </div>
   </div>
   <div>
@@ -668,7 +668,7 @@ function draw() {
     showMilkyWay: document.getElementById('showMilkyWay').checked,
     showHorizon: viewFrame === 'horizon',
     showHorizonLabels: viewFrame === 'horizon',
-    refraction: true,
+    refraction: document.getElementById('showRefraction').checked,
     showEcliptic: document.getElementById('showEcliptic').checked,
     showCelEq: document.getElementById('showCelEq').checked,
     showGalEq: document.getElementById('showGalEq').checked,
@@ -809,7 +809,7 @@ function init() {
     el.addEventListener('change', () => draw());
     el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); draw(); } });
   }
-  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showPlanetGrid','showMeridian','showHeader','showSelection','darkToggle','flipH','flipV']) {
+  for (const id of ['showStars','showNames','showStarIds','showConst','showConstNames','showBounds','showPlanets','showPlanetSymbols','showPlanetNames','showComets','showCometNames','showAsteroids','showAsteroidNames','showSatellites','showSatelliteNames','showDeepSky','showDeepSkyNames','showDeepSkyIds','showMilkyWay','showEcliptic','showCelEq','showGalEq','showGrid','showPlanetGrid','showMeridian','showHeader','showSelection','darkToggle','showRefraction','flipH','flipV']) {
     document.getElementById(id).addEventListener('change', () => draw());
   }
   for (const r of document.querySelectorAll('input[name="latNS"], input[name="lonEW"]')) {

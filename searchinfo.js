@@ -72,7 +72,8 @@ function searchObjects(query) {
     var e = _starSearchData[i];
     if (e.text.includes(q)) {
       var s = STARS[e.idx];
-      var label = s[S_NAME] || s[S_BAYER] || s[S_FLAM] || (s[S_HR] ? 'HR ' + s[S_HR] : 'HIP ' + s[S_HIP]);
+      var desig = s[S_BAYER] || s[S_FLAM] || (s[S_HR] ? 'HR ' + s[S_HR] : s[S_HD] ? 'HD ' + s[S_HD] : 'HIP ' + s[S_HIP]);
+      var label = s[S_NAME] ? (desig ? desig + ' - ' + s[S_NAME] : s[S_NAME]) : desig;
       results.push({ src: 'star', idx: e.idx, label: label, mag: e.mag, text: e.text });
     }
   }
@@ -115,7 +116,7 @@ function searchObjects(query) {
 
 // ---- Object list builders ----
 
-function getObjectList(category) {
+function getObjectList(category, showTypes) {
   var items = [];
 
   switch (category) {
@@ -218,7 +219,9 @@ function getObjectList(category) {
         var ds = DEEPSKY[i];
         if (ds[DS_NAME]) {
           var catId = ds[DS_MC] || ds[DS_NGC] || '';
+          var typeName = showTypes ? (DS_TYPE_NAMES[ds[DS_TYPE]] || ds[DS_TYPE] || '') : '';
           var label = catId ? ds[DS_NAME] + ' - ' + catId : ds[DS_NAME];
+          if (typeName) label += ' (' + typeName + ')';
           items.push({ src: 'deepsky', idx: i, label: label, mag: ds[DS_MAG] });
         }
       }
@@ -229,7 +232,8 @@ function getObjectList(category) {
       for (var i = 0; i < DEEPSKY.length; i++) {
         var ds = DEEPSKY[i];
         if (ds[DS_MC] && ds[DS_MC].startsWith('M ')) {
-          var label = ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '');
+          var typeName = showTypes ? (DS_TYPE_NAMES[ds[DS_TYPE]] || ds[DS_TYPE] || '') : '';
+          var label = ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '') + (typeName ? ' (' + typeName + ')' : '');
           items.push({ src: 'deepsky', idx: i, label: label, mag: ds[DS_MAG] });
         }
       }
@@ -242,7 +246,8 @@ function getObjectList(category) {
       for (var i = 0; i < DEEPSKY.length; i++) {
         var ds = DEEPSKY[i];
         if (ds[DS_MC] && ds[DS_MC].startsWith('C ')) {
-          var label = ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '');
+          var typeName = showTypes ? (DS_TYPE_NAMES[ds[DS_TYPE]] || ds[DS_TYPE] || '') : '';
+          var label = ds[DS_MC] + (ds[DS_NAME] ? ' - ' + ds[DS_NAME] : '') + (typeName ? ' (' + typeName + ')' : '');
           items.push({ src: 'deepsky', idx: i, label: label, mag: ds[DS_MAG] });
         }
       }
@@ -445,6 +450,7 @@ function refreshInfoPanel() {
     var m = frameMatrix(viewFrame, jd, loc.latRad, loc.lonRad, viewJ2000);
     var fv = mvmul(m, obj.jx, obj.jy, obj.jz);
     var latDeg = asin(max(-1, min(1, fv[2]))) * RAD_TO_DEG;
+    if (viewFrame === 'horizon' && viewRefraction) latDeg = refractionTrue2App(latDeg);
     var lon = viewFrame === 'horizon' ? atan2pi(fv[0], fv[1]) : atan2pi(fv[1], fv[0]);
     var lonDeg = lon * RAD_TO_DEG;
     if (viewFrame === 'equatorial') {
@@ -526,12 +532,13 @@ function refreshInfoPanel() {
     // shortcut 0.7275*parallax - 34', which substitutes for that correction —
     // we just need refraction plus the Moon's actual current semidiameter here,
     // the same logic as the Sun's -50' (34' refraction + 16' semidiameter).
-    var h0 = REFRACTION_ALT;
-    if (obj.type === 'sun') h0 = (-50 / 60) * DEG_TO_RAD;
+    var refrAlt = viewRefraction ? REFRACTION_ALT : 0;
+    var h0 = refrAlt;
+    if (obj.type === 'sun') h0 = refrAlt - (16 / 60) * DEG_TO_RAD;
     else if (obj.type === 'moon') {
       var moonSS = obj.ssData;
       var moonSemiDiam = (moonSS && moonSS.angRad) ? moonSS.angRad : (15.5 / 60) * DEG_TO_RAD;
-      h0 = REFRACTION_ALT - moonSemiDiam;
+      h0 = refrAlt - moonSemiDiam;
     }
 
     // ssTarget is either a name string (Sun/Moon/planet) or an already-resolved

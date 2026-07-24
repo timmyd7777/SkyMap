@@ -39,7 +39,7 @@ class SkyObject {
   get typeLabel() {
     switch (this.type) {
       case 'star': return (this.data && STAR_TYPE_NAMES[this.data[S_TYPE]]) || 'Star';
-      case 'sun': return 'Star (Sun)';
+      case 'sun': return 'Star';
       case 'planet': return 'Planet';
       case 'moon': return 'Moon of Earth';
       case 'asteroid': return 'Asteroid';

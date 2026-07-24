@@ -27,6 +27,10 @@ let viewLon = 180, viewLat = 90, viewFov = 180;
 let viewFrame = 'horizon';
 let viewJ2000 = false;
 
+// Whether atmospheric refraction is applied. Set from the refraction param each
+// skymapDraw() call. Used by refreshInfoPanel() for apparent altitude and rise/set.
+let viewRefraction = true;
+
 // Forward and inverse projection in the current coordinate frame, set by skymapDraw() each frame.
 let viewProject = null;   // (lat, lon) in current frame (radians) → [sx, sy] canvas pixels, or null.
 let viewUnproject = null;  // (sx, sy) in canvas pixels → [lat, lon] in current frame (radians), or null.
@@ -292,6 +296,7 @@ function skymapDraw(canvas, params) {
     showGrid, showMeridian, showHeader, showSelection, flipH, flipV, refraction,
   } = params;
   const showStarColors = true;
+  viewRefraction = !!refraction;
   const horizonAlt = refraction ? REFRACTION_ALT : 0;
 
   const ctx = canvas.getContext('2d');
