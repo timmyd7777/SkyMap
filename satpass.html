@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Satellite Pass Finder</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: sans-serif; display: flex; flex-direction: row; background: #000; color: #ccc; }
+#sidebar { width: 260px; min-width: 260px; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+  overflow-y: auto; border-right: 1px solid #333; }
+#sidebar label { font-size: 13px; display: block; margin-bottom: 2px; }
+#sidebar input[type="text"], #sidebar input[type="date"] {
+  font-size: 13px; padding: 4px 6px; background: #222; color: #ccc; border: 1px solid #555; }
+#sidebar select { font-size: 12px; padding: 3px 4px; width: 100%; background: #222; color: #ccc; border: 1px solid #555; }
+button { cursor: pointer; border-radius: 3px; font-size: 13px; padding: 4px 8px;
+  background: #333; color: #ccc; border: 1px solid #555; }
+button:hover { background: #444; }
+button:disabled { opacity: 0.4; cursor: default; }
+.loc-row { display: flex; align-items: center; gap: 3px; margin: 3px 0; }
+.loc-row input[type="text"] { text-align: center; font-size: 13px; font-family: monospace; padding: 3px 2px; width: 36px; }
+.loc-row .deg-input { width: 42px; }
+.loc-row .unit { font-size: 12px; }
+.loc-row .radio-group { font-size: 12px; margin-left: 4px; white-space: nowrap; display: inline-flex; gap: 4px; }
+.loc-row .radio-group label { display: inline; }
+.date-picker { display: flex; align-items: center; gap: 2px; }
+.date-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.date-col label { font-size: 11px; margin-bottom: 0; }
+.date-col input { text-align: center; font-size: 14px; font-family: monospace; padding: 3px 2px; width: 100%;
+  background: #222; color: #ccc; border: 1px solid #555; }
+button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
+.section-label { text-align: center; display: block; font-weight: bold; margin-top: 2px; }
+#results { flex: 1; overflow: auto; padding: 16px; }
+#results table { border-collapse: collapse; width: 100%; font-size: 13px; }
+#results th { background: #222; color: #aaa; padding: 6px 8px; text-align: left;
+  border-bottom: 1px solid #444; white-space: nowrap; position: sticky; top: 0; cursor: pointer; user-select: none; }
+#results th:hover { color: #ddd; }
+#results td { padding: 5px 8px; border-bottom: 1px solid #222; white-space: nowrap; }
+#results tr:hover td { background: #1a1a2a; }
+#satSearch { width: 100%; margin-bottom: 4px; }
+#satList { width: 100%; height: 160px; }
+#statusText { font-size: 12px; color: #888; margin-top: 4px; }
+#sunInfo { font-size: 12px; color: #aab; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <label class="section-label">Satellite Pass Finder</label>
+
+  <div>
+    <label class="section-label" style="font-weight:normal;display:block;text-align:center">Date</label>
+    <div class="date-picker">
+      <div class="date-col">
+        <label>Year</label>
+        <button class="arr" onclick="stepDate('y',1)">&#x25B2;</button>
+        <input type="text" id="dpYear" size="4" maxlength="4" style="width:48px">
+        <button class="arr" onclick="stepDate('y',-1)">&#x25BC;</button>
+      </div>
+      <div class="date-col">
+        <label>Mo</label>
+        <button class="arr" onclick="stepDate('m',1)">&#x25B2;</button>
+        <input type="text" id="dpMonth" size="2" maxlength="2" style="width:32px">
+        <button class="arr" onclick="stepDate('m',-1)">&#x25BC;</button>
+      </div>
+      <div class="date-col">
+        <label>Day</label>
+        <button class="arr" onclick="stepDate('d',1)">&#x25B2;</button>
+        <input type="text" id="dpDay" size="2" maxlength="2" style="width:32px">
+        <button class="arr" onclick="stepDate('d',-1)">&#x25BC;</button>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <label class="section-label" style="font-weight:normal">Time Zone</label>
+    <select id="tzSelect"></select>
+    <div id="utcOffsetText" style="font-size:12px; margin-top:4px;"></div>
+    <div id="sunInfo"></div>
+  </div>
+
+  <div>
+    <label class="section-label" style="font-weight:normal">Longitude &amp; Latitude</label>
+    <div class="loc-row">
+      <input type="text" id="lonDeg" class="deg-input" maxlength="3">
+      <span class="unit">&deg;</span>
+      <input type="text" id="lonMin" maxlength="2">
+      <span class="unit">&prime;</span>
+      <input type="text" id="lonSec" maxlength="2">
+      <span class="unit">&Prime;</span>
+      <span class="radio-group"><label><input type="radio" name="lonEW" value="E" checked> E</label>
+        <label><input type="radio" name="lonEW" value="W"> W</label></span>
+    </div>
+    <div class="loc-row">
+      <input type="text" id="latDeg" class="deg-input" maxlength="2">
+      <span class="unit">&deg;</span>
+      <input type="text" id="latMin" maxlength="2">
+      <span class="unit">&prime;</span>
+      <input type="text" id="latSec" maxlength="2">
+      <span class="unit">&Prime;</span>
+      <span class="radio-group"><label><input type="radio" name="latNS" value="N" checked> N</label>
+        <label><input type="radio" name="latNS" value="S"> S</label></span>
+    </div>
+    <button onclick="geolocate()" style="margin-top:4px;width:100%">Get Location from Wi-Fi</button>
+    <div style="font-size:12px; margin-top:6px; text-align:center;">or choose country and city:</div>
+    <select id="countrySelect" style="margin-top:3px;"></select>
+    <select id="citySelect" style="margin-top:3px;"></select>
+  </div>
+
+  <div>
+    <label class="section-label" style="font-weight:normal">Satellite</label>
+    <input type="text" id="satSearch" placeholder="Search by name or NORAD ID...">
+    <select id="satList" size="8" multiple></select>
+    <div id="statusText">Loading satellite data...</div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:6px;">
+    <label style="font-size:13px; white-space:nowrap;">Min Altitude</label>
+    <input type="text" id="minAlt" value="10" style="width:40px; text-align:center;">
+    <span style="font-size:12px;">&deg;</span>
+  </div>
+
+  <button id="findBtn" onclick="findPasses()" disabled style="width:100%; padding:6px; font-size:14px;">Find Passes</button>
+</div>
+
+<div id="results">
+  <p style="color:#666; text-align:center; margin-top:40px;">Select a satellite and click "Find Passes" to search for visible passes.</p>
+</div>
+
+<script src="astromath.js"></script>
+<script src="planets.js"></script>
+<script src="sgp4.js"></script>
+<script src="satmag.js"></script>
+<script src="cities.js?v=5"></script>
+<script src="satpass.js"></script>
+<script>
+
+var loadedSatellites = null;
+var selectedTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+var systemTZ = selectedTZ;
+
+// ---- Location ----
+
+function getLocation() {
+  var latD = parseInt(document.getElementById('latDeg').value) || 0;
+  var latM = parseInt(document.getElementById('latMin').value) || 0;
+  var latS = parseInt(document.getElementById('latSec').value) || 0;
+  var latSign = document.querySelector('input[name="latNS"]:checked').value === 'S' ? -1 : 1;
+  var lonD = parseInt(document.getElementById('lonDeg').value) || 0;
+  var lonM = parseInt(document.getElementById('lonMin').value) || 0;
+  var lonS = parseInt(document.getElementById('lonSec').value) || 0;
+  var lonSign = document.querySelector('input[name="lonEW"]:checked').value === 'W' ? -1 : 1;
+  return {
+    latRad: latSign * (latD + latM / 60 + latS / 3600) * DEG_TO_RAD,
+    lonRad: lonSign * (lonD + lonM / 60 + lonS / 3600) * DEG_TO_RAD
+  };
+}
+
+function setLocation(latDeg, lonDeg) {
+  var latAbs = Math.abs(latDeg), lonAbs = Math.abs(lonDeg);
+  document.getElementById('latDeg').value = pad2(Math.floor(latAbs));
+  document.getElementById('latMin').value = pad2(Math.floor((latAbs % 1) * 60));
+  document.getElementById('latSec').value = pad2(Math.round(((latAbs * 60) % 1) * 60));
+  document.querySelector('input[name="latNS"][value="' + (latDeg >= 0 ? 'N' : 'S') + '"]').checked = true;
+  document.getElementById('lonDeg').value = Math.floor(lonAbs);
+  document.getElementById('lonMin').value = pad2(Math.floor((lonAbs % 1) * 60));
+  document.getElementById('lonSec').value = pad2(Math.round(((lonAbs * 60) % 1) * 60));
+  document.querySelector('input[name="lonEW"][value="' + (lonDeg >= 0 ? 'E' : 'W') + '"]').checked = true;
+}
+
+function geolocate() {
+  selectedTZ = systemTZ;
+  document.getElementById('tzSelect').value = systemTZ;
+  document.getElementById('citySelect').value = '';
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function(pos) { setLocation(pos.coords.latitude, pos.coords.longitude); updateSunTimes(); },
+      function() { geolocateIP(); },
+      {timeout: 5000}
+    );
+  } else {
+    geolocateIP();
+  }
+}
+
+function geolocateIP() {
+  fetch('https://ipapi.co/json/')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.latitude != null && data.longitude != null) {
+        setLocation(data.latitude, data.longitude);
+        updateSunTimes();
+      } else {
+        alert("Can't get your location from Wi-Fi. Please enter it manually or choose from a list of cities.");
+      }
+    })
+    .catch(function() { alert("Can't get your location from Wi-Fi. Please enter it manually or choose from a list of cities."); });
+}
+
+// ---- Sun rise/set ----
+
+function getDateFields() {
+  var y = parseInt(document.getElementById('dpYear').value) || 2026;
+  var m = parseInt(document.getElementById('dpMonth').value) || 1;
+  var d = parseInt(document.getElementById('dpDay').value) || 1;
+  return { y: y, m: m, d: d };
+}
+
+function setDateFields(y, m, d) {
+  document.getElementById('dpYear').value = y;
+  document.getElementById('dpMonth').value = pad2(m);
+  document.getElementById('dpDay').value = pad2(d);
+}
+
+function stepDate(part, dir) {
+  var f = getDateFields();
+  if (part === 'y') f.y += dir;
+  else if (part === 'm') { f.m += dir; if (f.m > 12) { f.m = 1; f.y++; } if (f.m < 1) { f.m = 12; f.y--; } }
+  else if (part === 'd') {
+    var jd = julianDate(f.y, f.m, f.d, 12, 0, 0) + dir;
+    var c = calendarDate(jd);
+    f.y = c.y; f.m = c.m; f.d = c.d;
+  }
+  setDateFields(f.y, f.m, f.d);
+  updateSunTimes();
+}
+
+function getDateJD() {
+  var f = getDateFields();
+  var tzOffMin = getTZOffsetMinutes(f.y, f.m, f.d, 0, 0);
+  return julianDate(f.y, f.m, f.d, 0, 0, 0) - tzOffMin / 1440;
+}
+
+function getTZOffsetMinutes(y, m, d, h, mi) {
+  try {
+    var fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: selectedTZ, year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false
+    });
+    var utcDate = new Date(Date.UTC(y, m - 1, d, h, mi, 0));
+    var parts = fmt.formatToParts(utcDate);
+    var get = function(type) { var p = parts.find(function(p) { return p.type === type; }); return p ? parseInt(p.value) : 0; };
+    var localY = get('year'), localM = get('month'), localD = get('day');
+    var localH = get('hour'), localMi = get('minute');
+    if (localH === 24) localH = 0;
+    var utcMin = ((y * 12 + m) * 31 + d) * 1440 + h * 60 + mi;
+    var locMin = ((localY * 12 + localM) * 31 + localD) * 1440 + localH * 60 + localMi;
+    return locMin - utcMin;
+  } catch(e) { return 0; }
+}
+
+function computeSunRiseSet(jd0, latRad, lonRad) {
+  var getRaDec = function(t) { return solSysObjPosition('Sun', t, latRad, lonRad); };
+  var h0 = REFRACTION_ALT - (16 / 60) * DEG_TO_RAD;
+  var sunset = riseTransitSetIterative(getRaDec, jd0, latRad, lonRad, h0, 1, 2);
+  var sunrise = riseTransitSetIterative(getRaDec, jd0 + 1, latRad, lonRad, h0, -1, 2);
+  return { sunset: sunset, sunrise: sunrise };
+}
+
+function formatJDLocal(jd) {
+  var c = calendarDate(jd);
+  var hours = Math.floor(c.ut);
+  var minFrac = (c.ut - hours) * 60;
+  var minutes = Math.floor(minFrac);
+  var seconds = Math.round((minFrac - minutes) * 60);
+  var utcMs = Date.UTC(c.y, c.m - 1, c.d, hours, minutes, seconds);
+  try {
+    return new Date(utcMs).toLocaleString('en-US', {
+      timeZone: selectedTZ, hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+    });
+  } catch (e) { return '—'; }
+}
+
+function formatJDLocalShort(jd) {
+  var c = calendarDate(jd);
+  var utcMs = Date.UTC(c.y, c.m - 1, c.d, Math.floor(c.ut), Math.round((c.ut % 1) * 60));
+  try {
+    return new Date(utcMs).toLocaleString('en-US', {
+      timeZone: selectedTZ, hour: 'numeric', minute: '2-digit', hour12: true
+    });
+  } catch (e) { return '—'; }
+}
+
+var cachedSunset = null, cachedSunrise = null;
+
+function updateUTCOffset() {
+  var f = getDateFields();
+  var offMin = getTZOffsetMinutes(f.y, f.m, f.d, 12, 0);
+  var offHrs = -offMin / 60;
+  var offSign = offHrs >= 0 ? '+' : '-';
+  var absMin = Math.abs(offMin);
+  var offH = Math.floor(absMin / 60), offM = absMin % 60;
+  var offStr = offM === 0 ? offSign + offH : offSign + offH + ':' + pad2(offM);
+  var janOff = getTZOffsetMinutes(f.y, 1, 1, 12, 0);
+  var julOff = getTZOffsetMinutes(f.y, 7, 1, 12, 0);
+  var stdOff = Math.max(janOff, julOff);
+  var isDST = offMin < stdOff;
+  var tzLabel = (janOff === julOff && offM !== 0) ? 'Local Mean Time' : isDST ? 'Daylight Time' : 'Standard Time';
+  document.getElementById('utcOffsetText').textContent = 'UTC ' + offStr + ' (' + tzLabel + ')';
+}
+
+function updateSunTimes() {
+  updateUTCOffset();
+  var jd0 = getDateJD();
+  if (!jd0) { document.getElementById('sunInfo').textContent = ''; return; }
+  var loc = getLocation();
+  var sun = computeSunRiseSet(jd0, loc.latRad, loc.lonRad);
+  cachedSunset = (sun.sunset && sun.sunset.status === 'normal') ? sun.sunset.jd : null;
+  cachedSunrise = (sun.sunrise && sun.sunrise.status === 'normal') ? sun.sunrise.jd : null;
+  var text = '';
+  text += 'Sunset: ' + (cachedSunset ? formatJDLocalShort(cachedSunset) : '—');
+  text += '\nSunrise: ' + (cachedSunrise ? formatJDLocalShort(cachedSunrise) : '—');
+  document.getElementById('sunInfo').innerText = text;
+}
+
+// ---- Satellite list ----
+
+function populateSatList(filter) {
+  var list = document.getElementById('satList');
+  list.innerHTML = '';
+  if (!loadedSatellites) return;
+  var query = (filter || '').toLowerCase();
+  var matches = loadedSatellites.filter(function(sat) {
+    if (!query) return true;
+    return sat.name.toLowerCase().indexOf(query) >= 0 || String(sat.norad).indexOf(query) >= 0;
+  });
+  matches.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  for (var i = 0; i < matches.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = matches[i].name + ' - ' + matches[i].norad;
+    opt._sat = matches[i];
+    list.appendChild(opt);
+  }
+}
+
+function getSelectedSats() {
+  var list = document.getElementById('satList');
+  var sats = [];
+  for (var i = 0; i < list.options.length; i++) {
+    if (list.options[i].selected) sats.push(list.options[i]._sat);
+  }
+  return sats;
+}
+
+// ---- Azimuth formatting ----
+
+function azToCompass(azRad) {
+  var deg = azRad * RAD_TO_DEG;
+  var dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var i = Math.round(deg / 22.5) % 16;
+  return Math.round(deg) + '° ' + dirs[i];
+}
+
+// ---- Find passes ----
+
+function findPasses() {
+  var sats = getSelectedSats();
+  if (sats.length === 0) return;
+  if (!cachedSunset || !cachedSunrise) {
+    alert('Cannot compute sunset/sunrise for this date and location.');
+    return;
+  }
+
+  var loc = getLocation();
+  var minAltDeg = parseFloat(document.getElementById('minAlt').value) || 0;
+
+  document.getElementById('results').innerHTML = '<p style="color:#888; text-align:center; margin-top:40px;">Searching ' +
+    sats.length + ' satellite' + (sats.length > 1 ? 's' : '') + '...</p>';
+
+  setTimeout(function() {
+    var allPasses = [];
+    for (var i = 0; i < sats.length; i++) {
+      var passes = findSatellitePasses(sats[i], cachedSunset, cachedSunrise, loc.latRad, loc.lonRad, minAltDeg);
+      for (var j = 0; j < passes.length; j++) {
+        passes[j].sat = sats[i];
+      }
+      allPasses = allPasses.concat(passes);
+    }
+    allPasses.sort(function(a, b) { return a.riseJD - b.riseJD; });
+    displayPasses(allPasses);
+  }, 50);
+}
+
+var currentPasses = [];
+var sortCol = 2;
+var sortAsc = true;
+
+var COLUMNS = [
+  { label: 'Satellite', key: function(p) { return p.sat.name; } },
+  { label: 'NORAD',     key: function(p) { return p.sat.norad; } },
+  { label: 'Rise Time', key: function(p) { return p.riseJD; } },
+  { label: 'Rise Az',   key: function(p) { return p.riseAz; } },
+  { label: 'Culm Time', key: function(p) { return p.culminJD; } },
+  { label: 'Culm Alt',  key: function(p) { return p.culminAlt; } },
+  { label: 'Set Time',  key: function(p) { return p.setJD; } },
+  { label: 'Set Az',    key: function(p) { return p.setAz; } },
+  { label: 'Eclipse',   key: function(p) { return p.eclipseEntryJD || Infinity; } }
+];
+
+function sortPasses() {
+  var keyFn = COLUMNS[sortCol].key;
+  var dir = sortAsc ? 1 : -1;
+  currentPasses.sort(function(a, b) {
+    var ka = keyFn(a), kb = keyFn(b);
+    if (typeof ka === 'string') return dir * ka.localeCompare(kb);
+    return dir * (ka - kb);
+  });
+}
+
+function eclipseText(p) {
+  if (p.eclipseEntryJD && p.eclipseExitJD) {
+    if (p.eclipseEntryJD === p.riseJD && p.eclipseExitJD === p.setJD) return 'Entire pass';
+    if (p.eclipseEntryJD === p.riseJD) return 'Exit ' + formatJDLocal(p.eclipseExitJD);
+    if (p.eclipseExitJD === p.setJD) return 'Entry ' + formatJDLocal(p.eclipseEntryJD);
+    return formatJDLocal(p.eclipseEntryJD) + ' – ' + formatJDLocal(p.eclipseExitJD);
+  }
+  if (p.eclipseEntryJD) return 'Entry ' + formatJDLocal(p.eclipseEntryJD);
+  if (p.eclipseExitJD) return 'Exit ' + formatJDLocal(p.eclipseExitJD);
+  return '—';
+}
+
+function renderPassTable() {
+  var div = document.getElementById('results');
+  if (currentPasses.length === 0) {
+    div.innerHTML = '<p style="color:#888; text-align:center; margin-top:40px;">No passes found between sunset and sunrise.</p>';
+    return;
+  }
+  sortPasses();
+  var html = '<table><thead><tr>';
+  for (var c = 0; c < COLUMNS.length; c++) {
+    var arrow = c === sortCol ? (sortAsc ? ' ▲' : ' ▼') : '';
+    html += '<th data-col="' + c + '">' + COLUMNS[c].label + arrow + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (var i = 0; i < currentPasses.length; i++) {
+    var p = currentPasses[i];
+    html += '<tr>' +
+      '<td>' + p.sat.name + '</td>' +
+      '<td>' + p.sat.norad + '</td>' +
+      '<td>' + formatJDLocal(p.riseJD) + '</td>' +
+      '<td>' + azToCompass(p.riseAz) + '</td>' +
+      '<td>' + formatJDLocal(p.culminJD) + '</td>' +
+      '<td>' + Math.round(p.culminAlt * RAD_TO_DEG) + '°</td>' +
+      '<td>' + formatJDLocal(p.setJD) + '</td>' +
+      '<td>' + azToCompass(p.setAz) + '</td>' +
+      '<td>' + eclipseText(p) + '</td>' +
+      '</tr>';
+  }
+  html += '</tbody></table>';
+  div.innerHTML = html;
+  div.querySelectorAll('th').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = parseInt(th.getAttribute('data-col'));
+      if (col === sortCol) sortAsc = !sortAsc;
+      else { sortCol = col; sortAsc = true; }
+      renderPassTable();
+    });
+  });
+}
+
+function displayPasses(passes) {
+  currentPasses = passes;
+  sortCol = 2;
+  sortAsc = true;
+  renderPassTable();
+}
+
+// ---- Data loading ----
+
+function fetchCached(url, key, onSuccess) {
+  var cached = localStorage.getItem(key);
+  if (cached) {
+    var obj = JSON.parse(cached);
+    if (Date.now() - obj.time < 86400000) { onSuccess(obj.data, true); return; }
+  }
+  fetch(url)
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(function(data) {
+      try { localStorage.setItem(key, JSON.stringify({ time: Date.now(), data: data })); } catch(e) {}
+      onSuccess(data, false);
+    })
+    .catch(function(e) {
+      if (cached) onSuccess(JSON.parse(cached).data, true);
+      else console.warn(key + ' fetch failed:', e.message);
+    });
+}
+
+// ---- Init ----
+
+window.addEventListener('load', function() {
+  // Timezone dropdown
+  var tzSelect = document.getElementById('tzSelect');
+  var tzList;
+  try { tzList = Intl.supportedValuesOf('timeZone'); } catch(e) { tzList = [systemTZ]; }
+  if (!tzList.includes('UTC')) tzList.unshift('UTC');
+  else { tzList = tzList.filter(function(z) { return z !== 'UTC'; }); tzList.unshift('UTC'); }
+  for (var i = 0; i < tzList.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = tzList[i];
+    opt.textContent = tzList[i].replace(/_/g, ' ');
+    tzSelect.appendChild(opt);
+  }
+  tzSelect.value = systemTZ;
+  tzSelect.addEventListener('change', function() { selectedTZ = tzSelect.value; updateSunTimes(); });
+
+  // Country/city dropdowns
+  var countryNames = new Intl.DisplayNames(['en'], {type: 'region'});
+  var countrySel = document.getElementById('countrySelect');
+  var citySel = document.getElementById('citySelect');
+  var countries = [];
+  var seen = {};
+  for (var i = 0; i < CITIES.length; i++) {
+    var cc = CITIES[i][2];
+    if (!seen[cc]) { seen[cc] = true; countries.push({ code: cc, name: countryNames.of(cc) || cc }); }
+  }
+  countries.sort(function(a, b) { return a.name.localeCompare(b.name); });
+  for (var i = 0; i < countries.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = countries[i].code;
+    opt.textContent = countries[i].name;
+    countrySel.appendChild(opt);
+  }
+  function populateCities() {
+    citySel.innerHTML = '<option value="">--</option>';
+    var cc = countrySel.value;
+    if (!cc) return;
+    for (var i = 0; i < CITIES.length; i++) {
+      if (CITIES[i][2] !== cc) continue;
+      var opt = document.createElement('option');
+      opt.value = JSON.stringify(CITIES[i]);
+      opt.textContent = CITIES[i][1] ? CITIES[i][0] + ', ' + CITIES[i][1] : CITIES[i][0];
+      citySel.appendChild(opt);
+    }
+  }
+  countrySel.value = 'US';
+  countrySel.addEventListener('change', populateCities);
+  populateCities();
+  citySel.addEventListener('change', function() {
+    if (!citySel.value) return;
+    var c = JSON.parse(citySel.value);
+    setLocation(c[3], c[4]);
+    selectedTZ = c[5];
+    document.getElementById('tzSelect').value = c[5];
+    updateSunTimes();
+  });
+
+  // Default date to today
+  var now = new Date();
+  setDateFields(now.getFullYear(), now.getMonth() + 1, now.getDate());
+
+  // Get location from Wi-Fi at startup
+  geolocate();
+
+  // Satellite search
+  var searchInput = document.getElementById('satSearch');
+  searchInput.addEventListener('input', function() { populateSatList(searchInput.value); });
+
+  // Satellite list selection enables Find button
+  var satList = document.getElementById('satList');
+  satList.addEventListener('change', function() {
+    document.getElementById('findBtn').disabled = getSelectedSats().length === 0;
+  });
+
+  // Load satellite data
+  var BASE = 'https://www.southernstars.com/updates';
+  fetchCached(BASE + '/satellites/celestrak/visual.csv', 'satellites', function(data, fromCache) {
+    loadedSatellites = parseSatellites(data);
+    document.getElementById('statusText').textContent =
+      (fromCache ? 'Loaded ' : 'Downloaded ') + loadedSatellites.length + ' satellites';
+    populateSatList('');
+    updateSunTimes();
+  });
+});
+
+</script>
+</body>
+</html>
