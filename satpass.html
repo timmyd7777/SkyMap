@@ -40,7 +40,7 @@ button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
 #results tr:hover td { background: #1a1a2a; }
 #satSearch { width: 100%; margin-bottom: 4px; }
 #satList { width: 100%; height: 160px; }
-#statusText { font-size: 12px; color: #888; margin-top: 4px; }
+#statusText { font-size: 12px; color: #888; margin-top: 4px; white-space: pre-line; }
 #sunInfo { font-size: 12px; color: #aab; margin-top: 2px; }
 </style>
 </head>
@@ -591,8 +591,13 @@ window.addEventListener('load', function() {
   var BASE = 'https://www.southernstars.com/updates';
   fetchCached(BASE + '/satellites/celestrak/visual.csv', 'satellites', function(data, fromCache) {
     loadedSatellites = parseSatellites(data);
-    document.getElementById('statusText').textContent =
-      (fromCache ? 'Loaded ' : 'Downloaded ') + loadedSatellites.length + ' satellites';
+    var msg = (fromCache ? 'Loaded ' : 'Downloaded ') + loadedSatellites.length + ' satellites.';
+    var cached = localStorage.getItem('satellites');
+    if (cached) {
+      var age = Date.now() - JSON.parse(cached).time;
+      if (age > 86400000) msg += '\nWARNING: orbits > 1 day old!';
+    }
+    document.getElementById('statusText').textContent = msg;
     populateSatList('');
     updateSunTimes();
   });
