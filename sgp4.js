@@ -3,6 +3,20 @@
 // SGP4 based on Spacetrack Report #3 (Hoots & Roehrich 1980).
 // All internal units: radians, Earth-radii (WGS72), minutes.
 
+// Decode Alpha-5 satellite number (columns 2-7 of TLE lines).
+// Standard 5-digit numbers pass through; Alpha-5 replaces the first digit
+// with A-Z (excluding I,O) to encode values 100000-339999.
+function parseAlpha5(s) {
+  var c = s.charCodeAt(0);
+  if (c >= 65 && c <= 90) {
+    var val = c - 55;                       // A=10, B=11, ..., H=17
+    if (c >= 74) val--;                     // J=18 (skip I)
+    if (c >= 80) val--;                     // P=23 (skip O)
+    return val * 10000 + (parseInt(s.substring(1)) || 0);
+  }
+  return parseInt(s) || 0;
+}
+
 // Parse satellite elements from text (auto-detects TLE vs CSV format).
 // Returns array of satellite records.
 function parseSatellites(text) {
@@ -31,7 +45,7 @@ function parseSatTLE(lines) {
     const line2 = lines[i]; i++;
 
     // Line 1: catalog number, designator, epoch, drag terms
-    const norad = parseInt(line1.substring(2, 7)) || 0;
+    const norad = parseAlpha5(line1.substring(2, 7).trim());
     const desigRaw = line1.substring(9, 17).trim();
     const epochVal = parseFloat(line1.substring(18, 32));
     const ndot2 = parseFloat(line1.substring(33, 43)) || 0;
