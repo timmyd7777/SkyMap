@@ -40,7 +40,10 @@ function satState(sat, jd, latRad, lonRad) {
   // Cylindrical Earth-shadow test (Earth radius = 1 in SGP4 units)
   const eclipsed = inUmbralShadow(gx, gy, gz, sunTx, sunTy, sunTz, 1);
 
-  return { alt, az, eclipsed };
+  // Apparent visual magnitude (Infinity if eclipsed or no McCants entry defaults to +6.0)
+  const mag = satApparentMag(sat.norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz);
+
+  return { alt, az, eclipsed, mag };
 }
 
 // Find the JD within [jd0, jd1] where satellite altitude is closest to altThresh.
@@ -117,6 +120,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
   let inPass = false;
   let passRiseJD, passRiseAz;
   let maxAlt, maxAltJD;
+  let bestMag;
   let eclipseEntryJD, eclipseExitJD;
   let prevEclipsed, eclipsedEntirePass;
 
@@ -129,7 +133,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
 
     if (!s) {
       if (inPass && prevState) {
-        passes.push(closePass(sat, passRiseJD, passRiseAz, maxAlt, maxAltJD,
+        passes.push(closePass(sat, passRiseJD, passRiseAz, maxAlt, maxAltJD, bestMag,
           prevJD, prevState.az, eclipseEntryJD, eclipseExitJD,
           prevEclipsed, eclipsedEntirePass, coarseStep, latRad, lonRad));
         inPass = false;
@@ -149,6 +153,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
         inPass = true;
         maxAlt = s.alt;
         maxAltJD = clampedJD;
+        bestMag = s.mag;
         eclipseEntryJD = null;
         eclipseExitJD = null;
         prevEclipsed = riseState ? riseState.eclipsed : s.eclipsed;
@@ -162,6 +167,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
           maxAlt = s.alt;
           maxAltJD = clampedJD;
         }
+        if (s.mag < bestMag) bestMag = s.mag;
 
         // Eclipse transitions
         if (s.eclipsed && !prevEclipsed) {
@@ -178,7 +184,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
         if (s.alt < altThresh) {
           const setJD = refineAltCrossing(sat, prevJD, clampedJD, latRad, lonRad, altThresh);
           const setState = satState(sat, setJD, latRad, lonRad);
-          passes.push(closePass(sat, passRiseJD, passRiseAz, maxAlt, maxAltJD,
+          passes.push(closePass(sat, passRiseJD, passRiseAz, maxAlt, maxAltJD, bestMag,
             setJD, setState ? setState.az : s.az, eclipseEntryJD, eclipseExitJD,
             prevEclipsed, eclipsedEntirePass, coarseStep, latRad, lonRad));
           inPass = false;
@@ -193,7 +199,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
 
   // Close out a pass still in progress at end of range
   if (inPass && prevState) {
-    passes.push(closePass(sat, passRiseJD, passRiseAz, maxAlt, maxAltJD,
+    passes.push(closePass(sat, passRiseJD, passRiseAz, maxAlt, maxAltJD, bestMag,
       prevJD, prevState.az, eclipseEntryJD, eclipseExitJD,
       prevEclipsed, eclipsedEntirePass, coarseStep, latRad, lonRad));
   }
@@ -202,7 +208,7 @@ function findSatellitePasses(sat, jdStart, jdEnd, latRad, lonRad, minAltDeg) {
 }
 
 // Finalize a pass: refine culmination, settle eclipse end state, build result object.
-function closePass(sat, riseJD, riseAz, maxAlt, maxAltJD, setJD, setAz,
+function closePass(sat, riseJD, riseAz, maxAlt, maxAltJD, bestMag, setJD, setAz,
     eclipseEntryJD, eclipseExitJD, eclipsedAtEnd, eclipsedEntirePass,
     coarseStep, latRad, lonRad) {
   // Refine culmination: search ±1 coarse step around highest sample, clamped to pass
@@ -219,6 +225,7 @@ function closePass(sat, riseJD, riseAz, maxAlt, maxAltJD, setJD, setAz,
     riseJD, riseAz,
     culminJD, culminAlt: culmState ? culmState.alt : maxAlt,
     setJD, setAz,
-    eclipseEntryJD, eclipseExitJD
+    eclipseEntryJD, eclipseExitJD,
+    bestMag
   };
 }

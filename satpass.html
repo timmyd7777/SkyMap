@@ -111,6 +111,8 @@ button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
   <div>
     <label class="section-label" style="font-weight:normal">Satellite</label>
     <input type="text" id="satSearch" placeholder="Search by name or NORAD ID...">
+    <div style="font-size:12px; margin:4px 0 2px; color:#aaa; text-align:center;">or select a group of satellites:</div>
+    <select id="satGroup" style="margin-bottom:4px;"></select>
     <select id="satList" size="8" multiple></select>
     <div id="statusText">Loading satellite data...</div>
   </div>
@@ -140,6 +142,49 @@ button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
 var loadedSatellites = null;
 var selectedTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 var systemTZ = selectedTZ;
+
+var SAT_GROUPS = [
+  { file: 'visual.csv',      label: 'Brightest' },
+  { file: 'active.csv',      label: 'Active Satellites' },
+  { file: 'amateur.csv',     label: 'Amateur Radio' },
+  { file: 'argos.csv',       label: 'ARGOS' },
+  { file: 'beidou.csv',      label: 'BeiDou' },
+  { file: 'cubesat.csv',     label: 'CubeSats' },
+  { file: 'dmc.csv',         label: 'Disaster Monitoring' },
+  { file: 'education.csv',   label: 'Education' },
+  { file: 'engineering.csv', label: 'Engineering' },
+  { file: 'galileo.csv',     label: 'Galileo' },
+  { file: 'geo.csv',         label: 'Geostationary' },
+  { file: 'geodetic.csv',    label: 'Geodetic' },
+  { file: 'glo-ops.csv',     label: 'GLONASS' },
+  { file: 'globalstar.csv',  label: 'Globalstar' },
+  { file: 'goes.csv',        label: 'GOES Weather' },
+  { file: 'gps-ops.csv',     label: 'GPS' },
+  { file: 'intelsat.csv',    label: 'Intelsat' },
+  { file: 'iridium-NEXT.csv',label: 'Iridium NEXT' },
+  { file: 'military.csv',    label: 'Military' },
+  { file: 'musson.csv',      label: 'Musson' },
+  { file: 'nnss.csv',        label: 'Navy Navigation' },
+  { file: 'oneweb.csv',      label: 'OneWeb' },
+  { file: 'orbcomm.csv',     label: 'Orbcomm' },
+  { file: 'other-comm.csv',  label: 'Other Comm' },
+  { file: 'planet.csv',      label: 'Planet Labs' },
+  { file: 'radar.csv',       label: 'Radar Calibration' },
+  { file: 'resource.csv',    label: 'Earth Resources' },
+  { file: 'sarsat.csv',      label: 'Search & Rescue' },
+  { file: 'sbas.csv',        label: 'SBAS' },
+  { file: 'science.csv',     label: 'Science' },
+  { file: 'ses.csv',         label: 'SES' },
+  { file: 'spire.csv',       label: 'Spire' },
+  { file: 'starlink.csv',    label: 'Starlink' },
+  { file: 'tdrss.csv',       label: 'TDRSS' },
+  { file: 'tle-new.csv',     label: 'Last 30 Days' },
+  { file: 'weather.csv',     label: 'Weather' },
+  { file: 'x-comm.csv',      label: 'Experimental Comm' }
+];
+
+var SAT_BASE = 'https://www.southernstars.com/updates/satellites/celestrak/';
+var satGroupData = {};
 
 // ---- Location ----
 
@@ -317,23 +362,83 @@ function updateSunTimes() {
 
 // ---- Satellite list ----
 
+var allSatellites = [];
+
+function buildAllGroup() {
+  var byNorad = {};
+  var labelMap = {};
+  for (var i = 0; i < SAT_GROUPS.length; i++) {
+    labelMap[SAT_GROUPS[i].file] = SAT_GROUPS[i].label;
+  }
+  for (var file in satGroupData) {
+    var sats = satGroupData[file];
+    var groupLabel = labelMap[file] || file;
+    for (var j = 0; j < sats.length; j++) {
+      var sat = sats[j];
+      if (byNorad[sat.norad]) {
+        byNorad[sat.norad].groups.push(groupLabel);
+      } else {
+        var copy = Object.assign({}, sat);
+        copy.groups = [groupLabel];
+        byNorad[sat.norad] = copy;
+      }
+    }
+  }
+  allSatellites = [];
+  for (var id in byNorad) allSatellites.push(byNorad[id]);
+  allSatellites.sort(function(a, b) { return a.name.localeCompare(b.name); });
+}
+
 function populateSatList(filter) {
   var list = document.getElementById('satList');
   list.innerHTML = '';
-  if (!loadedSatellites) return;
+  if (!allSatellites.length) return;
   var query = (filter || '').toLowerCase();
-  var matches = loadedSatellites.filter(function(sat) {
-    if (!query) return true;
-    return sat.name.toLowerCase().indexOf(query) >= 0 || String(sat.norad).indexOf(query) >= 0;
-  });
-  matches.sort(function(a, b) { return a.name.localeCompare(b.name); });
-  for (var i = 0; i < matches.length; i++) {
+  for (var i = 0; i < allSatellites.length; i++) {
+    var sat = allSatellites[i];
+    if (query && sat.name.toLowerCase().indexOf(query) < 0 && String(sat.norad).indexOf(query) < 0) continue;
     var opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = matches[i].name + ' - ' + matches[i].norad;
-    opt._sat = matches[i];
+    opt.value = sat.norad;
+    opt.textContent = sat.name + ' - ' + sat.norad;
+    opt._sat = sat;
     list.appendChild(opt);
   }
+}
+
+function selectGroup(file) {
+  var selectAll = (file === '_all');
+  var norads = {};
+  if (!selectAll) {
+    var sats = satGroupData[file];
+    if (sats) {
+      for (var i = 0; i < sats.length; i++) norads[sats[i].norad] = true;
+    }
+  }
+  var list = document.getElementById('satList');
+  for (var i = 0; i < list.options.length; i++) {
+    list.options[i].selected = selectAll || !!norads[list.options[i].value];
+  }
+  updateSelectionStatus();
+}
+
+function updateSelectionStatus() {
+  var list = document.getElementById('satList');
+  var selected = 0;
+  for (var i = 0; i < list.options.length; i++) {
+    if (list.options[i].selected) selected++;
+  }
+  var msg = selected + ' of ' + allSatellites.length + ' satellites selected';
+  var maxAge = 0;
+  for (var i = 0; i < SAT_GROUPS.length; i++) {
+    var cached = localStorage.getItem('sat_' + SAT_GROUPS[i].file);
+    if (cached) {
+      var age = Date.now() - JSON.parse(cached).time;
+      if (age > maxAge) maxAge = age;
+    }
+  }
+  if (maxAge > 86400000) msg += '\nWARNING: orbits > 1 day old!';
+  document.getElementById('statusText').textContent = msg;
+  document.getElementById('findBtn').disabled = selected === 0;
 }
 
 function getSelectedSats() {
@@ -366,22 +471,54 @@ function findPasses() {
 
   var loc = getLocation();
   var minAltDeg = parseFloat(document.getElementById('minAlt').value) || 0;
+  var div = document.getElementById('results');
+  var useProgress = sats.length > 1000;
 
-  document.getElementById('results').innerHTML = '<p style="color:#888; text-align:center; margin-top:40px;">Searching ' +
-    sats.length + ' satellite' + (sats.length > 1 ? 's' : '') + '...</p>';
+  if (useProgress) {
+    div.innerHTML = '<div style="text-align:center; margin-top:40px; color:#888;">' +
+      '<div id="progressLabel">Searching 0 / ' + sats.length + ' satellites...</div>' +
+      '<div style="background:#333; border-radius:4px; height:16px; margin:10px 40px; overflow:hidden;">' +
+      '<div id="progressBar" style="background:#4a8; height:100%; width:0%; transition:width 0.1s;"></div>' +
+      '</div></div>';
+  } else {
+    div.innerHTML = '<p style="color:#888; text-align:center; margin-top:40px;">Searching ' +
+      sats.length + ' satellite' + (sats.length > 1 ? 's' : '') + '...</p>';
+  }
 
-  setTimeout(function() {
-    var allPasses = [];
-    for (var i = 0; i < sats.length; i++) {
+  document.getElementById('findBtn').disabled = true;
+  var allPasses = [];
+  var idx = 0;
+  var batchSize = useProgress ? 50 : sats.length;
+
+  function processBatch() {
+    var end = Math.min(idx + batchSize, sats.length);
+    for (var i = idx; i < end; i++) {
       var passes = findSatellitePasses(sats[i], cachedSunset, cachedSunrise, loc.latRad, loc.lonRad, minAltDeg);
-      for (var j = 0; j < passes.length; j++) {
-        passes[j].sat = sats[i];
-      }
+      for (var j = 0; j < passes.length; j++) passes[j].sat = sats[i];
       allPasses = allPasses.concat(passes);
     }
-    allPasses.sort(function(a, b) { return a.riseJD - b.riseJD; });
-    displayPasses(allPasses);
-  }, 50);
+    idx = end;
+    if (useProgress) {
+      var pct = Math.round(idx / sats.length * 100);
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressLabel').textContent =
+        'Searching ' + idx + ' / ' + sats.length + ' satellites...';
+    }
+    if (idx < sats.length) {
+      setTimeout(processBatch, 0);
+    } else {
+      if (useProgress) {
+        document.getElementById('progressLabel').textContent =
+          'Rendering ' + allPasses.length + ' passes...';
+      }
+      setTimeout(function() {
+        allPasses.sort(function(a, b) { return a.riseJD - b.riseJD; });
+        displayPasses(allPasses);
+        document.getElementById('findBtn').disabled = false;
+      }, 50);
+    }
+  }
+  setTimeout(processBatch, 50);
 }
 
 var currentPasses = [];
@@ -397,7 +534,8 @@ var COLUMNS = [
   { label: 'Culm Alt',  key: function(p) { return p.culminAlt; } },
   { label: 'Set Time',  key: function(p) { return p.setJD; } },
   { label: 'Set Az',    key: function(p) { return p.setAz; } },
-  { label: 'Eclipse',   key: function(p) { return p.eclipseEntryJD || Infinity; } }
+  { label: 'Eclipse',   key: function(p) { return p.eclipseEntryJD || Infinity; } },
+  { label: 'Mag',       key: function(p) { return p.bestMag; } }
 ];
 
 function sortPasses() {
@@ -447,6 +585,7 @@ function renderPassTable() {
       '<td>' + formatJDLocal(p.setJD) + '</td>' +
       '<td>' + azToCompass(p.setAz) + '</td>' +
       '<td>' + eclipseText(p) + '</td>' +
+      '<td>' + (isFinite(p.bestMag) ? p.bestMag.toFixed(1) : '—') + '</td>' +
       '</tr>';
   }
   html += '</tbody></table>';
@@ -471,14 +610,15 @@ function displayPasses(passes) {
 
 function exportCSV() {
   if (currentPasses.length === 0) return;
-  var rows = ['Satellite,NORAD,Rise Time,Rise Az,Culm Time,Culm Alt,Set Time,Set Az,Eclipse'];
+  var rows = ['Satellite,NORAD,Rise Time,Rise Az,Culm Time,Culm Alt,Set Time,Set Az,Eclipse,Mag'];
   for (var i = 0; i < currentPasses.length; i++) {
     var p = currentPasses[i];
     var name = p.sat.name.indexOf(',') >= 0 ? '"' + p.sat.name + '"' : p.sat.name;
     var ecl = eclipseText(p);
+    var mag = isFinite(p.bestMag) ? p.bestMag.toFixed(1) : '';
     rows.push([name, p.sat.norad, formatJDLocal(p.riseJD), azToCompass(p.riseAz),
       formatJDLocal(p.culminJD), Math.round(p.culminAlt * RAD_TO_DEG) + '°',
-      formatJDLocal(p.setJD), azToCompass(p.setAz), ecl === '—' ? '' : ecl].join(','));
+      formatJDLocal(p.setJD), azToCompass(p.setAz), ecl === '—' ? '' : ecl, mag].join(','));
   }
   var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
   var a = document.createElement('a');
@@ -577,30 +717,55 @@ window.addEventListener('load', function() {
   // Get location from Wi-Fi at startup
   geolocate();
 
+  // Satellite group dropdown
+  var groupSel = document.getElementById('satGroup');
+  var allOpt = document.createElement('option');
+  allOpt.value = '_all';
+  allOpt.textContent = 'All';
+  groupSel.appendChild(allOpt);
+  for (var i = 0; i < SAT_GROUPS.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = SAT_GROUPS[i].file;
+    opt.textContent = SAT_GROUPS[i].label;
+    groupSel.appendChild(opt);
+  }
+  groupSel.addEventListener('change', function() { selectGroup(groupSel.value); });
+
   // Satellite search
   var searchInput = document.getElementById('satSearch');
-  searchInput.addEventListener('input', function() { populateSatList(searchInput.value); });
+  searchInput.addEventListener('input', function() {
+    populateSatList(searchInput.value);
+    selectGroup(groupSel.value);
+  });
 
-  // Satellite list selection enables Find button
+  // Satellite list selection updates status
   var satList = document.getElementById('satList');
   satList.addEventListener('change', function() {
-    document.getElementById('findBtn').disabled = getSelectedSats().length === 0;
+    updateSelectionStatus();
   });
 
-  // Load satellite data
-  var BASE = 'https://www.southernstars.com/updates';
-  fetchCached(BASE + '/satellites/celestrak/visual.csv', 'satellites', function(data, fromCache) {
-    loadedSatellites = parseSatellites(data);
-    var msg = (fromCache ? 'Loaded ' : 'Downloaded ') + loadedSatellites.length + ' satellites.';
-    var cached = localStorage.getItem('satellites');
-    if (cached) {
-      var age = Date.now() - JSON.parse(cached).time;
-      if (age > 86400000) msg += '\nWARNING: orbits > 1 day old!';
-    }
-    document.getElementById('statusText').textContent = msg;
-    populateSatList('');
-    updateSunTimes();
-  });
+  // Load all satellite groups at startup
+  var loadedCount = 0;
+  var totalGroups = SAT_GROUPS.length;
+  document.getElementById('statusText').textContent = 'Loading satellite data...';
+  for (var i = 0; i < SAT_GROUPS.length; i++) {
+    (function(group) {
+      var cacheKey = 'sat_' + group.file;
+      fetchCached(SAT_BASE + group.file, cacheKey, function(data, fromCache) {
+        satGroupData[group.file] = parseSatellites(data);
+        loadedCount++;
+        document.getElementById('statusText').textContent =
+          'Loading satellite data... (' + loadedCount + '/' + totalGroups + ')';
+        if (loadedCount === totalGroups) {
+          buildAllGroup();
+          populateSatList('');
+          groupSel.value = 'visual.csv';
+          selectGroup('visual.csv');
+          updateSunTimes();
+        }
+      });
+    })(SAT_GROUPS[i]);
+  }
 });
 
 </script>
