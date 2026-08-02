@@ -633,7 +633,7 @@ function exportCSV() {
 
 // ---- Data loading ----
 
-function fetchCached(url, key, onSuccess) {
+function fetchCached(url, key, onSuccess, onError) {
   var cached = localStorage.getItem(key);
   if (cached) {
     var obj = JSON.parse(cached);
@@ -647,7 +647,7 @@ function fetchCached(url, key, onSuccess) {
     })
     .catch(function(e) {
       if (cached) onSuccess(JSON.parse(cached).data, true);
-      else console.warn(key + ' fetch failed:', e.message);
+      else { console.warn(key + ' fetch failed:', e.message); if (onError) onError(); }
     });
 }
 
@@ -748,22 +748,25 @@ window.addEventListener('load', function() {
   var loadedCount = 0;
   var totalGroups = SAT_GROUPS.length;
   document.getElementById('statusText').textContent = 'Loading satellite data...';
+  function groupLoaded() {
+    loadedCount++;
+    document.getElementById('statusText').textContent =
+      'Loading satellite data... (' + loadedCount + '/' + totalGroups + ')';
+    if (loadedCount === totalGroups) {
+      buildAllGroup();
+      populateSatList('');
+      groupSel.value = 'visual.csv';
+      selectGroup('visual.csv');
+      updateSunTimes();
+    }
+  }
   for (var i = 0; i < SAT_GROUPS.length; i++) {
     (function(group) {
       var cacheKey = 'sat_' + group.file;
       fetchCached(SAT_BASE + group.file, cacheKey, function(data, fromCache) {
         satGroupData[group.file] = parseSatellites(data);
-        loadedCount++;
-        document.getElementById('statusText').textContent =
-          'Loading satellite data... (' + loadedCount + '/' + totalGroups + ')';
-        if (loadedCount === totalGroups) {
-          buildAllGroup();
-          populateSatList('');
-          groupSel.value = 'visual.csv';
-          selectGroup('visual.csv');
-          updateSunTimes();
-        }
-      });
+        groupLoaded();
+      }, groupLoaded);
     })(SAT_GROUPS[i]);
   }
 });
