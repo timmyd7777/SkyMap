@@ -123,6 +123,7 @@ button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
     <span style="font-size:12px;">&deg;</span>
   </div>
 
+  <button onclick="reloadSatData()" style="width:100%; padding:6px; font-size:14px;">Download Satellite Data</button>
   <button id="findBtn" onclick="findPasses()" disabled style="width:100%; padding:6px; font-size:14px;">Find Passes</button>
   <button id="exportBtn" onclick="exportCSV()" disabled style="width:100%; padding:6px; font-size:14px;">Export CSV</button>
 </div>
@@ -139,52 +140,73 @@ button.arr { font-size: 11px; padding: 4px 8px; line-height: 1; width: 100%; }
 <script src="satpass.js"></script>
 <script>
 
-var loadedSatellites = null;
 var selectedTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 var systemTZ = selectedTZ;
 
-var SAT_GROUPS = [
-  { file: 'visual.csv',      label: 'Brightest' },
-  { file: 'active.csv',      label: 'Active Satellites' },
-  { file: 'amateur.csv',     label: 'Amateur Radio' },
-  { file: 'argos.csv',       label: 'ARGOS' },
-  { file: 'beidou.csv',      label: 'BeiDou' },
-  { file: 'cubesat.csv',     label: 'CubeSats' },
-  { file: 'dmc.csv',         label: 'Disaster Monitoring' },
-  { file: 'education.csv',   label: 'Education' },
-  { file: 'engineering.csv', label: 'Engineering' },
-  { file: 'galileo.csv',     label: 'Galileo' },
-  { file: 'geo.csv',         label: 'Geostationary' },
-  { file: 'geodetic.csv',    label: 'Geodetic' },
-  { file: 'glo-ops.csv',     label: 'GLONASS' },
-  { file: 'globalstar.csv',  label: 'Globalstar' },
-  { file: 'goes.csv',        label: 'GOES Weather' },
-  { file: 'gps-ops.csv',     label: 'GPS' },
-  { file: 'intelsat.csv',    label: 'Intelsat' },
-  { file: 'iridium-NEXT.csv',label: 'Iridium NEXT' },
-  { file: 'military.csv',    label: 'Military' },
-  { file: 'musson.csv',      label: 'Musson' },
-  { file: 'nnss.csv',        label: 'Navy Navigation' },
-  { file: 'oneweb.csv',      label: 'OneWeb' },
-  { file: 'orbcomm.csv',     label: 'Orbcomm' },
-  { file: 'other-comm.csv',  label: 'Other Comm' },
-  { file: 'planet.csv',      label: 'Planet Labs' },
-  { file: 'radar.csv',       label: 'Radar Calibration' },
-  { file: 'resource.csv',    label: 'Earth Resources' },
-  { file: 'sarsat.csv',      label: 'Search & Rescue' },
-  { file: 'sbas.csv',        label: 'SBAS' },
-  { file: 'science.csv',     label: 'Science' },
-  { file: 'ses.csv',         label: 'SES' },
-  { file: 'spire.csv',       label: 'Spire' },
-  { file: 'starlink.csv',    label: 'Starlink' },
-  { file: 'tdrss.csv',       label: 'TDRSS' },
-  { file: 'tle-new.csv',     label: 'Last 30 Days' },
-  { file: 'weather.csv',     label: 'Weather' },
-  { file: 'x-comm.csv',      label: 'Experimental Comm' }
-];
+var N2YO_BASE = 'https://www.southernstars.com/updates/satellites/n2yo/';
+var CELESTRAK_BASE = 'https://www.southernstars.com/updates/satellites/celestrak/';
 
-var SAT_BASE = 'https://www.southernstars.com/updates/satellites/celestrak/';
-var satGroupData = {};
+var SAT_GROUPS = [
+  { file: 'amateur.txt',           key: 'amateur',           label: 'Amateur Radio' },
+  { file: 'beidou.txt',            key: 'beidou',            label: 'BeiDou' },
+  { file: 'brightest.txt',         key: 'brightest',         label: 'Brightest' },
+  { file: 'celestis.txt',          key: 'celestis',          label: 'Celestis' },
+  { file: 'chinese-stations.txt',  key: 'chinese-stations',  label: 'Chinese Stations' },
+  { file: 'cubesat.txt',           key: 'cubesat',           label: 'CubeSats' },
+  { file: 'dmc.txt',               key: 'dmc',               label: 'Disaster Monitoring' },
+  { file: 'resource.txt',          key: 'resource',          label: 'Earth Resources' },
+  { file: 'education.txt',         key: 'education',         label: 'Education' },
+  { file: 'engineering.txt',       key: 'engineering',       label: 'Engineering' },
+  { file: 'x-comm.txt',            key: 'x-comm',            label: 'Experimental Comm' },
+  { file: 'flock.txt',             key: 'flock',             label: 'Flock (Planet)' },
+  { file: 'galileo.txt',           key: 'galileo',           label: 'Galileo' },
+  { file: 'geesat.txt',            key: 'geesat',            label: 'GeeSat' },
+  { file: 'geodetic.txt',          key: 'geodetic',          label: 'Geodetic' },
+  { file: 'geo.txt',               key: 'geo',               label: 'Geostationary' },
+  { file: 'globalstar.txt',        key: 'globalstar',        label: 'Globalstar' },
+  { file: 'glonass.txt',           key: 'glonass',           label: 'GLONASS All' },
+  { file: 'glo-ops.txt',           key: 'glo-ops',           label: 'GLONASS Operational' },
+  { file: 'goes.txt',              key: 'goes',              label: 'GOES Weather' },
+  { file: 'gonets.txt',            key: 'gonets',            label: 'Gonets' },
+  { file: 'gorizont.txt',          key: 'gorizont',          label: 'Gorizont' },
+  { file: 'gps.txt',               key: 'gps',               label: 'GPS All' },
+  { file: 'gps-ops.txt',           key: 'gps-ops',           label: 'GPS Operational' },
+  { file: 'intelsat.txt',          key: 'intelsat',          label: 'Intelsat' },
+  { file: 'iridium.txt',           key: 'iridium',           label: 'Iridium' },
+  { file: 'irnss.txt',             key: 'irnss',             label: 'IRNSS/NavIC' },
+  { file: 'junk.txt',              key: 'junk',              label: 'Junk/Debris' },
+  { file: 'tle-new',               key: 'tle-new',           label: 'Last 30 Days' },
+  { file: 'lemur.txt',             key: 'lemur',             label: 'Lemur (Spire)' },
+  { file: 'leo.txt',               key: 'leo',               label: 'Leo (Kuiper)' },
+  { file: 'military.txt',          key: 'military',          label: 'Military' },
+  { file: 'molniya.txt',           key: 'molniya',           label: 'Molniya' },
+  { file: 'musson.txt',            key: 'musson',            label: 'Musson' },
+  { file: 'nnss.txt',              key: 'nnss',              label: 'Navy Navigation' },
+  { file: 'noaa.txt',              key: 'noaa',              label: 'NOAA' },
+  { file: 'o3b.txt',               key: 'o3b',               label: 'O3b' },
+  { file: 'oneweb.txt',            key: 'oneweb',            label: 'OneWeb' },
+  { file: 'orbcomm.txt',           key: 'orbcomm',           label: 'Orbcomm' },
+  { file: 'parus.txt',             key: 'parus',             label: 'Parus' },
+  { file: 'quifan.txt',            key: 'quifan',            label: 'Quifan' },
+  { file: 'qzss.txt',              key: 'qzss',              label: 'QZSS' },
+  { file: 'radar.txt',             key: 'radar',             label: 'Radar Calibration' },
+  { file: 'raduga.txt',            key: 'raduga',            label: 'Raduga' },
+  { file: 'sbas.txt',              key: 'sbas',              label: 'SBAS' },
+  { file: 'science.txt',           key: 'science',           label: 'Science' },
+  { file: 'sarsat.txt',            key: 'sarsat',            label: 'Search & Rescue' },
+  { file: 'sirius-xm.txt',         key: 'sirius-xm',         label: 'Sirius XM' },
+  { file: 'stations.txt',          key: 'stations',          label: 'Space Stations' },
+  { file: 'starlink.txt',          key: 'starlink',          label: 'Starlink' },
+  { file: 'strela.txt',            key: 'strela',            label: 'Strela' },
+  { file: 'tdrss.txt',             key: 'tdrss',             label: 'TDRSS' },
+  { file: 'tselina.txt',           key: 'tselina',           label: 'Tselina' },
+  { file: 'tsikada.txt',           key: 'tsikada',           label: 'Tsikada' },
+  { file: 'tsiklon.txt',           key: 'tsiklon',           label: 'Tsiklon' },
+  { file: 'tv.txt',                key: 'tv',                label: 'TV Satellites' },
+  { file: 'weather.txt',           key: 'weather',           label: 'Weather' },
+  { file: 'westford.txt',          key: 'westford',          label: 'Westford Needles' },
+  { file: 'yaogan.txt',            key: 'yaogan',            label: 'Yaogan' }
+];
 
 // ---- Location ----
 
@@ -363,60 +385,53 @@ function updateSunTimes() {
 // ---- Satellite list ----
 
 var allSatellites = [];
-
-function buildAllGroup() {
-  var byNorad = {};
-  var labelMap = {};
-  for (var i = 0; i < SAT_GROUPS.length; i++) {
-    labelMap[SAT_GROUPS[i].file] = SAT_GROUPS[i].label;
-  }
-  for (var file in satGroupData) {
-    var sats = satGroupData[file];
-    var groupLabel = labelMap[file] || file;
-    for (var j = 0; j < sats.length; j++) {
-      var sat = sats[j];
-      if (byNorad[sat.norad]) {
-        byNorad[sat.norad].groups.push(groupLabel);
-      } else {
-        var copy = Object.assign({}, sat);
-        copy.groups = [groupLabel];
-        byNorad[sat.norad] = copy;
-      }
-    }
-  }
-  allSatellites = [];
-  for (var id in byNorad) allSatellites.push(byNorad[id]);
-  allSatellites.sort(function(a, b) { return a.name.localeCompare(b.name); });
-}
+var cacheAge = Infinity;
+var cacheTime = 0;
 
 function populateSatList(filter) {
   var list = document.getElementById('satList');
   list.innerHTML = '';
   if (!allSatellites.length) return;
-  var query = (filter || '').toLowerCase();
+  var query = (filter || '').trim();
+
+  // Detect multi-number input: tokens separated by spaces, commas, or both
+  var tokens = query.split(/[\s,]+/).filter(Boolean);
+  var multiNum = tokens.length > 1 && tokens.every(function(t) { return /^\d+$/.test(t); });
+  var noradSet = null;
+  if (multiNum) {
+    noradSet = {};
+    for (var t = 0; t < tokens.length; t++) noradSet[parseInt(tokens[t])] = true;
+  }
+
+  var lq = query.toLowerCase();
   for (var i = 0; i < allSatellites.length; i++) {
     var sat = allSatellites[i];
-    if (query && sat.name.toLowerCase().indexOf(query) < 0 && String(sat.norad).indexOf(query) < 0) continue;
+    if (multiNum) {
+      if (!noradSet[sat.norad]) continue;
+    } else if (lq && sat.name.toLowerCase().indexOf(lq) < 0 && String(sat.norad).indexOf(lq) < 0) {
+      continue;
+    }
     var opt = document.createElement('option');
     opt.value = sat.norad;
     opt.textContent = sat.name + ' - ' + sat.norad;
     opt._sat = sat;
+    if (multiNum) opt.selected = true;
     list.appendChild(opt);
   }
 }
 
-function selectGroup(file) {
-  var selectAll = (file === '_all');
-  var norads = {};
+function selectGroup(groupFile) {
+  var selectAll = (groupFile === '_all');
+  var gkey = '';
   if (!selectAll) {
-    var sats = satGroupData[file];
-    if (sats) {
-      for (var i = 0; i < sats.length; i++) norads[sats[i].norad] = true;
+    for (var i = 0; i < SAT_GROUPS.length; i++) {
+      if (SAT_GROUPS[i].file === groupFile) { gkey = SAT_GROUPS[i].key; break; }
     }
   }
   var list = document.getElementById('satList');
   for (var i = 0; i < list.options.length; i++) {
-    list.options[i].selected = selectAll || !!norads[list.options[i].value];
+    var sat = list.options[i]._sat;
+    list.options[i].selected = selectAll || (sat && sat.groups && sat.groups.indexOf(gkey) >= 0);
   }
   updateSelectionStatus();
 }
@@ -428,15 +443,14 @@ function updateSelectionStatus() {
     if (list.options[i].selected) selected++;
   }
   var msg = selected + ' of ' + allSatellites.length + ' satellites selected';
-  var maxAge = 0;
-  for (var i = 0; i < SAT_GROUPS.length; i++) {
-    var cached = localStorage.getItem('sat_' + SAT_GROUPS[i].file);
-    if (cached) {
-      var age = Date.now() - JSON.parse(cached).time;
-      if (age > maxAge) maxAge = age;
-    }
+  if (cacheAge > 86400000) msg += '\nWARNING: orbits > 1 day old!';
+  if (cacheTime) {
+    var dt = new Date(cacheTime);
+    var dp = new Intl.DateTimeFormat('en-US', { timeZone: selectedTZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(dt);
+    var dg = function(t) { var p = dp.find(function(p) { return p.type === t; }); return p ? p.value : ''; };
+    msg += '\nData downloaded ' + dg('year') + '-' + dg('month') + '-' + dg('day') + ' ' +
+      dt.toLocaleString('en-US', { timeZone: selectedTZ, hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
   }
-  if (maxAge > 86400000) msg += '\nWARNING: orbits > 1 day old!';
   document.getElementById('statusText').textContent = msg;
   document.getElementById('findBtn').disabled = selected === 0;
 }
@@ -631,24 +645,242 @@ function exportCSV() {
   URL.revokeObjectURL(a.href);
 }
 
+// ---- IndexedDB cache ----
+
+var DB_NAME = 'satpass';
+var DB_STORE = 'cache';
+
+function dbOpen(callback) {
+  var req = indexedDB.open(DB_NAME, 1);
+  req.onupgradeneeded = function(e) {
+    var db = e.target.result;
+    if (!db.objectStoreNames.contains(DB_STORE))
+      db.createObjectStore(DB_STORE);
+  };
+  req.onsuccess = function(e) { callback(e.target.result); };
+  req.onerror = function() { callback(null); };
+}
+
+function dbGet(key, callback) {
+  dbOpen(function(db) {
+    if (!db) { callback(null); return; }
+    try {
+      var tx = db.transaction(DB_STORE, 'readonly');
+      var req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = function() { callback(req.result || null); };
+      req.onerror = function() { callback(null); };
+    } catch(e) { callback(null); }
+  });
+}
+
+function dbPut(key, value, callback) {
+  dbOpen(function(db) {
+    if (!db) { if (callback) callback(); return; }
+    try {
+      var tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = function() { if (callback) callback(); };
+      tx.onerror = function() { if (callback) callback(); };
+    } catch(e) { if (callback) callback(); }
+  });
+}
+
+// ---- Consolidated CSV builder ----
+
+function jdToISO(jd) {
+  var c = calendarDate(jd);
+  var secs = c.ut * 3600;
+  var h = Math.floor(secs / 3600); secs -= h * 3600;
+  var m = Math.floor(secs / 60); secs -= m * 60;
+  secs = Math.round(secs * 10000) / 10000;
+  if (secs >= 60) { secs -= 60; m++; }
+  if (m >= 60) { m -= 60; h++; }
+  var ss = secs < 10 ? '0' + secs.toFixed(4) : secs.toFixed(4);
+  return c.y + '-' + pad2(c.m) + '-' + pad2(c.d) + 'T' + pad2(h) + ':' + pad2(m) + ':' + ss;
+}
+
+function satToCSVRow(sat, groups) {
+  var mm = sat.xno * 1440 / TWOPI;
+  var temp = TWOPI / 1440 / 1440;
+  var ndot = sat.xndt2o / temp;
+  var nddot = sat.xndd6o / temp * 1440;
+  var name = sat.name;
+  if (name.indexOf(',') >= 0 || name.indexOf('"') >= 0)
+    name = '"' + name.replace(/"/g, '""') + '"';
+  return [name, sat.desig || '', jdToISO(sat.epoch), mm, sat.eo,
+    sat.xincl * RAD_TO_DEG, sat.xnodeo * RAD_TO_DEG,
+    sat.omegao * RAD_TO_DEG, sat.xmo * RAD_TO_DEG,
+    0, sat.elset || 0, sat.revno || 0, sat.bstar, ndot, nddot,
+    sat.norad, (groups || []).join(';')].join(',');
+}
+
+function buildConsolidatedCSV(sats, groupMap) {
+  var header = 'OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,' +
+    'RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,ELEMENT_SET_NO,' +
+    'REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT,NORAD_CAT_ID,GROUPS';
+  var rows = [header];
+  for (var i = 0; i < sats.length; i++)
+    rows.push(satToCSVRow(sats[i], groupMap[sats[i].norad]));
+  return rows.join('\n');
+}
+
+function extractNoradIDs(tleText) {
+  var ids = {};
+  var lines = tleText.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].length >= 7 && lines[i][0] === '1' && lines[i][1] === ' ') {
+      var norad = parseAlpha5(lines[i].substring(2, 7).trim());
+      if (norad > 0) ids[norad] = true;
+    }
+  }
+  return ids;
+}
+
+function extractGroupsFromCSV(csvText, satellites) {
+  var lines = csvText.split('\n');
+  if (lines.length < 2) return;
+  var header = lines[0].split(',').map(function(h) { return h.trim(); });
+  var groupIdx = header.indexOf('GROUPS');
+  var noradIdx = header.indexOf('NORAD_CAT_ID');
+  if (groupIdx < 0 || noradIdx < 0) return;
+  var gmap = {};
+  for (var i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    var fields = splitCSV(lines[i]);
+    if (fields.length <= groupIdx) continue;
+    var norad = parseInt(fields[noradIdx]) || 0;
+    var gs = fields[groupIdx];
+    if (norad > 0 && gs) gmap[norad] = gs.split(';').filter(Boolean);
+  }
+  for (var i = 0; i < satellites.length; i++)
+    satellites[i].groups = gmap[satellites[i].norad] || [];
+}
+
 // ---- Data loading ----
 
-function fetchCached(url, key, onSuccess, onError) {
-  var cached = localStorage.getItem(key);
-  if (cached) {
-    var obj = JSON.parse(cached);
-    if (Date.now() - obj.time < 86400000) { onSuccess(obj.data, true); return; }
+function loadFromCSV(csvText) {
+  var sats = parseSatellites(csvText);
+  extractGroupsFromCSV(csvText, sats);
+  allSatellites = sats;
+  allSatellites.sort(function(a, b) { return a.name.localeCompare(b.name); });
+}
+
+function downloadAndBuild() {
+  var sourceData = {};
+  var downloads = [];
+
+  downloads.push({ url: N2YO_BASE + 'all.txt', key: 'all.txt' });
+  downloads.push({ url: CELESTRAK_BASE + 'tle-new.csv', key: 'tle-new' });
+
+  for (var i = 0; i < SAT_GROUPS.length; i++) {
+    var g = SAT_GROUPS[i];
+    if (g.file === 'tle-new') continue;
+    downloads.push({ url: N2YO_BASE + g.file, key: g.file });
   }
-  fetch(url)
-    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-    .then(function(data) {
-      try { localStorage.setItem(key, JSON.stringify({ time: Date.now(), data: data })); } catch(e) {}
-      onSuccess(data, false);
-    })
-    .catch(function(e) {
-      if (cached) onSuccess(JSON.parse(cached).data, true);
-      else { console.warn(key + ' fetch failed:', e.message); if (onError) onError(); }
-    });
+
+  var total = downloads.length;
+  var pending = total;
+
+  document.getElementById('statusText').textContent = 'Downloading satellite data...';
+
+  function fileDone() {
+    pending--;
+    document.getElementById('statusText').textContent =
+      'Downloading satellite data... (' + (total - pending) + '/' + total + ')';
+    if (pending === 0) {
+      document.getElementById('statusText').textContent = 'Building satellite database...';
+      setTimeout(function() { buildCSVFromSources(sourceData); }, 50);
+    }
+  }
+
+  for (var i = 0; i < downloads.length; i++) {
+    (function(dl) {
+      fetch(dl.url)
+        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function(data) { sourceData[dl.key] = data; fileDone(); })
+        .catch(function(e) { console.warn(dl.key + ':', e.message); fileDone(); });
+    })(downloads[i]);
+  }
+}
+
+function buildCSVFromSources(sourceData) {
+  var byNorad = {};
+
+  if (sourceData['all.txt']) {
+    var sats = parseSatellites(sourceData['all.txt']);
+    for (var i = 0; i < sats.length; i++) byNorad[sats[i].norad] = sats[i];
+  }
+
+  if (sourceData['junk.txt']) {
+    var sats = parseSatellites(sourceData['junk.txt']);
+    for (var i = 0; i < sats.length; i++) {
+      if (!byNorad[sats[i].norad]) byNorad[sats[i].norad] = sats[i];
+    }
+  }
+
+  if (sourceData['tle-new']) {
+    var sats = parseSatellites(sourceData['tle-new']);
+    for (var i = 0; i < sats.length; i++) {
+      if (!byNorad[sats[i].norad]) byNorad[sats[i].norad] = sats[i];
+    }
+  }
+
+  var groupMap = {};
+  for (var i = 0; i < SAT_GROUPS.length; i++) {
+    var g = SAT_GROUPS[i];
+    var key = g.file === 'tle-new' ? 'tle-new' : g.file;
+    var raw = sourceData[key];
+    if (!raw) continue;
+
+    var ids;
+    if (key === 'tle-new') {
+      var parsed = parseSatellites(raw);
+      ids = {};
+      for (var j = 0; j < parsed.length; j++) ids[parsed[j].norad] = true;
+    } else {
+      ids = extractNoradIDs(raw);
+    }
+
+    for (var norad in ids) {
+      if (!groupMap[norad]) groupMap[norad] = [];
+      groupMap[norad].push(g.key);
+    }
+  }
+
+  var satArray = [];
+  for (var norad in byNorad) satArray.push(byNorad[norad]);
+
+  var csv = buildConsolidatedCSV(satArray, groupMap);
+
+  document.getElementById('statusText').textContent = 'Caching satellite database...';
+  var now = Date.now();
+  dbPut('consolidated', { time: now, data: csv }, function() {
+    cacheAge = 0;
+    cacheTime = now;
+    loadFromCSV(csv);
+    onDataReady();
+  });
+}
+
+function reloadSatData() {
+  dbOpen(function(db) {
+    if (db) {
+      try {
+        var tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).delete('consolidated');
+      } catch(e) {}
+    }
+    cacheAge = Infinity;
+    downloadAndBuild();
+  });
+}
+
+function onDataReady() {
+  populateSatList('');
+  var groupSel = document.getElementById('satGroup');
+  groupSel.value = 'brightest.txt';
+  selectGroup('brightest.txt');
+  updateSunTimes();
 }
 
 // ---- Init ----
@@ -735,40 +967,31 @@ window.addEventListener('load', function() {
   var searchInput = document.getElementById('satSearch');
   searchInput.addEventListener('input', function() {
     populateSatList(searchInput.value);
-    selectGroup(groupSel.value);
-  });
-
-  // Satellite list selection updates status
-  var satList = document.getElementById('satList');
-  satList.addEventListener('change', function() {
+    var tokens = searchInput.value.trim().split(/[\s,]+/).filter(Boolean);
+    var multiNum = tokens.length > 1 && tokens.every(function(t) { return /^\d+$/.test(t); });
+    if (!multiNum) selectGroup(groupSel.value);
     updateSelectionStatus();
   });
 
-  // Load all satellite groups at startup
-  var loadedCount = 0;
-  var totalGroups = SAT_GROUPS.length;
-  document.getElementById('statusText').textContent = 'Loading satellite data...';
-  function groupLoaded() {
-    loadedCount++;
-    document.getElementById('statusText').textContent =
-      'Loading satellite data... (' + loadedCount + '/' + totalGroups + ')';
-    if (loadedCount === totalGroups) {
-      buildAllGroup();
-      populateSatList('');
-      groupSel.value = 'visual.csv';
-      selectGroup('visual.csv');
-      updateSunTimes();
+  // Satellite list selection updates status
+  document.getElementById('satList').addEventListener('change', function() {
+    updateSelectionStatus();
+  });
+
+  // Load satellite data: check IndexedDB cache first
+  document.getElementById('statusText').textContent = 'Checking cached data...';
+  dbGet('consolidated', function(cached) {
+    if (cached && cached.time && Date.now() - cached.time < 86400000) {
+      cacheAge = Date.now() - cached.time;
+      cacheTime = cached.time;
+      document.getElementById('statusText').textContent = 'Loading cached satellite data...';
+      loadFromCSV(cached.data);
+      onDataReady();
+    } else {
+      cacheAge = cached ? Date.now() - cached.time : Infinity;
+      downloadAndBuild();
     }
-  }
-  for (var i = 0; i < SAT_GROUPS.length; i++) {
-    (function(group) {
-      var cacheKey = 'sat_' + group.file;
-      fetchCached(SAT_BASE + group.file, cacheKey, function(data, fromCache) {
-        satGroupData[group.file] = parseSatellites(data);
-        groupLoaded();
-      }, groupLoaded);
-    })(SAT_GROUPS[i]);
-  }
+  });
 });
 
 </script>
