@@ -208,6 +208,45 @@ var SAT_GROUPS = [
   { file: 'yaogan.txt',            key: 'yaogan',            label: 'Yaogan' }
 ];
 
+var CELESTRAK_FALLBACK = [
+  { file: 'active.csv',      key: 'active' },
+  { file: 'amateur.csv',     key: 'amateur' },
+  { file: 'argos.csv',       key: 'argos' },
+  { file: 'beidou.csv',      key: 'beidou' },
+  { file: 'cubesat.csv',     key: 'cubesat' },
+  { file: 'dmc.csv',         key: 'dmc' },
+  { file: 'education.csv',   key: 'education' },
+  { file: 'engineering.csv', key: 'engineering' },
+  { file: 'galileo.csv',     key: 'galileo' },
+  { file: 'geo.csv',         key: 'geo' },
+  { file: 'geodetic.csv',    key: 'geodetic' },
+  { file: 'glo-ops.csv',     key: 'glo-ops' },
+  { file: 'globalstar.csv',  key: 'globalstar' },
+  { file: 'goes.csv',        key: 'goes' },
+  { file: 'gps-ops.csv',     key: 'gps-ops' },
+  { file: 'intelsat.csv',    key: 'intelsat' },
+  { file: 'iridium-NEXT.csv',key: 'iridium' },
+  { file: 'military.csv',    key: 'military' },
+  { file: 'musson.csv',      key: 'musson' },
+  { file: 'nnss.csv',        key: 'nnss' },
+  { file: 'oneweb.csv',      key: 'oneweb' },
+  { file: 'orbcomm.csv',     key: 'orbcomm' },
+  { file: 'other-comm.csv',  key: 'other-comm' },
+  { file: 'planet.csv',      key: 'flock' },
+  { file: 'radar.csv',       key: 'radar' },
+  { file: 'resource.csv',    key: 'resource' },
+  { file: 'sarsat.csv',      key: 'sarsat' },
+  { file: 'sbas.csv',        key: 'sbas' },
+  { file: 'science.csv',     key: 'science' },
+  { file: 'ses.csv',         key: 'ses' },
+  { file: 'spire.csv',       key: 'lemur' },
+  { file: 'starlink.csv',    key: 'starlink' },
+  { file: 'tdrss.csv',       key: 'tdrss' },
+  { file: 'visual.csv',      key: 'brightest' },
+  { file: 'weather.csv',     key: 'weather' },
+  { file: 'x-comm.csv',      key: 'x-comm' }
+];
+
 // ---- Location ----
 
 function getLocation() {
@@ -765,85 +804,114 @@ function loadFromCSV(csvText) {
   allSatellites.sort(function(a, b) { return a.name.localeCompare(b.name); });
 }
 
-function downloadAndBuild() {
+function downloadFiles(downloads, label, callback) {
   var sourceData = {};
-  var downloads = [];
+  var total = downloads.length;
+  var pending = total;
 
+  document.getElementById('statusText').textContent = label;
+
+  for (var i = 0; i < downloads.length; i++) {
+    (function(dl) {
+      fetch(dl.url)
+        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function(data) { sourceData[dl.key] = data; done(); })
+        .catch(function(e) { console.warn(dl.key + ':', e.message); done(); });
+    })(downloads[i]);
+  }
+
+  function done() {
+    pending--;
+    document.getElementById('statusText').textContent =
+      label + ' (' + (total - pending) + '/' + total + ')';
+    if (pending === 0) callback(sourceData);
+  }
+}
+
+function downloadAndBuild() {
+  var downloads = [];
   downloads.push({ url: N2YO_BASE + 'all.txt', key: 'all.txt' });
   downloads.push({ url: CELESTRAK_BASE + 'tle-new.csv', key: 'tle-new' });
-
   for (var i = 0; i < SAT_GROUPS.length; i++) {
     var g = SAT_GROUPS[i];
     if (g.file === 'tle-new') continue;
     downloads.push({ url: N2YO_BASE + g.file, key: g.file });
   }
 
-  var total = downloads.length;
-  var pending = total;
-
-  document.getElementById('statusText').textContent = 'Downloading satellite data...';
-
-  function fileDone() {
-    pending--;
-    document.getElementById('statusText').textContent =
-      'Downloading satellite data... (' + (total - pending) + '/' + total + ')';
-    if (pending === 0) {
+  downloadFiles(downloads, 'Downloading satellite data...', function(sourceData) {
+    var allSats = sourceData['all.txt'] ? parseSatellites(sourceData['all.txt']) : [];
+    if (allSats.length > 0) {
       document.getElementById('statusText').textContent = 'Building satellite database...';
-      setTimeout(function() { buildCSVFromSources(sourceData); }, 50);
+      setTimeout(function() { buildCSVFromSources(sourceData, allSats); }, 50);
+    } else {
+      console.warn('n2yo data unavailable, falling back to CelesTrak');
+      var ctDownloads = [];
+      for (var i = 0; i < CELESTRAK_FALLBACK.length; i++)
+        ctDownloads.push({ url: CELESTRAK_BASE + CELESTRAK_FALLBACK[i].file, key: 'ct:' + CELESTRAK_FALLBACK[i].key });
+      downloadFiles(ctDownloads, 'Falling back to CelesTrak...', function(ctData) {
+        for (var k in ctData) sourceData[k] = ctData[k];
+        document.getElementById('statusText').textContent = 'Building satellite database...';
+        setTimeout(function() { buildCSVFromSources(sourceData); }, 50);
+      });
     }
-  }
-
-  for (var i = 0; i < downloads.length; i++) {
-    (function(dl) {
-      fetch(dl.url)
-        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-        .then(function(data) { sourceData[dl.key] = data; fileDone(); })
-        .catch(function(e) { console.warn(dl.key + ':', e.message); fileDone(); });
-    })(downloads[i]);
-  }
+  });
 }
 
-function buildCSVFromSources(sourceData) {
+function buildCSVFromSources(sourceData, allSats) {
   var byNorad = {};
+  var groupMap = {};
 
-  if (sourceData['all.txt']) {
-    var sats = parseSatellites(sourceData['all.txt']);
-    for (var i = 0; i < sats.length; i++) byNorad[sats[i].norad] = sats[i];
-  }
+  if (allSats && allSats.length > 0) {
+    // n2yo path: all.txt + junk.txt as base data
+    for (var i = 0; i < allSats.length; i++) byNorad[allSats[i].norad] = allSats[i];
 
-  if (sourceData['junk.txt']) {
-    var sats = parseSatellites(sourceData['junk.txt']);
-    for (var i = 0; i < sats.length; i++) {
-      if (!byNorad[sats[i].norad]) byNorad[sats[i].norad] = sats[i];
+    if (sourceData['junk.txt']) {
+      sats = parseSatellites(sourceData['junk.txt']);
+      for (var i = 0; i < sats.length; i++) {
+        if (!byNorad[sats[i].norad]) byNorad[sats[i].norad] = sats[i];
+      }
+    }
+
+    // Group tagging from n2yo category TLEs
+    for (var i = 0; i < SAT_GROUPS.length; i++) {
+      var g = SAT_GROUPS[i];
+      var key = g.file === 'tle-new' ? 'tle-new' : g.file;
+      var raw = sourceData[key];
+      if (!raw) continue;
+      var ids;
+      if (key === 'tle-new') {
+        var parsed = parseSatellites(raw);
+        ids = {};
+        for (var j = 0; j < parsed.length; j++) ids[parsed[j].norad] = true;
+      } else {
+        ids = extractNoradIDs(raw);
+      }
+      for (var norad in ids) {
+        if (!groupMap[norad]) groupMap[norad] = [];
+        groupMap[norad].push(g.key);
+      }
+    }
+  } else {
+    // CelesTrak fallback: category CSVs as both base data and group tags
+    for (var i = 0; i < CELESTRAK_FALLBACK.length; i++) {
+      var cf = CELESTRAK_FALLBACK[i];
+      var data = sourceData['ct:' + cf.key];
+      if (!data) continue;
+      var sats = parseSatellites(data);
+      for (var j = 0; j < sats.length; j++) {
+        var norad = sats[j].norad;
+        if (!byNorad[norad]) byNorad[norad] = sats[j];
+        if (!groupMap[norad]) groupMap[norad] = [];
+        groupMap[norad].push(cf.key);
+      }
     }
   }
 
+  // tle-new satellites not already present
   if (sourceData['tle-new']) {
     var sats = parseSatellites(sourceData['tle-new']);
     for (var i = 0; i < sats.length; i++) {
       if (!byNorad[sats[i].norad]) byNorad[sats[i].norad] = sats[i];
-    }
-  }
-
-  var groupMap = {};
-  for (var i = 0; i < SAT_GROUPS.length; i++) {
-    var g = SAT_GROUPS[i];
-    var key = g.file === 'tle-new' ? 'tle-new' : g.file;
-    var raw = sourceData[key];
-    if (!raw) continue;
-
-    var ids;
-    if (key === 'tle-new') {
-      var parsed = parseSatellites(raw);
-      ids = {};
-      for (var j = 0; j < parsed.length; j++) ids[parsed[j].norad] = true;
-    } else {
-      ids = extractNoradIDs(raw);
-    }
-
-    for (var norad in ids) {
-      if (!groupMap[norad]) groupMap[norad] = [];
-      groupMap[norad].push(g.key);
     }
   }
 
