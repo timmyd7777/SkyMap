@@ -209,7 +209,7 @@ Finds visible satellite passes above a horizon altitude threshold, as seen from 
 
 GEO satellites that never cross the altitude threshold return an empty array.
 
-**`satpass.html`** — standalone test page. Loads all 37 CelesTrak satellite groups at startup (via `fetchCached()` with per-group 24-hour localStorage caching). Listbox always shows the deduplicated "All" set; group dropdown selects satellites by group (default: Brightest). Features: date entry with step arrows, geolocation (browser API with IP fallback), timezone selection, sunset/sunrise display, multi-satellite selection, sortable results table with CSV export, progress bar for large searches (>1000 satellites), and stale orbit data warning.
+**`satpass.html`** — standalone test page. Downloads 59 n2yo TLE category files plus CelesTrak tle-new.csv from southernstars.com, merges into a consolidated CSV (CelesTrak OMM format with a GROUPS column of semicolon-separated filename-stem keys), and caches in IndexedDB (24-hour TTL). On load, uses cached data if fresh; otherwise re-downloads. "Download Satellite Data" button forces re-download. Group dropdown filters by category key in each satellite's `groups` array; search box supports multi-NORAD-ID input (space/comma delimited) to select multiple satellites. Features: date entry with step arrows, geolocation (browser API with IP fallback), timezone selection, sunset/sunrise display, multi-satellite selection, sortable results table with CSV export, progress bar for large searches (>1000 satellites), download timestamp display, and stale orbit data warning.
 
 ---
 
