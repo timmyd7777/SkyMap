@@ -2033,7 +2033,10 @@ function skymapDraw(canvas, params) {
   // Draw an ImageFrame (astromath.js) as a rectangle on the sky map.
   // Unprojects the four pixel corners to J2000 unit vectors, projects each
   // onto the canvas via skyProject(), and strokes the quadrilateral.
-  function drawImageFrame(frame) {
+  // When fill is true, also fills with a low-alpha tint; adjacent tiles in a
+  // mosaic array overlap, so their fills stack into a visibly darker band —
+  // this reads as the overlap zone without computing overlap geometry.
+  function drawImageFrame(frame, fill) {
     if (!frame) return;
     const corners = [[0, 0], [frame.width, 0], [frame.width, frame.height], [0, frame.height]];
     const pts = corners.map(([px, py]) => {
@@ -2041,11 +2044,15 @@ function skymapDraw(canvas, params) {
       return skyProject(xyz[0], xyz[1], xyz[2]);
     });
     if (pts.some(p => !p)) return;
-    ctx.strokeStyle = darkMode ? '#ee9911' : '#aa5500';
-    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i <= 4; i++) ctx.lineTo(pts[i % 4][0], pts[i % 4][1]);
+    if (fill) {
+      ctx.fillStyle = darkMode ? 'rgba(238,153,17,0.12)' : 'rgba(170,85,0,0.10)';
+      ctx.fill();
+    }
+    ctx.strokeStyle = darkMode ? '#ee9911' : '#aa5500';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
     // debug: dot at (0,0) corner
     // ctx.fillStyle = ctx.strokeStyle;
@@ -2055,6 +2062,7 @@ function skymapDraw(canvas, params) {
   }
 
   if (params.imageFrame) drawImageFrame(params.imageFrame);
+  if (params.imageFrames) params.imageFrames.forEach(f => drawImageFrame(f, true));
   if (showSelection) drawSelectionMarker();
   if (showHeader) drawHeader();
 }
