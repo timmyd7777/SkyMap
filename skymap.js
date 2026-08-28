@@ -169,7 +169,25 @@ function formatSelection(obj) {
   const d = obj.data;
   const ids = [];
   let type = '', name = '';
-  if (obj.type === 'star') {
+  // data is null for objects restored from Preferences (SkyObject.fromJSON).
+  // Fall back to name/ids and the subtype code saved by toJSON().
+  if (!d) {
+    name = obj.name || (obj.ids && obj.ids[0]) || '';
+    if (obj.ids) obj.ids.slice(1).forEach(id => ids.push(id));
+    if (obj.type === 'deepsky') {
+      const DS_TYPES = {OC:'Open Cluster',GC:'Globular Cluster',BN:'Bright Nebula',
+        DN:'Dark Nebula',PN:'Planetary Nebula',GX:'Galaxy',
+        SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
+      type = DS_TYPES[obj.subtype] || DS_TYPES[obj.type] || 'Deep Sky Object';
+    } else if (obj.type === 'star') {
+      const STAR_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
+      type = STAR_TYPES[obj.subtype] || 'Star';
+    } else {
+      const TYPE_LABELS = { planet:'Planet', sun:'Star', moon:'Moon',
+        asteroid:'Asteroid', comet:'Comet', satellite:'Satellite', planetmoon:'Moon' };
+      type = TYPE_LABELS[obj.type] || '';
+    }
+  } else if (obj.type === 'star') {
     const s = d.star || d;
     const STAR_TYPES = {SS:'Star',DS:'Double Star',VS:'Variable Star',DV:'Double Variable Star'};
     type = STAR_TYPES[s[S_TYPE]] || 'Star';
