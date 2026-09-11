@@ -2393,11 +2393,17 @@ const SATMAG = {
   90057:5.0
 };
 
-// Compute satellite apparent magnitude given its geocentric position (TEME, Earth-radii),
-// observer position (TEME, Earth-radii), and Sun direction (TEME, unit vector).
-// Returns Infinity if eclipsed by Earth or backlit. Uses McCants standard magnitude
-// with diffuse-sphere phase correction and slant-range scaling.
-function satApparentMag(norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz) {
+// Compute satellite apparent magnitude given its standard magnitude (at 1000 km
+// range, half-phase), geocentric position (TEME, Earth-radii), observer position
+// (TEME, Earth-radii), and Sun direction (TEME, unit vector).
+// Returns Infinity if eclipsed by Earth or backlit. Uses diffuse-sphere phase
+// correction and slant-range scaling. Takes stdmag directly (rather than a NORAD
+// ID) so callers with a better source than the SATMAG table below — e.g.
+// satpass.js, whose satellites.csv carries current per-satellite McCants/SCORE/
+// GCAT-derived magnitudes that supersede this file's frozen 2019 McCants
+// snapshot — can pass it straight through. stdmag null/undefined defaults to a
+// normal, finite +6.0. See satApparentMagByNorad() for the SATMAG-table-lookup form.
+function satApparentMag(stdmag, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz) {
   const geoDist = vmag(gx, gy, gz);
 
   // Earth shadow: satellite in Earth's umbral shadow cone (cylindrical approximation)
@@ -2414,6 +2420,13 @@ function satApparentMag(norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz
   const phaseFn = sin(phase) + (PI - phase)*cos(phase);
   if (phaseFn <= 0) return Infinity;
 
-  const stdmag = (SATMAG[norad] != null) ? SATMAG[norad] : 6.0;
+  if (stdmag == null) stdmag = 6.0;
   return stdmag + 5*Math.log10(rangeKm / 1000) - 2.5*Math.log10(phaseFn);
+}
+
+// Convenience wrapper for callers (skymap.js's main app) whose satellite
+// sources are plain CelesTrak/N2YO TLEs with no per-satellite magnitude, so
+// standard magnitude must be resolved from the SATMAG table above by NORAD ID.
+function satApparentMagByNorad(norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz) {
+  return satApparentMag(SATMAG[norad], gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz);
 }

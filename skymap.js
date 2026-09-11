@@ -1284,7 +1284,7 @@ function skymapDraw(canvas, params) {
           // search panel can show it exists rather than silently vanishing;
           // drawSolarSystem()'s existing obj.mag > magLimit + 3 check already
           // keeps it off the map.
-          const mag = satApparentMag(sat.norad, gx, gy, gz,
+          const mag = satApparentMagByNorad(sat.norad, gx, gy, gz,
             obsX, obsY, obsZ, sunTx, sunTy, sunTz);
           // NaN (not Infinity) means the magnitude computation itself failed —
           // sgp4.js has no guards against degenerate elements (e.g. a decayed

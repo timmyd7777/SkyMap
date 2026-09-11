@@ -40,8 +40,8 @@ function satState(sat, jd, latRad, lonRad) {
   // Cylindrical Earth-shadow test (Earth radius = 1 in SGP4 units)
   const eclipsed = inUmbralShadow(gx, gy, gz, sunTx, sunTy, sunTz, 1);
 
-  // Apparent visual magnitude (Infinity if eclipsed or no McCants entry defaults to +6.0)
-  const mag = satApparentMag(sat.norad, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz);
+  // Apparent visual magnitude (Infinity if eclipsed; no stdMag in satellites.csv defaults to +6.0)
+  const mag = satApparentMag(sat.stdMag, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunTz);
 
   return { alt, az, eclipsed, mag };
 }

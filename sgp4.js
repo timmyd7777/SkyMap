@@ -143,7 +143,11 @@ function parseSatCSV(lines) {
       xndt2o: ndot * temp,
       xndd6o: nddot * temp / 1440,
       bstar: parseFloat(row.BSTAR) || 0,
-      deep: period > 225
+      deep: period > 225,
+      // Southern Stars satellites.csv extension fields (undefined/empty on
+      // plain CelesTrak OMM CSVs, which lack these columns).
+      stdMag: row.STD_MAG ? parseFloat(row.STD_MAG) : null,
+      categories: row.CATEGORIES ? row.CATEGORIES.split(';').filter(Boolean).map(Number) : []
     });
   }
   return sats;
