@@ -1057,3 +1057,36 @@ function sdp4Propagate(sat, tsince) {
     vel: [rdotk*ux + rfdotk*vx, rdotk*uy + rfdotk*vy, rdotk*uz + rfdotk*vz]
   };
 }
+
+// Compute topocentric J2000 RA/Dec for a satellite at a given UTC Julian Date.
+// sat = parsed satellite record, jd = UTC Julian Date,
+// latRad/lonRad = observer geodetic latitude/longitude in radians.
+// Returns {ra, dec} in radians (J2000), or null on propagation failure.
+// Replicates the TEME→topocentric→J2000 pipeline from skymapDraw's satellite block.
+function satComputeJ2000RaDec(sat, jd, latRad, lonRad) {
+  var T = (jd - JD2000) / 36525;
+  var epsMean = obliquity(T);
+  var nut = nutation(T);
+  var epsTrue = epsMean + nut.dEps;
+  var sspp = precessAngles(T);
+  var cTheta = cos(sspp.thetaA), sTheta = sin(sspp.thetaA);
+  var mPY = [cTheta, 0, -sTheta, 0, 1, 0, sTheta, 0, cTheta];
+  var mP = mmul(rz(sspp.zA), mmul(mPY, rz(sspp.zetaA)));
+  var mNP = mmul(mmul(rx(-epsTrue), mmul(rz(-nut.dPsi), rx(epsMean))), mP);
+
+  var lstR = localSiderealTime(jd, lonRad) + nut.dPsi * cos(epsTrue);
+  var obs = geocentricXYZ(lstR, latRad);
+
+  var tsince = (jd - sat.epoch) * 1440;
+  try {
+    var rv = sgp4Propagate(sat, tsince);
+    var gx = rv.pos[0], gy = rv.pos[1], gz = rv.pos[2];
+    var topo = topocentricCorrectionXYZ(gx, gy, gz, obs[0], obs[1], obs[2]);
+    var j2k = mvmul(mtranspose(mNP), ...sph2uxyz(topo[0], topo[1]));
+    var ra = atan2pi(j2k[1], j2k[0]);
+    var dec = atan2(j2k[2], sqrt(j2k[0] * j2k[0] + j2k[1] * j2k[1]));
+    return { ra: ra, dec: dec };
+  } catch (e) {
+    return null;
+  }
+}

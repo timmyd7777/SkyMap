@@ -139,13 +139,19 @@ class SkyObject {
       mag: this.mag,
       norad: this.norad
     };
+    // Save the catalog subtype code (e.g. 'PN', 'GX', 'DS') so it survives
+    // the data:null round-trip through fromJSON and formatSelection.
+    if (this.data) {
+      if (this.type === 'deepsky') o.subtype = this.data[DS_TYPE];
+      else if (this.type === 'star') o.subtype = this.data[S_TYPE];
+    }
     if (this.elements) o.elements = this.elements;
     return o;
   }
 
   static fromJSON(j) {
     if (!j || !j.type) return null;
-    return new SkyObject({
+    var obj = new SkyObject({
       type: j.type,
       name: j.name || '',
       ids: j.ids || j.names || [],
@@ -156,6 +162,8 @@ class SkyObject {
       norad: j.norad,
       elements: j.elements || null
     });
+    if (j.subtype) obj.subtype = j.subtype;
+    return obj;
   }
 
   // ---- Factory methods ----

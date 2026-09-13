@@ -2420,7 +2420,7 @@ function satApparentMag(stdmag, gx, gy, gz, obsX, obsY, obsZ, sunTx, sunTy, sunT
   const phaseFn = sin(phase) + (PI - phase)*cos(phase);
   if (phaseFn <= 0) return Infinity;
 
-  if (stdmag == null) stdmag = 6.0;
+  if (stdmag == null) return Infinity;
   return stdmag + 5*Math.log10(rangeKm / 1000) - 2.5*Math.log10(phaseFn);
 }
 

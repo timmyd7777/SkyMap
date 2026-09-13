@@ -1284,7 +1284,7 @@ function skymapDraw(canvas, params) {
           // search panel can show it exists rather than silently vanishing;
           // drawSolarSystem()'s existing obj.mag > magLimit + 3 check already
           // keeps it off the map.
-          const mag = satApparentMagByNorad(sat.norad, gx, gy, gz,
+          const mag = satApparentMag(sat.stdMag, gx, gy, gz,
             obsX, obsY, obsZ, sunTx, sunTy, sunTz);
           // NaN (not Infinity) means the magnitude computation itself failed —
           // sgp4.js has no guards against degenerate elements (e.g. a decayed
@@ -1748,7 +1748,7 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, r + 3, obj.name);
         }
       } else if (obj.type === 'satellite') {
-        if (!showSatellites || obj.mag > magLimit + 3) continue;
+        if (!showSatellites || (viewFov >= 10 && obj.mag > magLimit)) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const satColor = darkMode ? '#0f0' : '#060';
@@ -2154,27 +2154,51 @@ function changeFrame(newFrame, j2000, dt, loc) {
   viewJ2000 = j2000;
 }
 
-// Fetch remote data with localStorage caching (24-hour TTL).
+// Fetch remote data with IndexedDB caching (24-hour TTL, keyed by name).
+var _fetchCacheDB = null;
+function _fetchCacheOpen(cb) {
+  if (_fetchCacheDB) { cb(_fetchCacheDB); return; }
+  var req = indexedDB.open('skymap-cache', 1);
+  req.onupgradeneeded = function() { req.result.createObjectStore('data'); };
+  req.onsuccess = function() { _fetchCacheDB = req.result; cb(_fetchCacheDB); };
+  req.onerror = function() { cb(null); };
+}
+
 function fetchCached(url, key, onSuccess) {
-  var cached = localStorage.getItem(key);
-  if (cached) {
-    try {
-      var parsed = JSON.parse(cached);
-      if (Date.now() - parsed.time < 86400000) {
-        onSuccess(parsed.data, true);
+  var TTL = 86400000;
+
+  _fetchCacheOpen(function(db) {
+    if (!db) { _fetchFromNetwork(url, key, null, onSuccess); return; }
+
+    var tx = db.transaction('data', 'readonly');
+    var get = tx.objectStore('data').get(key);
+    get.onsuccess = function() {
+      var entry = get.result;
+      if (entry && Date.now() - entry.time < TTL) {
+        onSuccess(entry.data, true);
         return;
       }
-    } catch(e) {}
-  }
+      _fetchFromNetwork(url, key, db, onSuccess, entry);
+    };
+    get.onerror = function() { _fetchFromNetwork(url, key, db, onSuccess); };
+  });
+}
+
+function _fetchFromNetwork(url, key, db, onSuccess, staleEntry) {
   fetch(url)
     .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
     .then(function(data) {
-      try { localStorage.setItem(key, JSON.stringify({ time: Date.now(), data: data })); } catch(e) {}
+      if (db) {
+        try {
+          var tx = db.transaction('data', 'readwrite');
+          tx.objectStore('data').put({ time: Date.now(), data: data }, key);
+        } catch(e) {}
+      }
       onSuccess(data, false);
     })
     .catch(function(e) {
-      if (cached) {
-        try { onSuccess(JSON.parse(cached).data, true); } catch(ex) {}
+      if (staleEntry) {
+        onSuccess(staleEntry.data, true);
       } else {
         console.warn(key + ' fetch failed:', e.message);
       }

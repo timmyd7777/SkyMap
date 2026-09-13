@@ -733,7 +733,7 @@ function init() {
     console.log(`${fromCache ? 'Locally retrieved' : 'Downloaded and stored'} ${loadedAsteroids.length} asteroids`);
     ssCacheJD = -1; draw();
   });
-  fetchCached(`${BASE}/satellites/celestrak/visual.csv`, 'satellites', (data, fromCache) => {
+  fetchCached(`${BASE}/satellites/satellites.csv`, 'satellites', (data, fromCache) => {
     loadedSatellites = parseSatellites(data);
     console.log(`${fromCache ? 'Locally retrieved' : 'Downloaded and stored'} ${loadedSatellites.length} satellites`);
     ssCacheJD = -1; draw();
