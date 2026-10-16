@@ -2166,43 +2166,71 @@ function _fetchCacheOpen(cb) {
   req.onerror = function() { cb(null); };
 }
 
-function fetchCached(url, key, onSuccess) {
+// onSuccess(data, fromCache, time) -- time is when the data was downloaded
+// (ms since epoch). Optional opts:
+//   force:      skip the cache and always download.
+//   onProgress: function(received, total) during download; total is 0 when
+//               the server sends no Content-Length.
+//   onError:    function(message, staleTime) when the download fails. The
+//               stale cached copy (if any) is still delivered to onSuccess
+//               first; staleTime is its download time, or null if none.
+function fetchCached(url, key, onSuccess, opts) {
   var TTL = 86400000;
+  opts = opts || {};
 
   _fetchCacheOpen(function(db) {
-    if (!db) { _fetchFromNetwork(url, key, null, onSuccess); return; }
+    if (!db) { _fetchFromNetwork(url, key, null, onSuccess, null, opts); return; }
 
     var tx = db.transaction('data', 'readonly');
     var get = tx.objectStore('data').get(key);
     get.onsuccess = function() {
       var entry = get.result;
-      if (entry && Date.now() - entry.time < TTL) {
-        onSuccess(entry.data, true);
+      if (entry && !opts.force && Date.now() - entry.time < TTL) {
+        onSuccess(entry.data, true, entry.time);
         return;
       }
-      _fetchFromNetwork(url, key, db, onSuccess, entry);
+      _fetchFromNetwork(url, key, db, onSuccess, entry, opts);
     };
-    get.onerror = function() { _fetchFromNetwork(url, key, db, onSuccess); };
+    get.onerror = function() { _fetchFromNetwork(url, key, db, onSuccess, null, opts); };
   });
 }
 
-function _fetchFromNetwork(url, key, db, onSuccess, staleEntry) {
-  fetch(url)
-    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+// Read a fetch Response body as text, reporting progress as chunks arrive.
+function _fetchReadWithProgress(response, onProgress) {
+  var total = parseInt(response.headers.get('Content-Length')) || 0;
+  if (!onProgress || !response.body) return response.text();
+  var reader = response.body.getReader();
+  var received = 0, chunks = [];
+  onProgress(0, total);
+  function pump() {
+    return reader.read().then(function(result) {
+      if (result.done) return new Blob(chunks).text();
+      chunks.push(result.value);
+      received += result.value.length;
+      onProgress(received, total);
+      return pump();
+    });
+  }
+  return pump();
+}
+
+function _fetchFromNetwork(url, key, db, onSuccess, staleEntry, opts) {
+  opts = opts || {};
+  fetch(url, opts.force ? { cache: 'no-store' } : undefined)
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return _fetchReadWithProgress(r, opts.onProgress); })
     .then(function(data) {
+      var now = Date.now();
       if (db) {
         try {
           var tx = db.transaction('data', 'readwrite');
-          tx.objectStore('data').put({ time: Date.now(), data: data }, key);
+          tx.objectStore('data').put({ time: now, data: data }, key);
         } catch(e) {}
       }
-      onSuccess(data, false);
+      onSuccess(data, false, now);
     })
     .catch(function(e) {
-      if (staleEntry) {
-        onSuccess(staleEntry.data, true);
-      } else {
-        console.warn(key + ' fetch failed:', e.message);
-      }
+      console.warn(key + ' fetch failed:', e.message);
+      if (staleEntry) onSuccess(staleEntry.data, true, staleEntry.time);
+      if (opts.onError) opts.onError(e.message, staleEntry ? staleEntry.time : null);
     });
 }

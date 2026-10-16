@@ -332,7 +332,7 @@ Computes J2000 unit vectors for all star and deep-sky catalog entries (appended 
 - `changeFrame()` — frame switching.
 - `viewProjectRaw(lat, lon)` — non-null variant of `viewProject`; clamps behind-hemisphere points to a large radius for continuous lines. Currently unused (dead code).
 - `pointInPolygon(px, py, pts)` — ray-casting test (used by `pickObject()` and `drawMilkyWay()`). Milky way's canvas-center check is guarded against false positives from vertices near the view anticenter.
-- `fetchCached(url, key, onSuccess)` — fetches remote data with 24-hour IndexedDB cache TTL (database `skymap-cache`, object store `data`) and stale-cache fallback on network failure. Uses IndexedDB instead of localStorage to handle large files (e.g. the ~7 MB satellite catalog exceeds localStorage's ~5 MB quota).
+- `fetchCached(url, key, onSuccess)` — fetches remote data with 24-hour IndexedDB cache TTL (database `skymap-cache`, object store `data`) and stale-cache fallback on network failure. Uses IndexedDB instead of localStorage to handle large files (e.g. the ~7 MB satellite catalog exceeds localStorage's ~5 MB quota). `onSuccess(data, fromCache, time)` receives the data's download time (ms). Optional 4th arg `opts`: `force` (skip the cache), `onProgress(received, total)` (streamed download progress; `total` is 0 without `Content-Length`), `onError(message, staleTime)` (called after the stale copy, if any, has been delivered to `onSuccess`).
 - `PLANET_SYMBOLS` — optional astrological symbol rendering.
 
 ---
