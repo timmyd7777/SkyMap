@@ -1282,8 +1282,8 @@ function skymapDraw(canvas, params) {
           // mag may be Infinity (eclipsed by Earth's shadow, or backlit) — still
           // pushed to ssCache (matching planetmoons' shadow handling) so the
           // search panel can show it exists rather than silently vanishing;
-          // drawSolarSystem()'s existing obj.mag > magLimit + 3 check already
-          // keeps it off the map.
+          // drawSolarSystem()'s explicit obj.mag === Infinity check (same as
+          // planetmoons) keeps it off the map at any zoom level.
           const mag = satApparentMag(sat.stdMag, gx, gy, gz,
             obsX, obsY, obsZ, sunTx, sunTy, sunTz);
           // NaN (not Infinity) means the magnitude computation itself failed —
@@ -1299,7 +1299,7 @@ function skymapDraw(canvas, params) {
           // share the same generic name (e.g. multiple "SL-16 R/B" from
           // different launches), so name+type alone is ambiguous for satellites.
           ssCache.push({ type:'satellite', name:sat.name, norad:sat.norad, mag,
-            x:jx, y:jy, z:jz, dist:satTopoER * SGP4_ER });
+            stdMag:sat.stdMag, x:jx, y:jy, z:jz, dist:satTopoER * SGP4_ER });
         } catch(e) {}
       }
     }
@@ -1748,7 +1748,9 @@ function skymapDraw(canvas, params) {
           placeLabel(sx, sy, r + 3, obj.name);
         }
       } else if (obj.type === 'satellite') {
-        if (!showSatellites || (viewFov >= 10 && obj.mag > magLimit)) continue;
+        if (!showSatellites) continue;
+        if (obj.mag === Infinity) continue;    // eclipsed/backlit -- same as planetmoons
+        if (viewFov >= 10 && obj.mag > magLimit) continue;
         const drawMag = min(magLimit, obj.mag);
         const r = max(1.5, (5.5 + magBoost - drawMag) * min(W, H) / 1000);
         const satColor = darkMode ? '#0f0' : '#060';
