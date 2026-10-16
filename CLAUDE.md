@@ -10,7 +10,7 @@ SkyMap is a browser-based interactive sky map that renders stars, constellations
 
 ## Running
 
-Open `index.html` directly in a browser. On desktop it loads `stars.js` (~130K stars to mag 9) and `deepsky.js` (~12K NGC/IC objects); on mobile it loads `stars_hr.js` (~9000 stars to mag 9) and `deepsky_mc.js` (~223 Messier+Caldwell objects) — the choice is made at runtime via user-agent detection. Asteroid, comet, and satellite orbital elements are fetched from southernstars.com at init (cached in localStorage for 24 hours).
+Open `index.html` directly in a browser. On desktop it loads `stars.js` (~130K stars to mag 9) and `deepsky.js` (~12K NGC/IC objects); on mobile it loads `stars_hr.js` (~9000 stars to mag 9) and `deepsky_mc.js` (~223 Messier+Caldwell objects) — the choice is made at runtime via user-agent detection. Asteroid, comet, and satellite orbital elements are fetched from southernstars.com at init (cached in IndexedDB for 24 hours; see `fetchCached()`).
 
 ## Data Generation
 
@@ -272,7 +272,7 @@ Positions cached as J2000 equatorial unit vectors, recomputed when JD or observe
 
 **Angular sizes:** Objects with a physical disc (Sun, planets/Pluto, Moon, planetary moons) cache `angRad` (angular radius in radians), computed once in `updateSSCache()` from the same catalog constants (`SUN_DIAM1AU`/`PLANET_DIAM1AU`/`MOON_DIAM_FACTOR`/`MOON_DATA[name].radius`) used elsewhere. `drawSolarSystem()` reuses `angRad` both to size the on-screen disc (`radToPx(sx, sy, obj.angRad)`) and to enlarge the visibility-cull rectangle so large discs aren't culled when their center falls off-canvas (Saturn gets extra ×2.27 for its ring). Comets, asteroids, and satellites have no `angRad` and are culled at the exact canvas bounds.
 
-**Satellites:** Propagated via `sgp4Propagate()` using JD (UTC, not JDE). Observer TEME position computed from WGS84 ellipsoid. Each entry carries `norad` alongside `name` since rocket-body/debris objects frequently reuse generic names. Eclipsed satellites get `mag: Infinity` but are still pushed to `ssCache` (search panel can still find them, matching how planetary moons in shadow are handled). Satellites with no known standard magnitude also get `mag: Infinity` (treated as infinitely faint). The draw filter uses the same magnitude limit as stars when FOV >= 10°; at FOV < 10° all satellites are shown regardless of magnitude. `NaN` magnitudes (`sgp4Propagate()` returning degenerate positions for decayed/invalid elements, since `sgp4.js` has no guards) are explicitly skipped (not pushed) — unlike `Infinity`, `NaN` compares false against every value and silently scrambles magnitude-sorted order.
+**Satellites:** Propagated via `sgp4Propagate()` using JD (UTC, not JDE). Observer TEME position computed from WGS84 ellipsoid. Each entry carries `norad` alongside `name` since rocket-body/debris objects frequently reuse generic names, plus `stdMag` (from `sat.stdMag`, may be `null`) so callers can tell "no known brightness" from "eclipsed" when `mag` is `Infinity`. Eclipsed satellites get `mag: Infinity` but are still pushed to `ssCache` (search panel can still find them, matching how planetary moons in shadow are handled). Satellites with no known standard magnitude also get `mag: Infinity` (treated as infinitely faint). The draw filter never draws `mag === Infinity` satellites (same as planetary moons in shadow), and also applies the star magnitude limit when FOV >= 10°; at FOV < 10° every satellite with a finite magnitude is shown. `NaN` magnitudes (`sgp4Propagate()` returning degenerate positions for decayed/invalid elements, since `sgp4.js` has no guards) are explicitly skipped (not pushed) — unlike `Infinity`, `NaN` compares false against every value and silently scrambles magnitude-sorted order.
 
 #### Object tracking
 
@@ -496,7 +496,7 @@ One-iteration for planets, Pluto, asteroids, comets. VSOP87 planets use a cheap 
 
 ### Satellites
 
-SGP4 (near-earth, period < 225 min) and SDP4 (deep-space). Epochs are UTC — use JD, not JDE. Apparent magnitude uses standard magnitudes (at 1000 km range, half-phase) with topocentric scaling, diffuse-sphere phase-angle correction, and cylindrical Earth-shadow model; eclipsed satellites hidden. Satellites with no known standard magnitude get `Infinity` (treated as infinitely faint for filtering). Satellite magnitude filter matches the star magnitude limit; satellites with unknown magnitude are shown only when FOV < 10°. Satellites fainter than `magLimit` draw at faintest-star size.
+SGP4 (near-earth, period < 225 min) and SDP4 (deep-space). Epochs are UTC — use JD, not JDE. Apparent magnitude uses standard magnitudes (at 1000 km range, half-phase) with topocentric scaling, diffuse-sphere phase-angle correction, and cylindrical Earth-shadow model; eclipsed satellites hidden. Satellites with no known standard magnitude get `Infinity` (treated as infinitely faint for filtering). Satellites with `Infinity` magnitude (eclipsed, backlit, or unknown standard magnitude) are never drawn; otherwise the magnitude filter matches the star magnitude limit at FOV >= 10° and is off below 10°. Satellites fainter than `magLimit` draw at faintest-star size.
 
 ### Phase angle
 
